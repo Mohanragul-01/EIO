@@ -108,6 +108,21 @@ The anon key is public by design and ships inside the app bundle. What protects
 the data is row level security, not hiding the key. Never put a `service_role`
 key in `.env`.
 
+### Environment variables and EAS builds
+
+`.env` is gitignored, so **EAS never receives it**. A cloud build reads these
+values from variables registered on the EAS project:
+
+```bash
+eas env:create --scope project --environment preview   --name EXPO_PUBLIC_SUPABASE_URL --value https://YOUR-REF.supabase.co --visibility plaintext
+eas env:create --scope project --environment preview   --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value YOUR-ANON-KEY --visibility plaintext
+```
+
+Repeat for `development` and `production`. Skipping this produces an APK that
+installs fine and then fails at sign-in with `java.net.UnknownHostException`,
+because the URL falls back to a placeholder host. `src/core/supabase.ts` now
+throws at startup in release builds rather than letting that ship silently.
+
 ### Database
 
 Run the files in [`supabase/migrations/`](supabase/migrations/) in order,

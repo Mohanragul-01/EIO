@@ -35,9 +35,31 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
  */
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
+/**
+ * This placeholder once shipped in a release build and cost real debugging time.
+ *
+ * `.env` is gitignored, so EAS never receives it: an EAS build reads these
+ * values from environment variables registered on the EAS project instead. When
+ * those were missing, the URL fell back to the dummy below, and the only symptom
+ * was `java.net.UnknownHostException` at sign-in, which looks like a network
+ * fault rather than a misconfiguration.
+ *
+ * In development the fallback is still useful, since it lets the app boot before
+ * `.env` is filled in. In a release build it is never correct, so we fail loudly
+ * at startup instead. __DEV__ is false in any bundled build.
+ */
+if (!isSupabaseConfigured && !__DEV__) {
+  throw new Error(
+    'Supabase is not configured in this build. EXPO_PUBLIC_SUPABASE_URL and ' +
+      'EXPO_PUBLIC_SUPABASE_ANON_KEY must be registered as EAS environment ' +
+      'variables (eas env:create), because .env is gitignored and never ' +
+      'uploaded to EAS.',
+  );
+}
+
 export const supabase = createClient(
-  // Fall back to a syntactically valid dummy URL so createClient doesn't throw
-  // before we've filled in .env.
+  // Dev-only fallback: a syntactically valid dummy so createClient does not
+  // throw before .env is filled in. See the guard above.
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'placeholder-anon-key',
   {
