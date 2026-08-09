@@ -276,11 +276,22 @@ budgets, and extends transactions with accounts and transfers. It is reviewed
 and ready. **Do not assume it has been run** - migrations 0001 to 0007 are
 applied, 0008 is not.
 
-### What "complete" means for v1
+### Shipped
 
-- Standalone APK, so the app runs with no laptop and no dev server.
-- Committed to git.
-- Real app icon rather than the Expo placeholder.
+- **Standalone APK** built and verified: the real Supabase host is compiled in,
+  the placeholder fallback is absent. Runs with no laptop and no dev server.
+- **On GitHub** at https://github.com/Mohanragul-01/EIO with a full README.
+- **Real app icon**: EIO wordmark on the aurora gradient. Regenerate with
+  `scripts/make-icons.js`.
+- **In use.** All five modules verified against real entries.
+
+One trap worth remembering, because it cost a broken release: `.env` is
+gitignored, so **EAS never receives it**. Cloud builds read the Supabase values
+from variables registered on the EAS project (`eas env:create`). Without them a
+build succeeds, installs, and then fails at sign-in with
+`java.net.UnknownHostException`, because the URL falls back to a host that does
+not exist. `src/core/supabase.ts` now throws at startup in release builds rather
+than letting that ship quietly.
 
 ### Known limits, to fix only if daily use proves them annoying
 
