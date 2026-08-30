@@ -13,6 +13,8 @@ import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { GlassCard } from '../../../core/components';
 import { formatMoney } from '../../../core/money';
+import { formatBalance } from '../analytics';
+import { CategoryDonut } from './CategoryDonut';
 import { radius, spacing } from '../../../core/theme';
 import type { CategoryTotal } from '../useTransactions';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
@@ -25,6 +27,8 @@ const MONTH_NAMES = [
 type MonthSummaryProps = {
   year: number;
   month: number;
+  /** Income minus expense across every transaction ever. */
+  balanceMinor: number;
   spentMinor: number;
   earnedMinor: number;
   netMinor: number;
@@ -36,6 +40,7 @@ type MonthSummaryProps = {
 export function MonthSummary({
   year,
   month,
+  balanceMinor,
   spentMinor,
   earnedMinor,
   netMinor,
@@ -47,6 +52,24 @@ export function MonthSummary({
   const { colors } = useTheme();
   return (
     <View>
+      {/*
+        Balance first, and outside the month switcher on purpose. Everything
+        below changes when you step a month; this does not, and nesting it in
+        there would suggest otherwise.
+      */}
+      <GlassCard style={styles.balanceCard}>
+        <Text style={styles.balanceLabel}>Balance</Text>
+        <Text
+          style={[
+            styles.balanceValue,
+            { color: balanceMinor < 0 ? colors.danger : colors.text },
+          ]}
+        >
+          {formatBalance(balanceMinor)}
+        </Text>
+        <Text style={styles.balanceCaption}>Everything in, minus everything out</Text>
+      </GlassCard>
+
       {/*  Month switcher  */}
       <View style={styles.monthRow}>
         <Pressable onPress={() => onStepMonth(-1)} hitSlop={12} style={styles.arrow}>
@@ -104,6 +127,7 @@ export function MonthSummary({
       {categoryTotals.length > 0 ? (
         <View style={styles.breakdown}>
           <Text style={styles.breakdownLabel}>Where it went</Text>
+          <CategoryDonut categoryTotals={categoryTotals} />
           {categoryTotals.map((category) => (
             <CategoryBar key={category.key} category={category} />
           ))}
@@ -169,6 +193,22 @@ function CategoryBar({ category }: { category: CategoryTotal }) {
 }
 
 const useStyles = makeStyles(({ colors, typography }) => ({
+  balanceCard: {
+    marginBottom: spacing.xl,
+  },
+  balanceLabel: {
+    ...typography.overline,
+  },
+  balanceValue: {
+    ...typography.display,
+    fontSize: 30,
+    marginTop: spacing.xs,
+  },
+  balanceCaption: {
+    ...typography.caption,
+    fontSize: 11.5,
+    marginTop: 2,
+  },
   monthRow: {
     flexDirection: 'row',
     alignItems: 'center',

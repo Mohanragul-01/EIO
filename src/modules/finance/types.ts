@@ -28,3 +28,16 @@ export type TransactionInput = {
   note: string;
   date: string;
 };
+
+/**
+ * The slice of a transaction the running balance and trend chart need.
+ *
+ * Deliberately narrower than Transaction: the figures never look at a note or
+ * an id, and saying so in the type keeps the query honest about what it
+ * selects.
+ */
+export type LedgerPoint = {
+  date: string;
+  kind: TransactionKind;
+  amount_minor: number;
+};

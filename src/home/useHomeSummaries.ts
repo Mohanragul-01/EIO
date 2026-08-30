@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatMoney } from '../core/money';
 import { daysUntil } from '../core/date';
 import * as financeApi from '../modules/finance/api';
+import { formatBalance, runningBalance } from '../modules/finance/analytics';
 import * as fitnessApi from '../modules/fitness/api';
 import * as notesApi from '../modules/notes/api';
 import * as subscriptionsApi from '../modules/subscriptions/api';
@@ -51,13 +52,22 @@ async function notesSummary(): Promise<string> {
 
 async function financeSummary(): Promise<string> {
   const now = new Date();
-  const rows = await financeApi.listTransactions(now.getFullYear(), now.getMonth() + 1);
-  if (rows.length === 0) return 'Nothing this month';
+  // Both figures in parallel: the balance spans everything, the spend is this
+  // month, and they answer different questions.
+  const [rows, ledger] = await Promise.all([
+    financeApi.listTransactions(now.getFullYear(), now.getMonth() + 1),
+    financeApi.listLedgerPoints(),
+  ]);
+
+  const balance = formatBalance(runningBalance(ledger));
+  if (rows.length === 0) return `${balance} balance`;
 
   const spent = rows
     .filter((t) => t.kind === 'expense')
     .reduce((total, t) => total + t.amount_minor, 0);
-  return `${formatMoney(spent, { compact: true })} this month`;
+  // Balance first: it is the figure you actually act on. The month's spend is
+  // context for it.
+  return `${balance} left, ${formatMoney(spent, { compact: true })} out`;
 }
 
 async function subscriptionsSummary(): Promise<string> {

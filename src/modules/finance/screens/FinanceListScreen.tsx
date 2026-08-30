@@ -10,9 +10,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useCallback } from 'react';
+import React, { useCallback, useLayoutEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -24,6 +25,9 @@ import { Button, EmptyState, FadeInView, GlassCard, Screen } from '../../../core
 import { motion, radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import { MonthSummary } from '../components/MonthSummary';
+import { TrendChart } from '../components/TrendChart';
+import { exportTransactionsCsv } from '../export';
+import { monthBounds } from '../../../core/date';
 import { TransactionRow } from '../components/TransactionRow';
 import { useTransactions } from '../useTransactions';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
@@ -37,6 +41,8 @@ export function FinanceListScreen() {
   const {
     transactions,
     summary,
+    balanceMinor,
+    trendMonths,
     year,
     month,
     stepMonth,
@@ -47,6 +53,66 @@ export function FinanceListScreen() {
     refresh,
     reload,
   } = useTransactions();
+
+  const [exporting, setExporting] = useState(false);
+
+  /**
+   * Export to CSV, with the range as an optional second choice rather than a
+   * required first step. Exporting everything is the common case, so it is one
+   * tap; narrowing to the month you are looking at is there when you want it.
+   */
+  const handleExport = useCallback(
+    async (range?: { start: string; end: string }) => {
+      setExporting(true);
+      try {
+        const result = await exportTransactionsCsv(range);
+
+        if (result.status === 'empty') {
+          Alert.alert('Nothing to export', 'There are no transactions in that range.');
+        } else if (result.status === 'unavailable') {
+          // The file is written and valid; only the share sheet is missing, so
+          // say where it went rather than reporting a failure.
+          Alert.alert(
+            'Saved',
+            `${result.rows} transactions written, but this device cannot open a share sheet.
+
+${result.uri}`,
+          );
+        }
+        // A successful share needs no alert: the OS sheet already appeared, and
+        // a confirmation on top of it is one more tap for nothing.
+      } catch (e) {
+        Alert.alert('Could not export', e instanceof Error ? e.message : 'Please try again.');
+      } finally {
+        setExporting(false);
+      }
+    },
+    [],
+  );
+
+  const askExportRange = useCallback(() => {
+    const bounds = monthBounds(year, month);
+    Alert.alert('Export transactions', 'As a CSV file.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'This month', onPress: () => void handleExport(bounds) },
+      { text: 'Everything', onPress: () => void handleExport() },
+    ]);
+  }, [handleExport, year, month]);
+
+  // Lives in the header rather than the scroll content: it is an action on the
+  // whole module, and it should not scroll away.
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () =>
+        exporting ? (
+          <ActivityIndicator color={colors.text} />
+        ) : (
+          <Pressable onPress={askExportRange} hitSlop={10} accessibilityLabel="Export as CSV">
+            <Ionicons name="share-outline" size={20} color={colors.text} />
+          </Pressable>
+        ),
+    });
+  }, [navigation, askExportRange, exporting, colors.text]);
 
   useFocusEffect(
     // reload keeps one identity for the life of the screen and always calls
@@ -79,6 +145,7 @@ export function FinanceListScreen() {
             <MonthSummary
               year={year}
               month={month}
+              balanceMinor={balanceMinor}
               spentMinor={summary.spentMinor}
               earnedMinor={summary.earnedMinor}
               netMinor={summary.netMinor}
@@ -86,6 +153,7 @@ export function FinanceListScreen() {
               isCurrentMonth={isCurrentMonth}
               onStepMonth={stepMonth}
             />
+            <TrendChart months={trendMonths} />
             {hasData ? <Text style={styles.sectionLabel}>Transactions</Text> : null}
           </FadeInView>
         }

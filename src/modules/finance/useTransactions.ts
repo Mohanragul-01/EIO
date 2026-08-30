@@ -15,8 +15,9 @@ import { useStableCallback } from '../../core/useStableCallback';
 
 import { categoryDef } from '../../core/categories';
 import { sumMinor } from '../../core/money';
+import { monthlyTotals, runningBalance, type MonthTotal } from './analytics';
 import * as api from './api';
-import type { Transaction } from './types';
+import type { LedgerPoint, Transaction } from './types';
 
 export type CategoryTotal = {
   key: string;
@@ -38,6 +39,9 @@ export function useTransactions() {
   const [month, setMonth] = useState(now.getMonth() + 1); // getMonth() is 0-based
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  // Every transaction ever, in three columns. Feeds the running balance and
+  // the trend, neither of which is scoped to the selected month.
+  const [ledger, setLedger] = useState<LedgerPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,8 +60,16 @@ export function useTransactions() {
       setError(null);
 
       try {
-        const rows = await api.listTransactions(year, month);
-        if (mounted.current) setTransactions(rows);
+        // In parallel: the month view and the all-time figures are independent
+        // queries, and running them in series would double the wait.
+        const [rows, points] = await Promise.all([
+          api.listTransactions(year, month),
+          api.listLedgerPoints(),
+        ]);
+        if (mounted.current) {
+          setTransactions(rows);
+          setLedger(points);
+        }
       } catch (e) {
         if (mounted.current) setError(e instanceof Error ? e.message : 'Something went wrong');
       } finally {
@@ -132,6 +144,14 @@ export function useTransactions() {
     };
   }, [transactions]);
 
+  /**
+   * The all-time figures. Separate useMemo from the month summary because they
+   * depend on a different query: recomputing the trend every time you step a
+   * month would be wasted work, since the ledger has not changed.
+   */
+  const balanceMinor = useMemo(() => runningBalance(ledger), [ledger]);
+  const trendMonths = useMemo<MonthTotal[]>(() => monthlyTotals(ledger, 6), [ledger]);
+
   const remove = useCallback(
     async (transaction: Transaction) => {
       const snapshot = transactions;
@@ -159,6 +179,9 @@ export function useTransactions() {
   return {
     transactions,
     summary,
+    /** Income minus expense across every transaction, not just this month. */
+    balanceMinor,
+    trendMonths,
     year,
     month,
     stepMonth,

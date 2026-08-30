@@ -10,7 +10,7 @@
 import { monthBounds } from '../../core/date';
 import { supabase } from '../../core/supabase';
 import { getOwnerId } from '../../core/session';
-import type { Transaction, TransactionInput } from './types';
+import type { LedgerPoint, Transaction, TransactionInput } from './types';
 
 const TABLE = 'transactions';
 
@@ -36,6 +36,58 @@ export async function listTransactions(year: number, month: number): Promise<Tra
     // Tie-breaker: several transactions on one day should show newest-entered
     // first, otherwise their order shuffles between refreshes.
     .order('created_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+/**
+ * Every transaction ever, reduced to the three fields the figures need.
+ *
+ * The running balance and the monthly trend are both derived from this one
+ * fetch rather than from two aggregate queries. Two reasons:
+ *
+ * PostgREST aggregates (`amount_minor.sum()`) would push the work to Postgres,
+ * which is the textbook answer, but they depend on a server setting that can be
+ * off, and a silently-empty aggregate is worse than a slightly larger payload.
+ *
+ * And the numbers are integer paise, so summing them in JavaScript is exact.
+ * This is only true because of that: summing rupees as floats would drift.
+ *
+ * The cost is fetching every row. Three small columns and no notes keeps that
+ * cheap, and at personal scale (thousands of rows, not millions) it is not
+ * measurable. If it ever is, this is the one function to replace with an RPC.
+ */
+export async function listLedgerPoints(): Promise<LedgerPoint[]> {
+  const ownerId = await getOwnerId();
+
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select('date, kind, amount_minor')
+    .eq('user_id', ownerId)
+    .order('date', { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+/**
+ * Full rows for CSV export, optionally within a date range.
+ *
+ * Separate from listLedgerPoints because the export needs the note and the
+ * category, which the figures do not, and the figures need every row, which
+ * the export may not.
+ */
+export async function listForExport(range?: {
+  start: string;
+  end: string;
+}): Promise<Transaction[]> {
+  const ownerId = await getOwnerId();
+
+  let query = supabase.from(TABLE).select('*').eq('user_id', ownerId);
+  if (range) query = query.gte('date', range.start).lte('date', range.end);
+
+  const { data, error } = await query.order('date', { ascending: true });
 
   if (error) throw new Error(error.message);
   return data ?? [];
