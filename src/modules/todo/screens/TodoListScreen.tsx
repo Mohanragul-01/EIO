@@ -24,13 +24,12 @@ import {
   View,
 } from 'react-native';
 
-import { Button, EmptyState, FadeInView, GlassCard, Screen } from '../../../core/components';
+import { Button, EmptyState, FadeInView, GlassCard, Screen, Tabs } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { motion, radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
-import { FrequencyTabs } from '../components/FrequencyTabs';
 import { TaskRow } from '../components/TaskRow';
-import { FREQUENCY_LABEL, type Frequency } from '../types';
+import { FREQUENCIES, FREQUENCY_LABEL, type Frequency } from '../types';
 import { useTodos } from '../useTodos';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'TodoList'>;
@@ -58,7 +57,12 @@ export function TodoListScreen() {
   return (
     <Screen padded={false}>
       <View style={styles.tabsWrap}>
-        <FrequencyTabs value={frequency} onChange={setFrequency} />
+        <Tabs
+          options={FREQUENCIES}
+          value={frequency}
+          onChange={setFrequency}
+          renderLabel={(f) => FREQUENCY_LABEL[f]}
+        />
       </View>
 
       {loading ? (

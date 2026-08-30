@@ -20,9 +20,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStableCallback } from '../../core/useStableCallback';
 
 import * as api from './api';
-import type { Note } from './types';
+import { readChecklistItems, type Note } from './types';
 
-export function useNotes() {
+/** Which of the three views the list is showing. */
+export type NotesView = 'notes' | 'inbox' | 'journal';
+
+const LOADERS: Record<NotesView, () => Promise<Note[]>> = {
+  notes: api.listNotes,
+  inbox: api.listInbox,
+  journal: api.listJournal,
+};
+
+export function useNotes(view: NotesView = 'notes') {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -45,7 +54,7 @@ export function useNotes() {
     setError(null);
 
     try {
-      const rows = await api.listNotes();
+      const rows = await LOADERS[view]();
       if (mounted.current) setNotes(rows);
     } catch (e) {
       if (mounted.current) setError(e instanceof Error ? e.message : 'Something went wrong');
@@ -55,9 +64,11 @@ export function useNotes() {
         setRefreshing(false);
       }
     }
-  }, []);
+    // Depends on the view, so switching tabs rebuilds the loader and refetches.
+  }, [view]);
 
   useEffect(() => {
+    setLoading(true);
     load();
   }, [load]);
 
@@ -81,11 +92,16 @@ export function useNotes() {
       if (activeTag && !note.tags.includes(activeTag)) return false;
       if (!needle) return true;
 
-      // Search title, body and tags - people remember notes by any of the three.
+      // Title, body, tags, and checklist lines. A checklist keeps its content
+      // in checklist_items rather than body, so searching body alone would make
+      // every checklist unfindable by what is actually written in it.
       return (
         note.title.toLowerCase().includes(needle) ||
         note.body.toLowerCase().includes(needle) ||
-        note.tags.some((tag) => tag.includes(needle))
+        note.tags.some((tag) => tag.includes(needle)) ||
+        readChecklistItems(note.checklist_items).some((item) =>
+          item.text.toLowerCase().includes(needle),
+        )
       );
     });
   }, [notes, query, activeTag]);

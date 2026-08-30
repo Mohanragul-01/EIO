@@ -28,8 +28,13 @@ export type RootStackParamList = {
    */
   TodoEdit: { id?: string; frequency?: 'daily' | 'weekly' | 'monthly' | 'yearly' };
   NotesList: undefined;
-  /** Same create-or-edit pattern as TodoEdit. */
-  NoteEdit: { id?: string };
+  /**
+   * Same create-or-edit pattern as TodoEdit, plus:
+   *   `type`  which kind of note to create (note, checklist, journal)
+   *   `quick` quick capture: straight into the body, nothing else required
+   * Both are ignored when editing, since the row already knows what it is.
+   */
+  NoteEdit: { id?: string; type?: 'note' | 'checklist' | 'journal'; quick?: boolean };
   FinanceList: undefined;
   TransactionEdit: { id?: string };
 

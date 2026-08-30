@@ -39,9 +39,14 @@ async function todoSummary(): Promise<string> {
 }
 
 async function notesSummary(): Promise<string> {
-  const notes = await notesApi.listNotes();
-  if (notes.length === 0) return 'Nothing yet';
-  return `${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`;
+  // Counts every kind, including journal entries. listNotes deliberately
+  // excludes journals for the list view, so counting it would under-report.
+  const { total, inbox } = await notesApi.notesOverview();
+  if (total === 0) return 'Nothing yet';
+
+  // An unfiled backlog is something to act on, so it wins the line.
+  if (inbox > 0) return `${inbox} to file, ${total} total`;
+  return `${total} ${total === 1 ? 'note' : 'notes'}`;
 }
 
 async function financeSummary(): Promise<string> {

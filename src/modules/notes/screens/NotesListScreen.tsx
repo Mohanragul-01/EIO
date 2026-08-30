@@ -1,19 +1,20 @@
 /**
- * NotesListScreen - list, search and tag-filter.
+ * NotesListScreen - Notes, Inbox and Journal over one table.
  *
- * Same three-part screen pattern as the Tasks list:
- *   1. call the module hook
- *   2. render one of loading / empty / list
- *   3. reload on focus
+ * Three views rather than three screens, because they are three questions about
+ * the same rows: what have I written, what have I not filed yet, and what did I
+ * write about each day. Only the Journal renders differently, and only because
+ * it groups by the day an entry is about.
  *
- * The addition here is distinguishing "you have no notes" from "no notes match
- * your search". Showing "Nothing here yet" to someone who just mistyped a
- * search term is a small but genuinely confusing bug.
+ * Quick capture sits beside the main add button rather than replacing it. The
+ * two are genuinely different intentions: one is "get this down now", the other
+ * is "write something properly", and collapsing them would make the fast path
+ * slower for no gain.
  */
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -25,19 +26,30 @@ import {
   View,
 } from 'react-native';
 
-import { Button, EmptyState, FadeInView, GlassCard, Screen } from '../../../core/components';
+import { Button, EmptyState, FadeInView, GlassCard, Screen, Tabs } from '../../../core/components';
+import { makeStyles, useTheme } from '../../../core/ThemeContext';
+import { formatEventDate } from '../../../core/date';
 import { fonts, motion, radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import { NoteCard } from '../components/NoteCard';
-import { useNotes } from '../useNotes';
-import { makeStyles, useTheme } from '../../../core/ThemeContext';
+import type { Note } from '../types';
+import { useNotes, type NotesView } from '../useNotes';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'NotesList'>;
+
+const VIEWS: NotesView[] = ['notes', 'inbox', 'journal'];
+const VIEW_LABEL: Record<NotesView, string> = {
+  notes: 'Notes',
+  inbox: 'Inbox',
+  journal: 'Journal',
+};
 
 export function NotesListScreen() {
   const styles = useStyles();
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
+
+  const [view, setView] = useState<NotesView>('notes');
   const {
     notes,
     totalCount,
@@ -51,106 +63,196 @@ export function NotesListScreen() {
     error,
     refresh,
     reload,
-  } = useNotes();
+  } = useNotes(view);
 
   useFocusEffect(
-    // reload keeps one identity for the life of the screen and always calls
-    // the latest loader, so this can depend on it without refetching in a loop.
     useCallback(() => {
       reload();
     }, [reload]),
   );
 
-  if (loading) {
-    return (
-      <Screen>
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
-      </Screen>
-    );
-  }
+  /**
+   * Journal entries grouped by the day they are about, newest day first.
+   *
+   * Grouped here rather than in SQL: Postgres would have to return either one
+   * row per group or the rows themselves, and we need both the heading and the
+   * entries under it. The list is already sorted by entry_date from the query,
+   * so this is a single pass that only inserts headings.
+   */
+  const journalSections = useMemo(() => {
+    if (view !== 'journal') return [];
 
-  // No notes at all - a genuinely empty module.
+    const groups: { date: string; entries: Note[] }[] = [];
+    notes.forEach((note) => {
+      const date = note.entry_date ?? note.created_at.slice(0, 10);
+      const last = groups[groups.length - 1];
+      if (last && last.date === date) last.entries.push(note);
+      else groups.push({ date, entries: [note] });
+    });
+    return groups;
+  }, [notes, view]);
+
+  const isSearching = query.trim().length > 0 || !!activeTag;
+  // Nothing at all, versus nothing matching what you typed. Showing "no notes
+  // yet" to someone who mistyped a search is a small but real lie.
   const isEmpty = totalCount === 0;
-  // Notes exist, but the current search/tag matches none of them.
   const isFilteredEmpty = !isEmpty && notes.length === 0;
 
   return (
     <Screen padded={false}>
-      <FlatList
-        data={notes}
-        keyExtractor={(item) => item.id}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.list, isEmpty && styles.listEmpty]}
-        // Dismisses the keyboard as soon as you start scrolling the results -
-        // otherwise it covers half the list you're trying to read.
-        keyboardDismissMode="on-drag"
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={refresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-            progressBackgroundColor={colors.backgroundElevated}
-          />
-        }
-        ListHeaderComponent={
-          isEmpty ? null : (
-            <FadeInView>
-              <SearchBar value={query} onChange={setQuery} />
-              {allTags.length > 0 ? (
-                <TagFilter tags={allTags} active={activeTag} onChange={setActiveTag} />
-              ) : null}
-              {isFilteredEmpty ? null : (
-                <Text style={styles.summary}>
-                  {notes.length} {notes.length === 1 ? 'note' : 'notes'}
-                  {activeTag ? ` tagged "${activeTag}"` : ''}
-                </Text>
-              )}
-            </FadeInView>
-          )
-        }
-        ListEmptyComponent={
-          isEmpty ? (
+      <View style={styles.tabsWrap}>
+        <Tabs
+          options={VIEWS}
+          value={view}
+          onChange={(next) => {
+            setView(next);
+            // Filters belong to the view you set them in. Carrying a tag filter
+            // into the Journal would silently hide entries.
+            setQuery('');
+            setActiveTag(null);
+          }}
+          renderLabel={(v) => VIEW_LABEL[v]}
+        />
+      </View>
+
+      {loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      ) : view === 'journal' ? (
+        <FlatList
+          data={journalSections}
+          keyExtractor={(section) => section.date}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.list, isEmpty && styles.listEmpty]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={refresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+              progressBackgroundColor={colors.backgroundElevated}
+            />
+          }
+          ListEmptyComponent={
             <EmptyState
-              icon="document-text-outline"
+              icon="book-outline"
               accent={colors.accentAmber}
-              title="No notes yet"
-              message="Anything you want to keep - ideas, lists, things people told you."
+              title="No entries yet"
+              message="A journal entry is dated by the day it is about, so you can write up yesterday this morning."
               action={
                 <Button
-                  label="Write a note"
+                  label="Write an entry"
                   icon="add"
-                  onPress={() => navigation.navigate('NoteEdit', {})}
+                  onPress={() => navigation.navigate('NoteEdit', { type: 'journal' })}
                 />
               }
             />
-          ) : (
-            // The "no matches" case: different words, and a way back out.
-            <View style={styles.noMatches}>
-              <Ionicons name="search-outline" size={22} color={colors.textFaint} />
-              <Text style={styles.noMatchesText}>
-                No notes match {activeTag ? `"${activeTag}"` : `"${query.trim()}"`}
-              </Text>
-              <Pressable
-                onPress={() => {
-                  setQuery('');
-                  setActiveTag(null);
-                }}
-                hitSlop={8}
-              >
-                <Text style={styles.clearFilters}>Clear filters</Text>
-              </Pressable>
-            </View>
-          )
-        }
-        renderItem={({ item, index }) => (
-          <FadeInView delay={Math.min(index, 6) * motion.stagger}>
-            <NoteCard note={item} onPress={() => navigation.navigate('NoteEdit', { id: item.id })} />
-          </FadeInView>
-        )}
-      />
+          }
+          renderItem={({ item: section, index }) => (
+            <FadeInView delay={Math.min(index, 6) * motion.stagger}>
+              <Text style={styles.dayHeading}>{formatEventDate(section.date)}</Text>
+              {section.entries.map((note) => (
+                <NoteCard
+                  key={note.id}
+                  note={note}
+                  onPress={() => navigation.navigate('NoteEdit', { id: note.id })}
+                />
+              ))}
+            </FadeInView>
+          )}
+        />
+      ) : (
+        <FlatList
+          data={notes}
+          keyExtractor={(item) => item.id}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.list, isEmpty && styles.listEmpty]}
+          keyboardDismissMode="on-drag"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={refresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+              progressBackgroundColor={colors.backgroundElevated}
+            />
+          }
+          ListHeaderComponent={
+            isEmpty ? null : (
+              <FadeInView>
+                {/* The inbox is a short queue you work through, so it gets no
+                    search: filtering a handful of unfiled notes is busywork. */}
+                {view === 'notes' ? (
+                  <>
+                    <SearchBar value={query} onChange={setQuery} />
+                    {allTags.length > 0 ? (
+                      <TagFilter tags={allTags} active={activeTag} onChange={setActiveTag} />
+                    ) : null}
+                  </>
+                ) : (
+                  <Text style={styles.inboxHint}>
+                    Captured in a hurry. Add a title or a tag and it files itself out of here.
+                  </Text>
+                )}
+
+                {isFilteredEmpty ? null : (
+                  <Text style={styles.summary}>
+                    {notes.length} {notes.length === 1 ? 'note' : 'notes'}
+                    {activeTag ? ` tagged ${activeTag}` : ''}
+                  </Text>
+                )}
+              </FadeInView>
+            )
+          }
+          ListEmptyComponent={
+            isEmpty ? (
+              <EmptyState
+                icon={view === 'inbox' ? 'file-tray-outline' : 'document-text-outline'}
+                accent={colors.accentAmber}
+                title={view === 'inbox' ? 'Inbox is clear' : 'Nothing written yet'}
+                message={
+                  view === 'inbox'
+                    ? 'Anything you capture without a title or tag waits here until you file it.'
+                    : 'Notes, checklists and anything you want to keep.'
+                }
+                action={
+                  view === 'inbox' ? undefined : (
+                    <Button
+                      label="Write a note"
+                      icon="add"
+                      onPress={() => navigation.navigate('NoteEdit', {})}
+                    />
+                  )
+                }
+              />
+            ) : (
+              <View style={styles.noMatches}>
+                <Ionicons name="search-outline" size={22} color={colors.textFaint} />
+                <Text style={styles.noMatchesText}>
+                  Nothing matches {activeTag ? activeTag : query.trim()}
+                </Text>
+                {isSearching ? (
+                  <Pressable
+                    onPress={() => {
+                      setQuery('');
+                      setActiveTag(null);
+                    }}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.clearFilters}>Clear filters</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            )
+          }
+          renderItem={({ item, index }) => (
+            <FadeInView delay={Math.min(index, 6) * motion.stagger}>
+              <NoteCard note={item} onPress={() => navigation.navigate('NoteEdit', { id: item.id })} />
+            </FadeInView>
+          )}
+        />
+      )}
 
       {error ? (
         <FadeInView style={styles.errorWrap}>
@@ -165,13 +267,28 @@ export function NotesListScreen() {
         </FadeInView>
       ) : null}
 
+      {/* Two buttons, because they are two intentions. The small one captures a
+          thought immediately; the large one opens the full form. */}
       {!isEmpty ? (
         <FadeInView style={styles.fabWrap} delay={120}>
+          {view !== 'journal' ? (
+            <Pressable
+              onPress={() => navigation.navigate('NoteEdit', { quick: true })}
+              style={({ pressed }) => [styles.quickFab, pressed && styles.fabPressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Quick capture"
+            >
+              <Ionicons name="flash-outline" size={19} color={colors.primary} />
+            </Pressable>
+          ) : null}
+
           <Pressable
-            onPress={() => navigation.navigate('NoteEdit', {})}
+            onPress={() =>
+              navigation.navigate('NoteEdit', view === 'journal' ? { type: 'journal' } : {})
+            }
             style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
             accessibilityRole="button"
-            accessibilityLabel="Write a note"
+            accessibilityLabel={view === 'journal' ? 'Write an entry' : 'Write a note'}
           >
             <Ionicons name="add" size={26} color={colors.onPrimary} />
           </Pressable>
@@ -184,6 +301,7 @@ export function NotesListScreen() {
 function SearchBar({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const styles = useStyles();
   const { colors } = useTheme();
+
   return (
     <View style={styles.search}>
       <Ionicons name="search" size={16} color={colors.textMuted} />
@@ -196,7 +314,6 @@ function SearchBar({ value, onChange }: { value: string; onChange: (v: string) =
         style={styles.searchInput}
         autoCapitalize="none"
         autoCorrect={false}
-        // Shows an X inside the field on iOS; Android gets the button below.
         clearButtonMode="while-editing"
         returnKeyType="search"
       />
@@ -219,9 +336,10 @@ function TagFilter({
   onChange: (tag: string | null) => void;
 }) {
   const styles = useStyles();
+
   return (
-    // Horizontal ScrollView: tag lists grow unpredictably and wrapping them
-    // would push the actual notes off-screen.
+    // Horizontal scroll: tag lists grow unpredictably, and wrapping them would
+    // push the notes themselves off the screen.
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
@@ -233,7 +351,7 @@ function TagFilter({
         return (
           <Pressable
             key={tag}
-            // Tapping the active tag clears it - no separate "all" chip needed.
+            // Tapping the active tag clears it, so no separate "all" chip.
             onPress={() => onChange(selected ? null : tag)}
             style={({ pressed }) => [
               styles.tagChip,
@@ -250,6 +368,10 @@ function TagFilter({
 }
 
 const useStyles = makeStyles(({ colors, typography }) => ({
+  tabsWrap: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: 96, // clears the transparent nav header
+  },
   centered: {
     flex: 1,
     alignItems: 'center',
@@ -257,12 +379,11 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   },
   list: {
     paddingHorizontal: spacing.xl,
-    paddingTop: 104, // clears the transparent nav header
+    paddingTop: spacing.xl,
     paddingBottom: 110, // clears the FAB
   },
   listEmpty: {
     flexGrow: 1,
-    paddingTop: 80,
   },
 
   search: {
@@ -285,7 +406,7 @@ const useStyles = makeStyles(({ colors, typography }) => ({
 
   tagScrollOuter: {
     // Negative margin lets the chips bleed to the screen edge while the list
-    // keeps its gutter - so the row reads as scrollable rather than clipped.
+    // keeps its gutter, so the row reads as scrollable rather than clipped.
     marginHorizontal: -spacing.xl,
     marginTop: spacing.lg,
   },
@@ -322,6 +443,15 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     marginTop: spacing.xl,
     marginBottom: spacing.lg,
   },
+  inboxHint: {
+    ...typography.caption,
+    marginBottom: spacing.sm,
+  },
+  dayHeading: {
+    ...typography.overline,
+    marginBottom: spacing.md,
+    marginTop: spacing.lg,
+  },
 
   noMatches: {
     alignItems: 'center',
@@ -343,6 +473,19 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     position: 'absolute',
     right: spacing.xl,
     bottom: spacing.xxl,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  quickFab: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.pill,
+    backgroundColor: colors.glassStrong,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   fab: {
     width: 58,

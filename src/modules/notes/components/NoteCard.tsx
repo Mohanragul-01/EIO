@@ -5,13 +5,14 @@
  * of titles alone is nearly useless for recall - the first line of content is
  * usually what you actually recognise.
  */
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { GlassCard } from '../../../core/components';
 import { radius, spacing } from '../../../core/theme';
-import type { Note } from '../types';
-import { makeStyles } from '../../../core/ThemeContext';
+import { checklistProgress, readChecklistItems, type Note } from '../types';
+import { makeStyles, useTheme } from '../../../core/ThemeContext';
 
 type NoteCardProps = {
   note: Note;
@@ -20,18 +21,46 @@ type NoteCardProps = {
 
 export function NoteCard({ note, onPress }: NoteCardProps) {
   const styles = useStyles();
+  const { colors } = useTheme();
+
+  const isChecklist = note.note_type === 'checklist';
+  const items = isChecklist ? readChecklistItems(note.checklist_items) : [];
+  const { done, total } = checklistProgress(items);
+
   // Collapse newlines so a multi-line body doesn't blow out the preview
   // height - numberOfLines caps the render, but a body starting with blank
   // lines would otherwise show as empty.
-  const preview = note.body.replace(/\s+/g, ' ').trim();
+  //
+  // A checklist keeps its content in checklist_items, not body, so its preview
+  // is built from the first unticked lines: what is still to do is the useful
+  // thing to see from the outside.
+  const preview = isChecklist
+    ? items
+        .filter((item) => !item.done)
+        .map((item) => item.text)
+        .join(', ')
+    : note.body.replace(/\s+/g, ' ').trim();
 
   return (
     <GlassCard onPress={onPress} style={styles.card}>
-      <Text style={styles.title} numberOfLines={1}>
-        {note.title}
-      </Text>
+      <View style={styles.titleRow}>
+        {isChecklist ? (
+          <Ionicons name="checkbox-outline" size={14} color={colors.textMuted} />
+        ) : null}
+        <Text style={styles.title} numberOfLines={1}>
+          {/* Quick captures have no title, so the card falls back to the body
+              rather than rendering a blank line where the title would be. */}
+          {note.title || preview || 'Untitled'}
+        </Text>
+      </View>
 
-      {preview ? (
+      {isChecklist && total > 0 ? (
+        <Text style={styles.progress}>
+          {done === total ? 'All done' : `${done} of ${total} done`}
+        </Text>
+      ) : null}
+
+      {preview && note.title ? (
         <Text style={styles.preview} numberOfLines={2}>
           {preview}
         </Text>
@@ -86,9 +115,20 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   card: {
     marginBottom: spacing.md,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   title: {
     ...typography.title,
     fontSize: 15,
+    flexShrink: 1,
+  },
+  progress: {
+    ...typography.caption,
+    fontSize: 11.5,
+    marginTop: 3,
   },
   preview: {
     ...typography.caption,

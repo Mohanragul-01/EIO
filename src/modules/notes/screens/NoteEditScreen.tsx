@@ -1,20 +1,25 @@
 /**
- * NoteEditScreen - one screen for both writing and editing a note.
+ * NoteEditScreen - one screen for writing, checklists and journal entries.
  *
- * Same create-or-edit-by-param pattern as TodoEditScreen:
- *   navigate('NoteEdit', {})            -> new note
- *   navigate('NoteEdit', { id: '...' })   -> edit
+ * Same create-or-edit-by-param pattern as the other modules:
+ *   navigate('NoteEdit', {})                    -> new note
+ *   navigate('NoteEdit', { quick: true })       -> quick capture
+ *   navigate('NoteEdit', { type: 'checklist' }) -> new checklist
+ *   navigate('NoteEdit', { id })                -> edit
  *
- * One thing here that the Todo form didn't need: an UNSAVED-CHANGES GUARD.
- * A note is something you spend minutes typing, so silently discarding it on a
- * back-swipe would be genuinely bad. A task title isn't worth the same
- * ceremony. Matching the friction to what's at stake is a judgement call worth
- * making per screen rather than applying one rule everywhere.
+ * One screen for three types rather than three screens, because they differ in
+ * exactly one region: what sits where the body goes. Title, tags, saving,
+ * deleting and the unsaved-changes guard are identical, and three copies of
+ * that would drift apart.
+ *
+ * QUICK CAPTURE is why the title is no longer required. The point is to get a
+ * thought down before it evaporates, so anything that must be filled in first
+ * defeats it. A note saved with neither title nor tags lands in the inbox.
  */
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -25,45 +30,74 @@ import {
   View,
 } from 'react-native';
 
-import { Button, FadeInView, GlassCard, Screen, TextField } from '../../../core/components';
+import {
+  Button,
+  DateField,
+  FadeInView,
+  GlassCard,
+  Screen,
+  SegmentedControl,
+  TextField,
+} from '../../../core/components';
+import { makeStyles, useTheme } from '../../../core/ThemeContext';
+import { todayISO } from '../../../core/date';
 import { spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
-import { formatTags, parseTags } from '../types';
-import { makeStyles, useTheme } from '../../../core/ThemeContext';
+import { ChecklistEditor } from '../components/ChecklistEditor';
+import {
+  NOTE_TYPE_LABEL,
+  belongsInInbox,
+  formatTags,
+  parseTags,
+  readChecklistItems,
+  type ChecklistItem,
+  type NoteType,
+} from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'NoteEdit'>;
 type Route = RouteProp<RootStackParamList, 'NoteEdit'>;
+
+const TYPES: NoteType[] = ['note', 'checklist', 'journal'];
 
 export function NoteEditScreen() {
   const styles = useStyles();
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
+
   const editingId = route.params?.id;
   const isEditing = !!editingId;
+  const isQuickCapture = !!route.params?.quick;
 
+  const [noteType, setNoteType] = useState<NoteType>(route.params?.type ?? 'note');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [tagsText, setTagsText] = useState('');
+  const [items, setItems] = useState<ChecklistItem[]>([]);
+  // Journals default to today and can be backdated: writing up last night this
+  // morning is the normal case, not the exception.
+  const [entryDate, setEntryDate] = useState<string | null>(todayISO());
 
-  const [titleError, setTitleError] = useState<string | null>(null);
+  const [contentError, setContentError] = useState<string | null>(null);
   const [loading, setLoading] = useState(isEditing);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   /**
-   * A snapshot of what was loaded, so we can tell whether anything actually
-   * changed. A ref, not state: comparing against it must never itself cause a
-   * re-render.
+   * Snapshot of what was loaded, for the unsaved-changes guard. A ref, because
+   * comparing against it must never itself cause a render.
    */
-  const original = useRef({ title: '', body: '', tagsText: '' });
-  // Set on a successful save so the guard doesn't fire on the way out.
+  const original = useRef({ title: '', body: '', tagsText: '', items: '[]' });
   const justSaved = useRef(false);
 
   useLayoutEffect(() => {
-    navigation.setOptions({ title: isEditing ? 'Edit note' : 'New note' });
-  }, [navigation, isEditing]);
+    navigation.setOptions({
+      title: isEditing
+        ? `Edit ${NOTE_TYPE_LABEL[noteType].toLowerCase()}`
+        : NOTE_TYPE_LABEL[noteType],
+    });
+  }, [navigation, isEditing, noteType]);
 
   useEffect(() => {
     if (!editingId) return;
@@ -74,10 +108,20 @@ export function NoteEditScreen() {
         const note = await api.getNote(editingId);
         if (!active) return;
         const tags = formatTags(note.tags);
+        const loadedItems = readChecklistItems(note.checklist_items);
+
+        setNoteType(note.note_type);
         setTitle(note.title);
         setBody(note.body);
         setTagsText(tags);
-        original.current = { title: note.title, body: note.body, tagsText: tags };
+        setItems(loadedItems);
+        setEntryDate(note.entry_date ?? todayISO());
+        original.current = {
+          title: note.title,
+          body: note.body,
+          tagsText: tags,
+          items: JSON.stringify(loadedItems),
+        };
       } catch (e) {
         if (active) setLoadError(e instanceof Error ? e.message : 'Could not load this note');
       } finally {
@@ -91,23 +135,21 @@ export function NoteEditScreen() {
   }, [editingId]);
 
   /**
-   * beforeRemove fires when the screen is about to leave the stack - the back
-   * arrow, the Android back button, AND the iOS swipe gesture. That's why it's
-   * the right hook for this rather than overriding the header button: it
-   * covers every exit route at once.
+   * beforeRemove covers the back arrow, the Android back button and the swipe
+   * gesture in one place, which is why it beats overriding the header button.
    */
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', (event) => {
       const dirty =
         title !== original.current.title ||
         body !== original.current.body ||
-        tagsText !== original.current.tagsText;
+        tagsText !== original.current.tagsText ||
+        JSON.stringify(items) !== original.current.items;
 
       if (!dirty || justSaved.current) return;
 
-      // Stop the navigation, then re-issue it only if the user confirms.
       event.preventDefault();
-      Alert.alert('Discard note?', 'Your changes will be lost.', [
+      Alert.alert('Discard this?', 'Your changes will be lost.', [
         { text: 'Keep editing', style: 'cancel' },
         {
           text: 'Discard',
@@ -118,19 +160,45 @@ export function NoteEditScreen() {
     });
 
     return unsubscribe;
-  }, [navigation, title, body, tagsText]);
+  }, [navigation, title, body, tagsText, items]);
+
+  /**
+   * There is no required field any more, so "is this worth saving" replaces
+   * "is the title filled in". Something entirely empty is the one case worth
+   * refusing: it would sit in the list as a blank row you cannot identify.
+   */
+  const hasContent = useMemo(() => {
+    if (title.trim() || body.trim()) return true;
+    return noteType === 'checklist' && items.some((item) => item.text.trim());
+  }, [title, body, items, noteType]);
 
   const handleSave = async () => {
-    const trimmedTitle = title.trim();
-    if (!trimmedTitle) {
-      setTitleError('Give the note a title');
+    if (!hasContent) {
+      setContentError(noteType === 'checklist' ? 'Add an item first' : 'Write something first');
       return;
     }
-    setTitleError(null);
+    setContentError(null);
     setSaving(true);
 
     try {
-      const input = { title: trimmedTitle, body: body.trim(), tags: parseTags(tagsText) };
+      const tags = parseTags(tagsText);
+      const trimmedTitle = title.trim();
+
+      const input = {
+        title: trimmedTitle,
+        body: body.trim(),
+        tags,
+        note_type: noteType,
+        // Recomputed on every save, so adding a title or a tag files the note
+        // out of the inbox without needing a separate action.
+        is_inbox: belongsInInbox({ title: trimmedTitle, tags, note_type: noteType }),
+        entry_date: noteType === 'journal' ? (entryDate ?? todayISO()) : null,
+        // Empty lines are dropped rather than stored: they are almost always a
+        // half-typed item that was abandoned.
+        checklist_items:
+          noteType === 'checklist' ? items.filter((item) => item.text.trim()) : null,
+      };
+
       if (isEditing) {
         await api.updateNote(editingId, input);
       } else {
@@ -146,7 +214,7 @@ export function NoteEditScreen() {
 
   const handleDelete = () => {
     if (!editingId) return;
-    Alert.alert('Delete note', 'This cannot be undone.', [
+    Alert.alert('Delete', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -186,6 +254,11 @@ export function NoteEditScreen() {
     );
   }
 
+  // The type picker is hidden during quick capture and when editing: mid-capture
+  // it is one more decision in the way, and after the fact switching type would
+  // strand a checklist's items.
+  const showTypePicker = !isEditing && !isQuickCapture;
+
   return (
     <Screen padded={false}>
       <KeyboardAvoidingView
@@ -199,30 +272,71 @@ export function NoteEditScreen() {
         >
           <FadeInView>
             <GlassCard>
+              {showTypePicker ? (
+                <SegmentedControl
+                  label="Type"
+                  options={TYPES}
+                  value={noteType}
+                  onChange={setNoteType}
+                  renderLabel={(t) => NOTE_TYPE_LABEL[t]}
+                />
+              ) : null}
+
+              {noteType === 'journal' ? (
+                <DateField
+                  label="Entry for"
+                  value={entryDate}
+                  onChange={setEntryDate}
+                  // 'event': a journal entry is about a day that has happened.
+                  mode="event"
+                  allowClear={false}
+                  style={showTypePicker ? styles.field : undefined}
+                />
+              ) : null}
+
               <TextField
                 label="Title"
                 value={title}
                 onChangeText={(text) => {
                   setTitle(text);
-                  if (titleError) setTitleError(null);
+                  if (contentError) setContentError(null);
                 }}
-                placeholder="What's this about?"
-                error={titleError}
-                autoFocus={!isEditing}
+                placeholder={noteType === 'journal' ? 'Optional' : 'What is this about?'}
                 maxLength={200}
                 returnKeyType="next"
+                style={showTypePicker || noteType === 'journal' ? styles.field : undefined}
               />
 
-              <TextField
-                label="Note"
-                value={body}
-                onChangeText={setBody}
-                placeholder="Write as much or as little as you like..."
-                // multiline turns this into a growing text area - see the
-                // inputMultiline style in TextField.
-                multiline
-                style={styles.field}
-              />
+              {noteType === 'checklist' ? (
+                <View style={styles.field}>
+                  <ChecklistEditor
+                    items={items}
+                    onChange={(next) => {
+                      setItems(next);
+                      if (contentError) setContentError(null);
+                    }}
+                  />
+                </View>
+              ) : (
+                <TextField
+                  label={noteType === 'journal' ? 'Entry' : 'Note'}
+                  value={body}
+                  onChangeText={(text) => {
+                    setBody(text);
+                    if (contentError) setContentError(null);
+                  }}
+                  placeholder={
+                    noteType === 'journal'
+                      ? 'How was it?'
+                      : 'Write as much or as little as you like'
+                  }
+                  multiline
+                  // Quick capture opens straight into the body: the thought is
+                  // the point, everything else can wait.
+                  autoFocus={isQuickCapture}
+                  style={styles.field}
+                />
+              )}
 
               <TextField
                 label="Tags"
@@ -234,14 +348,18 @@ export function NoteEditScreen() {
                 style={styles.field}
               />
               <Text style={styles.hint}>
-                Separate with commas. They're lowercased and de-duplicated on save.
+                {isQuickCapture
+                  ? 'Skip these and it lands in the inbox to file later.'
+                  : 'Separate with commas. Lowercased and de-duplicated on save.'}
               </Text>
+
+              {contentError ? <Text style={styles.error}>{contentError}</Text> : null}
             </GlassCard>
           </FadeInView>
 
           <FadeInView delay={80}>
             <Button
-              label={isEditing ? 'Save changes' : 'Save note'}
+              label={isEditing ? 'Save changes' : 'Save'}
               icon="checkmark"
               onPress={handleSave}
               loading={saving}
@@ -250,7 +368,7 @@ export function NoteEditScreen() {
 
             {isEditing ? (
               <Button
-                label="Delete note"
+                label="Delete"
                 icon="trash-outline"
                 variant="ghost"
                 onPress={handleDelete}
@@ -268,7 +386,7 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   flex: { flex: 1 },
   scroll: {
     paddingHorizontal: spacing.xl,
-    paddingTop: 104,
+    paddingTop: 104, // clears the transparent nav header
     paddingBottom: spacing.xxxl,
   },
   field: {
@@ -278,6 +396,11 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     ...typography.caption,
     fontSize: 11.5,
     marginTop: spacing.sm,
+  },
+  error: {
+    ...typography.caption,
+    color: colors.danger,
+    marginTop: spacing.md,
   },
   save: {
     marginTop: spacing.xxl,
