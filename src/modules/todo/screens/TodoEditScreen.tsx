@@ -24,6 +24,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   Text,
   View,
@@ -38,10 +39,18 @@ import {
   SegmentedControl,
   TextField,
 } from '../../../core/components';
-import { spacing } from '../../../core/theme';
+import { radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
-import { PRIORITIES, PRIORITY_LABEL, priorityColor, type Priority } from '../types';
+import {
+  FREQUENCIES,
+  FREQUENCY_LABEL,
+  PRIORITIES,
+  PRIORITY_LABEL,
+  priorityColor,
+  type Frequency,
+  type Priority,
+} from '../types';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'TodoEdit'>;
@@ -62,6 +71,10 @@ export function TodoEditScreen() {
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState<string | null>(null);
   const [priority, setPriority] = useState<Priority>('normal');
+  // Pre-selected from the tab you added from; 'daily' only when opened without
+  // one, which does not happen from the list screen.
+  const [frequency, setFrequency] = useState<Frequency>(route.params?.frequency ?? 'daily');
+  const [isRepeat, setIsRepeat] = useState(false);
 
   const [titleError, setTitleError] = useState<string | null>(null);
   const [loading, setLoading] = useState(isEditing); // only editing needs a fetch
@@ -86,6 +99,8 @@ export function TodoEditScreen() {
         setTitle(todo.title);
         setDueDate(todo.due_date);
         setPriority(todo.priority);
+        setFrequency(todo.frequency);
+        setIsRepeat(todo.is_repeat);
       } catch (e) {
         if (active) setLoadError(e instanceof Error ? e.message : 'Could not load this task');
       } finally {
@@ -109,7 +124,7 @@ export function TodoEditScreen() {
     setSaving(true);
 
     try {
-      const input = { title: trimmed, due_date: dueDate, priority };
+      const input = { title: trimmed, due_date: dueDate, priority, frequency, is_repeat: isRepeat };
       if (isEditing) {
         await api.updateTodo(editingId, input);
       } else {
@@ -204,6 +219,15 @@ export function TodoEditScreen() {
               />
 
               <SegmentedControl
+                label="Frequency"
+                options={FREQUENCIES}
+                value={frequency}
+                onChange={setFrequency}
+                renderLabel={(f) => FREQUENCY_LABEL[f]}
+                style={styles.field}
+              />
+
+              <SegmentedControl
                 label="Priority"
                 options={PRIORITIES}
                 value={priority}
@@ -212,6 +236,35 @@ export function TodoEditScreen() {
                 accentFor={(p) => priorityColor(p, colors)}
                 style={styles.field}
               />
+
+              {/* Repeating is the whole point of the frequency tabs, so it sits
+                  here rather than behind an "advanced" disclosure. */}
+              <Pressable
+                onPress={() => setIsRepeat(!isRepeat)}
+                style={[styles.toggleRow, styles.field]}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: isRepeat }}
+              >
+                <View style={styles.toggleText}>
+                  <Text style={styles.toggleTitle}>Repeat</Text>
+                  <Text style={styles.toggleCaption}>
+                    {isRepeat
+                      ? `Completing this creates the next one, one ${
+                          frequency === 'daily'
+                            ? 'day'
+                            : frequency === 'weekly'
+                              ? 'week'
+                              : frequency === 'monthly'
+                                ? 'month'
+                                : 'year'
+                        } on from its due date`
+                      : 'Completing this finishes it for good'}
+                  </Text>
+                </View>
+                <View style={[styles.switch, isRepeat && styles.switchOn]}>
+                  <View style={[styles.knob, isRepeat && styles.knobOn]} />
+                </View>
+              </Pressable>
             </GlassCard>
           </FadeInView>
 
@@ -251,6 +304,48 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   },
   field: {
     marginTop: spacing.xxl,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  toggleText: {
+    flex: 1,
+    paddingRight: spacing.lg,
+  },
+  toggleTitle: {
+    ...typography.title,
+    fontSize: 14,
+  },
+  toggleCaption: {
+    ...typography.caption,
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  switch: {
+    width: 46,
+    height: 27,
+    borderRadius: radius.pill,
+    backgroundColor: colors.glass,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  switchOn: {
+    backgroundColor: colors.primary + '4D',
+    borderColor: colors.primary + '99',
+  },
+  knob: {
+    width: 19,
+    height: 19,
+    borderRadius: radius.pill,
+    backgroundColor: colors.textMuted,
+  },
+  knobOn: {
+    backgroundColor: colors.primary,
+    // 46px track, 3px padding, 19px knob leaves exactly 19px of travel.
+    transform: [{ translateX: 19 }],
   },
   save: {
     marginTop: spacing.xxl,

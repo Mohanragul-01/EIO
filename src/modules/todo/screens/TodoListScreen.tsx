@@ -1,17 +1,20 @@
 /**
- * TodoListScreen - the module's home: list of tasks, plus a way to add one.
+ * TodoListScreen - four frequency tabs over one list of open tasks.
  *
- *  THE SCREEN PATTERN (copied by every later module)
- *   1. call the module's hook for data + state
- *   2. render exactly one of: loading / error / empty / list
+ *  THE SCREEN PATTERN (shared by every module)
+ *   1. call the module's hook for data and state
+ *   2. render exactly one of: loading / empty / list
  *   3. refetch when the screen regains focus
- * Notice the screen contains no Supabase code at all - it never imports the
- * client. That's the separation working.
+ * The screen contains no Supabase code at all: it never imports the client.
+ *
+ * The tab lives in this screen's state rather than in navigation, because it
+ * is a filter over one list, not a destination. Switching tabs rebuilds the
+ * hook's loader and refetches, which is why useTodos takes the frequency.
  */
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -22,11 +25,13 @@ import {
 } from 'react-native';
 
 import { Button, EmptyState, FadeInView, GlassCard, Screen } from '../../../core/components';
-import { motion, radius, spacing } from '../../../core/theme';
-import { TaskRow } from '../components/TaskRow';
-import type { RootStackParamList } from '../../../navigation/types';
-import { useTodos } from '../useTodos';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
+import { motion, radius, spacing } from '../../../core/theme';
+import type { RootStackParamList } from '../../../navigation/types';
+import { FrequencyTabs } from '../components/FrequencyTabs';
+import { TaskRow } from '../components/TaskRow';
+import { FREQUENCY_LABEL, type Frequency } from '../types';
+import { useTodos } from '../useTodos';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'TodoList'>;
 
@@ -34,99 +39,91 @@ export function TodoListScreen() {
   const styles = useStyles();
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
-  const { todos, loading, refreshing, error, refresh, reload, toggleDone } = useTodos();
+
+  const [frequency, setFrequency] = useState<Frequency>('daily');
+  const { todos, loading, refreshing, error, refresh, reload, complete } = useTodos(frequency);
 
   /**
-   * useFocusEffect runs when the screen comes back into view - including when
-   * you pop back from the edit screen after saving. A plain useEffect would
-   * only run on first mount, so a newly-added task wouldn't appear until you
-   * left the module entirely. This is the standard way to keep a list fresh.
+   * useFocusEffect, not useEffect: this also runs when you pop back from the
+   * edit screen, so a task you just added appears immediately. reload keeps one
+   * identity for the life of the screen and always calls the latest loader, so
+   * depending on it does not refetch in a loop.
    */
   useFocusEffect(
-    // reload keeps one identity for the life of the screen and always calls
-    // the latest loader, so this can depend on it without refetching in a loop.
     useCallback(() => {
       reload(); // silent: no pull-to-refresh spinner on every return
     }, [reload]),
   );
 
-  // Derived counts for the header. useMemo so we don't recount on every
-  // unrelated re-render.
-  const { openCount, doneCount } = useMemo(
-    () => ({
-      openCount: todos.filter((t) => !t.is_done).length,
-      doneCount: todos.filter((t) => t.is_done).length,
-    }),
-    [todos],
-  );
+  return (
+    <Screen padded={false}>
+      <View style={styles.tabsWrap}>
+        <FrequencyTabs value={frequency} onChange={setFrequency} />
+      </View>
 
-  if (loading) {
-    return (
-      <Screen>
+      {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={colors.primary} />
         </View>
-      </Screen>
-    );
-  }
-
-  return (
-    <Screen padded={false}>
-      <FlatList
-        data={todos}
-        keyExtractor={(item) => item.id}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.list, todos.length === 0 && styles.listEmpty]}
-        // Pull-to-refresh. Free once the hook exposes `refreshing` + `refresh`.
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={refresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-            progressBackgroundColor={colors.backgroundElevated}
-          />
-        }
-        ListHeaderComponent={
-          todos.length > 0 ? (
-            <FadeInView>
-              <Text style={styles.summary}>
-                {openCount === 0
-                  ? 'All clear'
-                  : `${openCount} open ${openCount === 1 ? 'task' : 'tasks'}`}
-                {doneCount > 0 ? `  ·  ${doneCount} done` : ''}
-              </Text>
-            </FadeInView>
-          ) : null
-        }
-        ListEmptyComponent={
-          <EmptyState
-            icon="checkmark-done-outline"
-            accent={colors.accentIndigo}
-            title="Nothing on the list"
-            message="Add your first task and it'll sync to Supabase straight away."
-            action={
-              <Button
-                label="Add a task"
-                icon="add"
-                onPress={() => navigation.navigate('TodoEdit', {})}
-              />
-            }
-          />
-        }
-        renderItem={({ item, index }) => (
-          <FadeInView delay={Math.min(index, 6) * motion.stagger}>
-            <TaskRow
-              todo={item}
-              onToggle={() => toggleDone(item)}
-              onPress={() => navigation.navigate('TodoEdit', { id: item.id })}
+      ) : (
+        <FlatList
+          data={todos}
+          keyExtractor={(item) => item.id}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.list, todos.length === 0 && styles.listEmpty]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={refresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+              progressBackgroundColor={colors.backgroundElevated}
             />
-          </FadeInView>
-        )}
-      />
+          }
+          ListHeaderComponent={
+            todos.length > 0 ? (
+              <FadeInView>
+                <Text style={styles.summary}>
+                  {todos.length} open {todos.length === 1 ? 'task' : 'tasks'}
+                </Text>
+              </FadeInView>
+            ) : null
+          }
+          ListEmptyComponent={
+            <EmptyState
+              icon="checkmark-done-outline"
+              accent={colors.accentIndigo}
+              title={`Nothing ${FREQUENCY_LABEL[frequency].toLowerCase()}`}
+              message={
+                frequency === 'daily'
+                  ? 'Daily tasks you add here reset by repeating, not by being wiped.'
+                  : `Add a ${FREQUENCY_LABEL[frequency].toLowerCase()} task and it will show up here.`
+              }
+              action={
+                <Button
+                  label="Add a task"
+                  icon="add"
+                  // Pre-select the tab you are looking at: adding a weekly task
+                  // from the Weekly tab should not need the picker touched.
+                  onPress={() => navigation.navigate('TodoEdit', { frequency })}
+                />
+              }
+            />
+          }
+          renderItem={({ item, index }) => (
+            <FadeInView delay={Math.min(index, 6) * motion.stagger}>
+              <TaskRow
+                todo={item}
+                onToggle={() => complete(item)}
+                onPress={() => navigation.navigate('TodoEdit', { id: item.id })}
+              />
+            </FadeInView>
+          )}
+        />
+      )}
 
-      {/* Errors surface as a dismissible banner rather than an alert: a failed
-          background refresh shouldn't interrupt what you're doing. */}
+      {/* A failed background refresh should not interrupt what you are doing,
+          so errors surface as a banner rather than an alert. */}
       {error ? (
         <FadeInView style={styles.errorWrap}>
           <GlassCard style={styles.errorCard}>
@@ -140,31 +137,28 @@ export function TodoListScreen() {
         </FadeInView>
       ) : null}
 
-      {/* Floating action button - the primary action, always reachable with a
-          thumb regardless of scroll position. */}
-      {todos.length > 0 ? <AddButton onPress={() => navigation.navigate('TodoEdit', {})} /> : null}
+      {todos.length > 0 ? (
+        <FadeInView style={styles.fabWrap} delay={120}>
+          <Pressable
+            onPress={() => navigation.navigate('TodoEdit', { frequency })}
+            style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Add a task"
+          >
+            <Ionicons name="add" size={26} color={colors.onPrimary} />
+          </Pressable>
+        </FadeInView>
+      ) : null}
     </Screen>
   );
 }
 
-function AddButton({ onPress }: { onPress: () => void }) {
-  const styles = useStyles();
-  const { colors } = useTheme();
-  return (
-    <FadeInView style={styles.fabWrap} delay={120}>
-      <Pressable
-        onPress={onPress}
-        style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
-        accessibilityRole="button"
-        accessibilityLabel="Add a task"
-      >
-        <Ionicons name="add" size={26} color={colors.onPrimary} />
-      </Pressable>
-    </FadeInView>
-  );
-}
-
 const useStyles = makeStyles(({ colors, typography }) => ({
+  tabsWrap: {
+    paddingHorizontal: spacing.xl,
+    // Clears the transparent nav header, which the list used to do itself.
+    paddingTop: 96,
+  },
   centered: {
     flex: 1,
     alignItems: 'center',
@@ -172,13 +166,11 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   },
   list: {
     paddingHorizontal: spacing.xl,
-    // Top padding clears the transparent nav header; bottom clears the FAB.
-    paddingTop: 104,
-    paddingBottom: 110,
+    paddingTop: spacing.xl,
+    paddingBottom: 110, // clears the FAB
   },
   listEmpty: {
-    flexGrow: 1, // lets the empty state centre itself in the viewport
-    paddingTop: 80,
+    flexGrow: 1, // lets the empty state centre itself in what is left
   },
   summary: {
     ...typography.overline,

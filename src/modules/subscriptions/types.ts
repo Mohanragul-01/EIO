@@ -1,6 +1,7 @@
 /**
  * types.ts - shapes and cycle maths for the Subscriptions module.
  */
+import { addInterval } from '../../core/date';
 
 export type BillingCycle = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 
@@ -71,29 +72,17 @@ export function toMonthlyMinor(amountMinor: number, cycle: BillingCycle): number
   return Math.round(amountMinor * MONTHLY_FACTOR[cycle]);
 }
 
-/** Days to add for one cycle - used when rolling a renewal forward. */
+/**
+ * Roll a due date forward by one billing cycle.
+ *
+ * The arithmetic moved to core/date.ts once Todo needed the same thing for
+ * repeating tasks. This stays as a thin wrapper because BillingCycle is this
+ * module's vocabulary, and core should not know what a billing cycle is.
+ *
+ * One behaviour change came with the move: month-end now clamps rather than
+ * overflows. A bill due on the 31st used to advance to 2 or 3 March, skipping
+ * February entirely; it now lands on the 28th.
+ */
 export function advanceDueDate(iso: string, cycle: BillingCycle): string {
-  const [year, month, day] = iso.split('-').map(Number);
-  const date = new Date(year, month - 1, day);
-
-  switch (cycle) {
-    case 'weekly':
-      date.setDate(date.getDate() + 7);
-      break;
-    case 'monthly':
-      date.setMonth(date.getMonth() + 1);
-      break;
-    case 'quarterly':
-      date.setMonth(date.getMonth() + 3);
-      break;
-    case 'yearly':
-      date.setFullYear(date.getFullYear() + 1);
-      break;
-  }
-
-  // setMonth overflows sensibly: 31 Jan + 1 month lands on 2 or 3 March rather
-  // than an invalid 31 February. Not ideal for billing, but predictable - and
-  // the user can always correct the date by hand.
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return addInterval(iso, cycle);
 }

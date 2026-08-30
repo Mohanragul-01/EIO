@@ -129,3 +129,50 @@ export function monthBounds(year: number, month: number): { start: string; end: 
     end: `${year}-${pad(month)}-${pad(lastDay)}`,
   };
 }
+
+/** Units any recurring thing in the app can repeat on. */
+export type IntervalUnit = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+
+/**
+ * Advance a calendar date by exactly one interval.
+ *
+ * Lives in core because two modules need it: Subscriptions advances a billing
+ * date, Todo advances a repeating task. It started inside Subscriptions and
+ * moved down here rather than across, per the sharing rule in the README.
+ *
+ * MONTH-END CLAMPING. Adding a month to 31 January is ambiguous. The naive
+ * `setMonth(getMonth() + 1)` overflows to 2 or 3 March, which skips February
+ * altogether: a monthly task due on the 31st would simply never appear in
+ * February. So the day is clamped to the last valid day of the target month
+ * instead, giving 28 February (or the 29th in a leap year).
+ *
+ * The anchor day is not remembered, so a task clamped to the 28th stays on the
+ * 28th next month rather than springing back to the 31st. Storing an anchor
+ * would fix that, at the cost of a column that exists for one edge case; the
+ * date is editable by hand, which is the cheaper answer.
+ */
+export function addInterval(iso: string, unit: IntervalUnit): string {
+  const [year, month, day] = iso.split('-').map(Number);
+
+  const monthsToAdd =
+    unit === 'monthly' ? 1 : unit === 'quarterly' ? 3 : unit === 'yearly' ? 12 : 0;
+
+  if (monthsToAdd === 0) {
+    // Day-based units need no clamping: every month has a 1st through 28th, and
+    // adding days can only ever land on a real date.
+    const date = new Date(year, month - 1, day);
+    date.setDate(date.getDate() + (unit === 'weekly' ? 7 : 1));
+    return toISODate(date);
+  }
+
+  // Work in absolute months so the year rolls over on its own.
+  const absoluteMonth = (month - 1) + monthsToAdd;
+  const targetYear = year + Math.floor(absoluteMonth / 12);
+  const targetMonth = absoluteMonth % 12; // 0-based
+
+  // Day 0 of the following month is the last day of this one, which handles
+  // 28/29/30/31 without a lookup table or a leap-year special case.
+  const lastDayOfTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+
+  return toISODate(new Date(targetYear, targetMonth, Math.min(day, lastDayOfTargetMonth)));
+}

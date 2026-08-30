@@ -70,7 +70,7 @@ export function TaskRow({ todo, onToggle, onPress }: TaskRowProps) {
 
           {/* Meta line only renders when there's something to say - an empty
               row of nothing is worse than no row. */}
-          {(todo.due_date || todo.priority !== 'normal') && !todo.is_done ? (
+          {(todo.due_date || todo.priority !== 'normal' || todo.is_repeat) && !todo.is_done ? (
             <View style={styles.meta}>
               {todo.due_date ? (
                 <View style={styles.metaItem}>
@@ -82,6 +82,13 @@ export function TaskRow({ todo, onToggle, onPress }: TaskRowProps) {
                   <Text style={[styles.metaText, overdue && styles.metaTextOverdue]}>
                     {formatDueDate(todo.due_date)}
                   </Text>
+                </View>
+              ) : null}
+
+              {todo.is_repeat ? (
+                <View style={styles.metaItem}>
+                  <Ionicons name="repeat" size={12} color={colors.textMuted} />
+                  <Text style={styles.metaText}>Repeats</Text>
                 </View>
               ) : null}
 

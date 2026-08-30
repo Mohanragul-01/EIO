@@ -21,27 +21,30 @@
  */
 import { supabase } from '../../core/supabase';
 import { getOwnerId } from '../../core/session';
-import type { Todo, TodoInput } from './types';
+import { nextDueDate, type Frequency, type Todo, type TodoInput } from './types';
 
 const TABLE = 'todos';
 
 /**
- * Fetch all todos for the current owner.
+ * Open tasks in one frequency tab.
  *
- * Sort order is deliberate and done in SQL, not in JS: unfinished first, then
- * soonest due date, then newest. Sorting in the database means the phone
- * receives rows already in display order.
+ * Filtered to `is_done = false` in SQL rather than in JS. Completed tasks are
+ * never deleted, so over time they will outnumber open ones many times over;
+ * fetching them all and hiding them on the phone would mean downloading a
+ * growing pile of rows to render none of them.
+ *
+ * Sorted soonest-due first, with undated tasks last: an undated task is less
+ * urgent than a dated one, not more.
  */
-export async function listTodos(): Promise<Todo[]> {
+export async function listTodosByFrequency(frequency: Frequency): Promise<Todo[]> {
   const ownerId = await getOwnerId();
 
   const { data, error } = await supabase
     .from(TABLE)
     .select('*')
     .eq('user_id', ownerId)
-    .order('is_done', { ascending: true })
-    // nullsFirst: false pushes tasks with NO due date to the bottom - an
-    // undated task is less urgent than a dated one, not more.
+    .eq('frequency', frequency)
+    .eq('is_done', false)
     .order('due_date', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: false });
 
@@ -94,10 +97,82 @@ export async function updateTodo(id: string, input: Partial<TodoInput>): Promise
   return data;
 }
 
-/** Toggle done/not-done. Separate from updateTodo because the list uses it constantly. */
-export async function setTodoDone(id: string, isDone: boolean): Promise<void> {
-  const { error } = await supabase.from(TABLE).update({ is_done: isDone }).eq('id', id);
+/**
+ * Complete a task, and create its next occurrence if it repeats.
+ *
+ * Two deliberate choices here.
+ *
+ * SOFT COMPLETE. The row is marked done, never deleted. Completion is history:
+ * deleting it would throw away the only record that the thing ever happened,
+ * and for a repeating task it would erase the whole trail. The tab query
+ * filters on `is_done = false`, so done rows leave the list without leaving the
+ * database.
+ *
+ * ORDER OF WRITES. The completion is written first, then the next occurrence.
+ * If the second write fails you are left with a completed task and no
+ * successor, which is visible and fixable by adding one. The reverse order
+ * would risk two open copies of the same repeating task, which is worse: you
+ * would have to notice the duplicate to fix it.
+ *
+ * Returns the newly created occurrence, or null, so the caller can say what
+ * happened without refetching.
+ */
+export async function completeTask(todo: Todo): Promise<Todo | null> {
+  const { error } = await supabase.from(TABLE).update({ is_done: true }).eq('id', todo.id);
   if (error) throw new Error(error.message);
+
+  if (!todo.is_repeat) return null;
+
+  const ownerId = await getOwnerId();
+
+  // Priority is deliberately NOT carried over. It describes how urgent this
+  // particular instance was, and a task you marked urgent once should not be
+  // urgent forever. Title and frequency are the identity of the recurrence.
+  const { data, error: insertError } = await supabase
+    .from(TABLE)
+    .insert({
+      user_id: ownerId,
+      title: todo.title,
+      frequency: todo.frequency,
+      is_repeat: true,
+      due_date: nextDueDate(todo.due_date, todo.frequency),
+      priority: 'normal',
+    })
+    .select()
+    .single();
+
+  if (insertError) throw new Error(insertError.message);
+  return data;
+}
+
+/**
+ * Un-complete a task. Separate from completeTask because reopening must never
+ * spawn an occurrence: that path exists to undo a mistaken tap.
+ */
+export async function reopenTask(id: string): Promise<void> {
+  const { error } = await supabase.from(TABLE).update({ is_done: false }).eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Every open task, across all four tabs, for the home screen tile.
+ *
+ * Separate from listTodosByFrequency because the tile summarises the whole
+ * module rather than one tab, and only needs the due dates to count overdue
+ * ones. Selecting two columns instead of `*` keeps the payload small, since
+ * this runs on every visit to the home screen.
+ */
+export async function listOpenTodos(): Promise<Pick<Todo, 'id' | 'due_date'>[]> {
+  const ownerId = await getOwnerId();
+
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select('id, due_date')
+    .eq('user_id', ownerId)
+    .eq('is_done', false);
+
+  if (error) throw new Error(error.message);
+  return data ?? [];
 }
 
 export async function deleteTodo(id: string): Promise<void> {

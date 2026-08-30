@@ -21,7 +21,12 @@ export type RootStackParamList = {
    * Typing it as an optional field is what lets TypeScript accept both calls
    * while still rejecting `navigate('TodoEdit', { todoId: 1 })`.
    */
-  TodoEdit: { id?: string };
+  /**
+   * `frequency` pre-selects the picker when adding from a tab, so adding a
+   * weekly task from the Weekly tab needs no extra tap. Ignored when editing,
+   * since the row already has one.
+   */
+  TodoEdit: { id?: string; frequency?: 'daily' | 'weekly' | 'monthly' | 'yearly' };
   NotesList: undefined;
   /** Same create-or-edit pattern as TodoEdit. */
   NoteEdit: { id?: string };

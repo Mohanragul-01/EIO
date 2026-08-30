@@ -17,9 +17,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStableCallback } from '../../core/useStableCallback';
 
 import * as api from './api';
-import type { Todo } from './types';
+import type { Frequency, Todo } from './types';
 
-export function useTodos() {
+export function useTodos(frequency: Frequency) {
   const [todos, setTodos] = useState<Todo[]>([]);
   // Starts true so the very first render shows a spinner rather than a
   // misleading "no tasks yet" empty state before the fetch resolves.
@@ -50,7 +50,7 @@ export function useTodos() {
     setError(null);
 
     try {
-      const rows = await api.listTodos();
+      const rows = await api.listTodosByFrequency(frequency);
       if (mounted.current) setTodos(rows);
     } catch (e) {
       if (mounted.current) setError(e instanceof Error ? e.message : 'Something went wrong');
@@ -60,39 +60,53 @@ export function useTodos() {
         setRefreshing(false);
       }
     }
-  }, []);
+    // Depends on the tab: switching tabs must produce a new loader, or the
+    // effect below would keep refetching whichever tab was mounted first.
+  }, [frequency]);
 
   useEffect(() => {
+    setLoading(true);
     load();
   }, [load]);
 
   /**
-   * OPTIMISTIC UPDATE - the checkbox flips instantly, then we tell the server.
+   * Complete a task, optimistically.
    *
-   * Waiting for a network round trip before the checkbox moves makes the app
-   * feel broken on a slow connection. So we update local state first, fire the
-   * request, and roll back if it fails. This is the main reason a hook layer
-   * exists at all: api.ts has no idea what's on screen, so it can't do this.
+   * The row leaves the list immediately rather than flipping a checkbox in
+   * place: this list only ever shows open tasks, so a completed one no longer
+   * belongs in it. Waiting for the round trip first would leave the task
+   * sitting there looking unticked.
+   *
+   * A repeating task's successor is appended straight from the API response,
+   * so the next occurrence appears without a refetch. It is re-sorted by due
+   * date because it belongs wherever its new date puts it, which is usually
+   * not the end of the list.
    */
-  const toggleDone = useCallback(
-    async (todo: Todo) => {
-      const next = !todo.is_done;
-      setTodos((current) =>
-        current.map((t) => (t.id === todo.id ? { ...t, is_done: next } : t)),
-      );
+  const complete = useCallback(async (todo: Todo) => {
+    const snapshot = todos;
+    setTodos((current) => current.filter((t) => t.id !== todo.id));
 
-      try {
-        await api.setTodoDone(todo.id, next);
-      } catch (e) {
-        // Roll back to the previous value and surface why.
+    try {
+      const next = await api.completeTask(todo);
+      if (next && mounted.current) {
         setTodos((current) =>
-          current.map((t) => (t.id === todo.id ? { ...t, is_done: todo.is_done } : t)),
+          [...current, next].sort((a, b) => {
+            // Undated tasks sort last, matching the SQL ordering.
+            if (!a.due_date) return 1;
+            if (!b.due_date) return -1;
+            return a.due_date.localeCompare(b.due_date);
+          }),
         );
-        setError(e instanceof Error ? e.message : 'Could not update the task');
       }
-    },
-    [],
-  );
+      return next;
+    } catch (e) {
+      if (mounted.current) {
+        setTodos(snapshot);
+        setError(e instanceof Error ? e.message : 'Could not complete the task');
+      }
+      return null;
+    }
+  }, [todos]);
 
   /** Same idea: remove locally straight away, restore the row if the delete fails. */
   const remove = useCallback(
@@ -133,7 +147,7 @@ export function useTodos() {
      */
     refresh,
     reload,
-    toggleDone,
+    complete,
     remove,
   };
 }
