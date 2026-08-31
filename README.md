@@ -1,11 +1,45 @@
 # EIO
 
-A personal life-management app for Android: a home screen of small, independent
-modules, each its own mini-app, backed by Supabase.
+A personal life-management system: small, independent modules, each its own
+mini-app, backed by Supabase. **An Android app and a desktop website, sharing
+one data layer and one database.**
 
 Built as a single-user tool rather than a product. The interesting part is not
 any one module but the pattern they share, which makes adding the next one
 cheap and keeps the existing ones from tangling together.
+
+**New here?** The [User Guide](docs/USER-GUIDE.md) explains what everything
+does and why it behaves the way it does. This file is about how it is built.
+
+---
+
+## Repository layout
+
+```
+EIO/
+├── app/          Expo app (Android). Owns the shared domain layer.
+├── website/      Vite + React desktop client. Imports that layer.
+├── supabase/     Migrations. One schema, both clients.
+└── docs/         User guide.
+```
+
+**Two clients, one brain.** Roughly 3,000 lines - every `api.ts`, every
+`types.ts`, the analytics, the recurrence maths, PR detection, jsonb handling
+and the colour palettes - contain no React Native import at all. The website
+reads them straight out of `app/src` rather than reimplementing or copying
+them, so a rule fixed in one place is fixed for both clients.
+
+That direction is deliberate. The app is the older, shipped client and it owns
+the domain; the website depends on it and the app depends on nothing. Extracting
+a third `shared/` package would be tidier on paper but would mean npm
+workspaces and Metro `watchFolders`, which can behave differently on an EAS
+build than they do locally - a real risk to a working app, for a rename.
+
+Exactly one file is not portable: `app/src/core/supabase.ts`, which uses
+AsyncStorage, a Hermes URL polyfill and Expo's build-time env vars. It is
+**not** forked. `website/vite.config.ts` aliases those away and substitutes the
+values, which is the same mechanism Metro uses with different inputs, so both
+clients run the identical file.
 
 ---
 
@@ -31,6 +65,8 @@ just needs to remember.**
 
 ## Stack
 
+**App**
+
 - **React Native** via **Expo** (SDK 57), TypeScript
 - `react-native-chart-kit` on `react-native-svg` for charts
 - `expo-notifications` for local renewal reminders
@@ -40,6 +76,21 @@ just needs to remember.**
 - `expo-blur` and `expo-linear-gradient` for the glass and aurora treatment
 - Jest with `jest-expo` for tests
 
+**Website**
+
+- **React 19** on **Vite**, TypeScript
+- `react-router-dom` with a **hash** router, so a built copy opens from disk
+  with no server to rewrite deep links
+- `recharts` for charts
+- Hand-written CSS with custom properties, no framework: the palettes are
+  ported from `app/src/core/theme.ts` so both clients look like one product
+- No state library here either
+
+Chosen over Next.js because every byte of EIO is behind auth and scoped to one
+user by RLS. There is no SEO, no public page and nothing to pre-render, so a
+server would be infrastructure that never earns its keep - and it would replace
+a working localStorage session with cookie-based SSR session handling.
+
 ---
 
 ## Architecture
@@ -48,9 +99,9 @@ Four rules hold this together. They are worth reading before changing anything,
 because most of the code only makes sense in light of them.
 
 **1. Modules never import each other.**
-Each lives in `src/modules/<name>/` with its own `api.ts`, hooks, screens and
+Each lives in `app/src/modules/<name>/` with its own `api.ts`, hooks, screens and
 types. When a second module needs something, that thing moves *down* into
-`src/core/`; it never moves *across*. This is why `core/ledger.ts` and
+`app/src/core/`; it never moves *across*. This is why `core/ledger.ts` and
 `core/categories.ts` exist, and why workout types stayed inside Fitness: only
 Fitness has a concept of a workout. Putting things in core "in case something
 needs them later" turns core into a junk drawer.
@@ -65,50 +116,85 @@ empty list and no clue why.
 JavaScript cannot represent most decimals exactly, and these values get summed.
 `1650.30 + 249.70` gives `1900.0000000000002`; `165030 + 24970` gives `190000`
 exactly, always. Rupees exist only where you type one or read one. See
-[`src/core/money.ts`](src/core/money.ts).
+[`app/src/core/money.ts`](app/src/core/money.ts).
 
 **4. A calendar day is not an instant.**
 Due dates and event dates are stored as `date`, not `timestamptz`, because
 `new Date('2026-08-07')` parses as UTC midnight and formats back as the 6th
 anywhere behind UTC. There are also two separate formatters: a deadline can be
 "3 days overdue", a purchase you already made cannot. See
-[`src/core/date.ts`](src/core/date.ts).
+[`app/src/core/date.ts`](app/src/core/date.ts).
 
 ### Layout
 
 ```
-src/
+app/src/
   core/            shared: theme, supabase client, auth, money, dates, components
   navigation/      the one stack, and its typed param list
   home/            the tile grid and its live summaries
   modules/
     todo/  notes/  finance/  subscriptions/  fitness/  custom/
-      api.ts       every database call for this module
-      types.ts     row shapes and form input shapes
-      use*.ts      loading, error and derived state
-      screens/     list and edit
+      api.ts       every database call for this module      ─┐
+      types.ts     row shapes, and the maths worth testing   │ no React Native
+      pickerItems / analytics / summary / format             │ import anywhere:
+                                                             │ the website runs
+      use*.ts      loading, error and derived state          │ these unchanged
+      screens/     list and edit                            ─┘ (screens excepted)
       components/  module-specific UI
+
+website/src/
+  lib/
+    shims/         browser stand-ins for AsyncStorage, react-native, expo
+    types/         type-only declarations for packages the site never installs
+    auth.tsx       the session; same Supabase client as the app
+    useAsync.ts    one loading hook, since the queries live in the shared api.ts
+  components/      Shell (sidebar + topbar) and the UI primitives
+  styles/          tokens.css - the app's palettes as custom properties
+  pages/           one per module
+
 supabase/migrations/   numbered SQL, applied by hand
+docs/USER-GUIDE.md     what everything does, and why
 ```
 
 ---
 
 ## Running it
 
-**Prerequisites:** Node 20+, a Supabase project, and Expo Go or a development
-build on an Android device.
+**Prerequisites:** Node 20+, a Supabase project, and (for the app) Expo Go or a
+development build on an Android device.
+
+Both clients read the same Supabase project. Sign in with the same account and
+you see the same rows, because RLS scopes everything to `auth.uid()` regardless
+of which client asked.
+
+**The app**
 
 ```bash
 git clone https://github.com/Mohanragul-01/EIO.git
-cd EIO
+cd EIO/app
 npm install
 cp .env.example .env      # then fill in your Supabase URL and anon key
 npx expo start
 ```
 
-The anon key is public by design and ships inside the app bundle. What protects
+**The website**
+
+```bash
+cd EIO/website
+npm install
+cp .env.example .env      # same project, VITE_ names
+npm run dev               # opens http://localhost:5173
+```
+
+The website needs `app/node_modules` to exist as well, because it type-checks
+against the shared modules there. Install the app first.
+
+`npm run build` produces a static `dist/` you can open directly - the router is
+hash-based precisely so that works with no server.
+
+The anon key is public by design and ships inside both clients. What protects
 the data is row level security, not hiding the key. Never put a `service_role`
-key in `.env`.
+key in either `.env`.
 
 ### Environment variables and EAS builds
 
@@ -122,8 +208,11 @@ eas env:create --scope project --environment preview   --name EXPO_PUBLIC_SUPABA
 
 Repeat for `development` and `production`. Skipping this produces an APK that
 installs fine and then fails at sign-in with `java.net.UnknownHostException`,
-because the URL falls back to a placeholder host. `src/core/supabase.ts` now
+because the URL falls back to a placeholder host. `app/src/core/supabase.ts` now
 throws at startup in release builds rather than letting that ship silently.
+
+EAS commands run from `app/`, since that is where `app.json` and `eas.json`
+live.
 
 ### Database
 
@@ -152,19 +241,28 @@ confirmation email.
 ## Scripts
 
 ```bash
-npm test              # 141 tests
+# app/
+npm test              # 177 tests
 npx tsc --noEmit      # type check
 npx expo start        # dev server
+npx expo-doctor       # config and dependency checks before a build
+
+# website/
+npm run dev           # dev server on :5173
+npm run build         # type check, then static build into dist/
+npm run typecheck
 ```
 
-Tests cover the logic where a silent bug does real damage and nothing would
-catch it: money round-tripping and float-free summing, the timezone off-by-one,
-due-versus-event date wording, billing cycle maths, the running balance, CSV
-escaping, task recurrence anchoring, reminder scheduling, personal-record
-detection, and custom-module summaries over jsonb.
+Tests live with the app because that is where the shared logic lives, so they
+cover both clients by construction. They target the places where a silent bug
+does real damage and nothing else would catch it: money round-tripping and
+float-free summing, the timezone off-by-one, due-versus-event date wording,
+billing cycle maths, the running balance, CSV escaping, task recurrence
+anchoring, reminder scheduling, personal-record detection, set numbering after
+a deletion, and custom-module summaries over jsonb.
 
-Two are regression tests for bugs that actually shipped, and both were verified
-to fail without their fix rather than assumed to work.
+Several are regression tests for bugs that actually shipped, and each was
+verified to fail without its fix rather than assumed to work.
 
 ---
 
@@ -202,7 +300,7 @@ resolves its native module at import and throws where it is absent, and Metro
 turns a module-evaluation throw into a fatal error rather than letting a
 try/catch see it. So it is loaded behind an `isRunningInExpoGo()` check, using
 the same signal the library itself uses. See
-[`src/modules/subscriptions/notifications.ts`](src/modules/subscriptions/notifications.ts).
+[`app/src/modules/subscriptions/notifications.ts`](app/src/modules/subscriptions/notifications.ts).
 
 **jsonb is sorted in JavaScript, not SQL.** Ordering a custom module's records
 by `data->>'key'` compares everything as TEXT, which puts 100 before 9 for a
@@ -213,7 +311,20 @@ button slots - positive, negative, neutral - and a fourth button does not fail
 loudly, it *overwrites* one of the first three. A picker built this way appears
 to lose entries, and because the slots are reused a tap can fire a different
 item's handler. Two screens had this. Both now use
-[`PickerSheet`](src/modules/fitness/components/PickerSheet.tsx).
+[`PickerSheet`](app/src/modules/fitness/components/PickerSheet.tsx).
+
+**Multi-step writes are ordered so an interruption cannot destroy data.** There
+are no transactions across Supabase calls, so three functions that write twice
+were ordered wrong: completing a repeating task marked it done before creating
+the next occurrence, and saving fields or a routine deleted before inserting the
+replacements. A dropped connection in between ended a recurrence silently or
+emptied a template. All three now write first and delete last, so the failure
+mode is a stale row you can see rather than missing data you cannot recover.
+
+**The website's `useAsync` takes a string key, not a dependency array.** An
+array parameter spread into `useEffect` cannot be checked by exhaustive-deps and
+needs a suppression. This codebase has none, and that suppression is where its
+last real bug hid.
 
 ---
 
@@ -224,6 +335,10 @@ with quick capture and a journal, an all-time finance balance with charts and
 CSV export, renewal reminders, a full training log, and custom modules with
 their own tile stat and sort order.
 
+The desktop website ships alongside it, with the same features and the same
+database - and a few things a wider screen makes possible, listed in the
+[User Guide](docs/USER-GUIDE.md).
+
 Scope was held deliberately. AI and voice input, cross-module relations and
 formula fields were all considered and left out, on the reasoning that a feature
 list written before using the app is mostly guesswork. Those decisions are
@@ -232,15 +347,23 @@ recorded in [`plan.md`](plan.MD) section 9 so nothing is lost.
 Known limits, to be fixed only if daily use proves them worth fixing:
 
 - **Network required.** No offline cache.
-- **Reminders exist for subscription renewals only** (3 days ahead, local
-  notifications, no server). Tasks have no reminders. Reminders are scheduled
-  on the device, so they do not survive a reinstall until each subscription is
-  edited again, and they need the dev or production build rather than Expo Go.
+- **Reminders exist for subscription renewals only, and only on the phone**
+  (3 days ahead, local notifications, no server). Tasks have no reminders. They
+  are scheduled on the device, so they do not survive a reinstall until each
+  subscription is edited again, and they need the dev or production build rather
+  than Expo Go. The website deliberately has none: a browser cannot schedule a
+  notification that survives the tab closing, and one that only fires while the
+  tab is open would be worse than nothing, because you would rely on it.
 - **No AI or voice input.** Natural-language quick add was considered and
   deliberately deferred.
 - **Custom modules have no relations or formula fields.** If a specific
   cross-module link is ever needed, the answer is a small hand-written bridge in
   `core/`, following `core/ledger.ts`, not a generic relations system.
+- **The website is desktop-first.** It is usable on a narrow window - the
+  columns collapse - but the phone app is the better answer on a phone, and the
+  layouts here assume a screen wide enough to show several things at once.
+- **The website has no offline story either**, and no service worker. Closing
+  the tab loses nothing, because every write goes straight to Supabase.
 - Supabase free-tier projects **pause after 7 days idle** and need a manual
   resume from the dashboard.
 
