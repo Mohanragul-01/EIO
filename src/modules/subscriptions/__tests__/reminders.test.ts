@@ -14,6 +14,10 @@
  * down the home screen in Expo Go. It is now require()d lazily, and the test
  * below fails if anyone reverts that.
  */
+// Default: NOT Expo Go, so the loader takes the real path. Individual tests
+// override this to exercise the bail-out.
+jest.mock('expo', () => ({ isRunningInExpoGo: () => false }));
+
 jest.mock('expo-notifications', () => ({
   setNotificationHandler: jest.fn(),
   setNotificationChannelAsync: jest.fn(),
@@ -119,10 +123,44 @@ describe('lazy loading of expo-notifications', () => {
     expect(notifications.reminderDateFor('2099-01-10', new Date(2099, 0, 1))).not.toBeNull();
   });
 
+  it('never requires the library at all in Expo Go', async () => {
+    // THE SECOND REGRESSION, and the one the first version of this test missed.
+    //
+    // A try/catch around the require is not enough. expo-notifications throws
+    // during module evaluation in Expo Go, and Metro's guardedLoadModule hands
+    // that to ErrorUtils.reportFatalError rather than rethrowing - so the red
+    // screen is already up before any catch here could run.
+    //
+    // The only fix is to not require it. This test fails if the require is
+    // ever reached in Expo Go, regardless of what it is wrapped in.
+    jest.resetModules();
+    jest.doMock('expo', () => ({ isRunningInExpoGo: () => true }));
+
+    const required = jest.fn(() => {
+      throw new Error('expo-notifications must not be required in Expo Go');
+    });
+    jest.doMock('expo-notifications', required);
+
+    const notifications = require('../notifications');
+
+    await expect(notifications.ensurePermission()).resolves.toBe('unsupported');
+    await expect(
+      notifications.scheduleReminder({
+        id: 'abc',
+        name: 'Netflix',
+        next_due_date: '2099-01-10',
+        is_active: true,
+        amount_minor: 64900,
+      }),
+    ).resolves.toBe(false);
+
+    expect(required).not.toHaveBeenCalled();
+  });
+
   it('reports unsupported rather than throwing when the library is missing', async () => {
     jest.resetModules();
-    // Stand in for a runtime where the native module is absent: requiring it
-    // throws, exactly as it does in Expo Go.
+    jest.doMock('expo', () => ({ isRunningInExpoGo: () => false }));
+    // A build that is not Expo Go but still lacks the native module.
     jest.doMock('expo-notifications', () => {
       throw new Error('Cannot find native module ExpoNotificationScheduler');
     });

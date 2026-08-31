@@ -31,10 +31,24 @@
  *
  * So: types are imported with `import type`, which the compiler erases and
  * which therefore costs nothing at runtime, and the real module is require()d
- * inside a guarded loader at the moment it is first needed. On a device
- * without it, every function here degrades to "no reminders" instead of
- * crashing the app.
+ * inside a guarded loader at the moment it is first needed.
+ *
+ * AND A try/catch AROUND THAT require IS NOT ENOUGH EITHER. Two facts combine:
+ *
+ *   1. expo-notifications' DevicePushTokenAutoRegistration side-effect module
+ *      calls warnOfExpoGoPushUsage at import, which on Android in Expo Go
+ *      THROWS rather than warning.
+ *   2. Metro's guardedLoadModule catches errors thrown during module evaluation
+ *      and hands them to ErrorUtils.reportFatalError instead of rethrowing,
+ *      then returns undefined.
+ *
+ * So the require never throws to the caller: Metro swallows it and raises a
+ * red screen, and our catch only fires later on the resulting undefined. The
+ * only way to avoid the crash is to never require the library at all where it
+ * cannot work, which is what the Expo Go check below does. It uses the same
+ * signal the library itself uses to decide to throw.
  */
+import { isRunningInExpoGo } from 'expo';
 import type * as NotificationsModule from 'expo-notifications';
 import { Platform } from 'react-native';
 
@@ -71,6 +85,21 @@ let handlerInstalled = false;
  */
 function loadNotifications(): Notifications | null {
   if (cached !== undefined) return cached;
+
+  /**
+   * Bail BEFORE the require, not inside a try around it. See the file header:
+   * Metro reports a module-evaluation throw as a fatal error rather than
+   * letting it propagate, so by the time any catch here could run, the red
+   * screen has already been raised.
+   *
+   * isRunningInExpoGo comes from `expo` itself and is the same check
+   * expo-notifications uses to decide whether to throw, so this cannot drift
+   * out of step with it.
+   */
+  if (isRunningInExpoGo()) {
+    cached = null;
+    return null;
+  }
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports -- see file header
