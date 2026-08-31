@@ -208,14 +208,26 @@ the same signal the library itself uses. See
 by `data->>'key'` compares everything as TEXT, which puts 100 before 9 for a
 number field. It looks right until you scroll.
 
+**Never build a list out of `Alert.alert` buttons.** Android has exactly three
+button slots - positive, negative, neutral - and a fourth button does not fail
+loudly, it *overwrites* one of the first three. A picker built this way appears
+to lose entries, and because the slots are reused a tap can fire a different
+item's handler. Two screens had this. Both now use
+[`PickerSheet`](src/modules/fitness/components/PickerSheet.tsx).
+
 ---
 
 ## Status
 
-Version 1 is complete and in use. A much larger v2 was scoped and deliberately
-deferred, on the reasoning that a feature list written before using the app is
-mostly guesswork. Those decisions are recorded in [`plan.md`](plan.MD) section 9
-so nothing is lost.
+Version 2 is complete and in use: repeating tasks by frequency, a notes system
+with quick capture and a journal, an all-time finance balance with charts and
+CSV export, renewal reminders, a full training log, and custom modules with
+their own tile stat and sort order.
+
+Scope was held deliberately. AI and voice input, cross-module relations and
+formula fields were all considered and left out, on the reasoning that a feature
+list written before using the app is mostly guesswork. Those decisions are
+recorded in [`plan.md`](plan.MD) section 9 so nothing is lost.
 
 Known limits, to be fixed only if daily use proves them worth fixing:
 

@@ -186,6 +186,23 @@ export function isPersonalRecord(
 }
 
 /**
+ * The set number to give the next set of an exercise.
+ *
+ * One past the HIGHEST so far, not the count of what exists. Counting collides
+ * after a deletion: log three sets, delete the second, and a count returns 3
+ * when a set numbered 3 is still there. Nothing in the schema forbids the
+ * duplicate, so it saves, and the block then shows two rows claiming to be the
+ * same set in whatever order Postgres returns them.
+ *
+ * That leaves gaps - 1, 3, 4 after deleting the second - which is why the UI
+ * numbers rows by their position in the list rather than printing this. The
+ * stored number only has to order the sets and never be reused.
+ */
+export function nextSetNumber(existing: Pick<SessionSet, 'set_number'>[]): number {
+  return existing.reduce((top, set) => Math.max(top, set.set_number), 0) + 1;
+}
+
+/**
  * Total load moved in a set of sets: sum of reps x weight.
  *
  * Rounded to one decimal. Floating point drift across a session is far below a

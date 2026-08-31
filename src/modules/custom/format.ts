@@ -37,8 +37,15 @@ export function formatFieldValue(field: CustomField, value: unknown): string | n
   if (value === null || value === undefined || value === '') return null;
 
   switch (field.type) {
-    case 'money':
-      return typeof value === 'number' ? formatMoney(value, { compact: true }) : null;
+    case 'money': {
+      // A numeric string is accepted, not just a number, because changing a
+      // field's type is allowed: a text field holding "1500" becomes a money
+      // field with a string still in it. summary.ts already counts those, so
+      // rejecting them here made the tile show a total while every row it was
+      // computed from displayed nothing.
+      const minor = typeof value === 'number' ? value : Number(value);
+      return Number.isFinite(minor) ? formatMoney(Math.round(minor), { compact: true }) : null;
+    }
 
     case 'number':
       // toLocaleString gives Indian digit grouping for large numbers.

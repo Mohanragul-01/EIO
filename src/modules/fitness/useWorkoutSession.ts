@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from './api';
 import {
   isPersonalRecord,
+  nextSetNumber,
   totalVolume,
   type Exercise,
   type SessionSet,
@@ -105,7 +106,7 @@ export function useWorkoutSession(sessionId: string) {
       // Set numbers count within the exercise, not the session: "set 3" means
       // the third set of that lift, which is what a training log means by it.
       const existing = sets.filter((set) => set.exercise_id === input.exercise_id);
-      const setNumber = existing.length + 1;
+      const setNumber = nextSetNumber(existing);
 
       try {
         const history = await api.listExerciseHistory(input.exercise_id, sessionId);

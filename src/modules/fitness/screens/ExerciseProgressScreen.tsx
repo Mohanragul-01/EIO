@@ -46,7 +46,8 @@ export function ExerciseProgressScreen() {
     api
       .listExerciseProgress(exerciseId)
       .then((rows) => {
-        if (active) setPoints(rows.filter((row) => !!row.date));
+        // No date filtering here any more: listExerciseProgress guarantees it.
+        if (active) setPoints(rows);
       })
       .catch((e) => {
         if (active) setError(e instanceof Error ? e.message : 'Could not load progress');

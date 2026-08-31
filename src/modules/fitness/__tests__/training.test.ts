@@ -16,6 +16,7 @@ import {
   formatSet,
   isPersonalRecord,
   totalVolume,
+  nextSetNumber,
 } from '../types';
 
 const set = (exercise_id: string, reps: number, weight_kg: number) => ({
@@ -165,5 +166,35 @@ describe('formatting', () => {
     // The timer recomputes from a deadline, so an overshoot is possible between
     // ticks. It must clamp rather than render "-0:03".
     expect(formatDuration(-10)).toBe('0:00');
+  });
+});
+
+describe('nextSetNumber', () => {
+  const s = (set_number: number) => ({ set_number });
+
+  it('starts at 1 for the first set of an exercise', () => {
+    expect(nextSetNumber([])).toBe(1);
+  });
+
+  it('counts up while nothing has been deleted', () => {
+    expect(nextSetNumber([s(1), s(2)])).toBe(3);
+  });
+
+  it('does not reuse a number after a middle set is deleted', () => {
+    // THE BUG THIS FIXES. Using the COUNT, this returns 3 - and a set numbered
+    // 3 is still there. Nothing in the schema forbids the duplicate, so it
+    // saves, and the block shows two rows claiming to be the same set in
+    // whatever order Postgres hands them back.
+    expect(nextSetNumber([s(1), s(3)])).toBe(4);
+  });
+
+  it('does not reuse a number after the last set is deleted', () => {
+    // Deleting set 3 of 3 and logging again gives 3 by count, which is right
+    // by luck. Deleting 2 and 3 then logging gives 2 by count, which is not.
+    expect(nextSetNumber([s(1), s(2)].slice(0, 1))).toBe(2);
+  });
+
+  it('is unaffected by the order it receives them in', () => {
+    expect(nextSetNumber([s(3), s(1), s(2)])).toBe(4);
   });
 });

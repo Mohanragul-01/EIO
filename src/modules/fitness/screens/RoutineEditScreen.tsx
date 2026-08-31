@@ -27,7 +27,7 @@ import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { fonts, radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
-import { ExercisePicker } from '../components/ExercisePicker';
+import { PickerSheet } from '../components/PickerSheet';
 import type { Exercise } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'RoutineEdit'>;
@@ -304,12 +304,21 @@ export function RoutineEditScreen() {
         six exercises at once, and reopening the sheet for each one would be
         six times the taps for one decision.
       */}
-      <ExercisePicker
+      <PickerSheet
         visible={picking}
         title="Add to routine"
         multiple
-        exercises={exercises}
-        disabledIds={entries.map((entry) => entry.exercise_id)}
+        items={exercises.map((exercise) => {
+          const already = entries.some((entry) => entry.exercise_id === exercise.id);
+          return {
+            id: exercise.id,
+            label: exercise.name,
+            group: exercise.muscle_group,
+            disabled: already,
+            note: already ? 'Already added' : undefined,
+          };
+        })}
+        emptyText="No exercises yet. Add some in the Plan tab."
         onSelect={addPicked}
         onClose={() => setPicking(false)}
       />

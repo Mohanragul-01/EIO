@@ -378,8 +378,14 @@ export async function listExerciseProgress(
 
   if (error) throw new Error(error.message);
 
-  return (data ?? []).map(
-    (row: { weight_kg: number; reps: number; workout_sessions: { date: string } | { date: string }[] }) => ({
+  type Row = {
+    weight_kg: number;
+    reps: number;
+    workout_sessions: { date: string } | { date: string }[] | null;
+  };
+
+  return ((data ?? []) as Row[])
+    .map((row) => ({
       // PostgREST returns an embedded row as an object for a to-one join, but
       // the generated types can widen it to an array. Normalised here so the
       // chart never has to care which shape arrived.
@@ -388,8 +394,12 @@ export async function listExerciseProgress(
         : row.workout_sessions?.date,
       weight_kg: row.weight_kg,
       reps: row.reps,
-    }),
-  );
+    }))
+    // Dropped here rather than by the caller. `data` comes back as `any`, so
+    // nothing was type-checking the promise that every row has a date, and the
+    // declared return type was simply untrue for a row whose join came back
+    // empty. Filtering makes the signature honest at its source.
+    .filter((row): row is { date: string; weight_kg: number; reps: number } => !!row.date);
 }
 
 /** Sets across recent sessions, for the home summary. */

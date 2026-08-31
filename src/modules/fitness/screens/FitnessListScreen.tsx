@@ -28,8 +28,9 @@ import { formatEventDate, todayISO } from '../../../core/date';
 import { fonts, motion, radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
+import { PickerSheet } from '../components/PickerSheet';
 import { WeekStrip } from '../components/WeekStrip';
-import { bmiLabel, MUSCLE_GROUPS, type WorkoutSession } from '../types';
+import { bmiLabel, MUSCLE_GROUPS, type Routine, type WorkoutSession } from '../types';
 import { useBody, useFitnessHome, usePlan } from '../useFitness';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'FitnessList'>;
@@ -67,6 +68,7 @@ function LogTab() {
   const navigation = useNavigation<Nav>();
   const { sessions, summary, loading, refreshing, error, refresh, reload } = useFitnessHome();
   const [starting, setStarting] = useState(false);
+  const [routineChoices, setRoutineChoices] = useState<Routine[] | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -109,18 +111,19 @@ function LogTab() {
         return;
       }
 
-      Alert.alert('Start a workout', 'From a routine, or freestyle?', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Freestyle', onPress: () => void startSession(null) },
-        ...routines.slice(0, 2).map((routine) => ({
-          text: routine.name,
-          onPress: () => void startSession(routine.id),
-        })),
-      ]);
+      // A sheet, not an Alert. Android gives an alert three button slots, and
+      // Cancel plus Freestyle already used two, so the third routine onwards
+      // overwrote an earlier button instead of adding one. The slice(0, 2) that
+      // used to be here was hiding the problem, not fixing it: with more than
+      // two routines the rest were simply unreachable from this screen.
+      setRoutineChoices(routines);
     } catch {
       void startSession(null);
     }
   }, [startSession]);
+
+  /** 'freestyle' is a sentinel id: a session belonging to no routine. */
+  const FREESTYLE = 'freestyle';
 
   if (loading) {
     return (
@@ -188,6 +191,20 @@ function LogTab() {
       />
 
       {error ? <ErrorBanner message={error} /> : null}
+
+      <PickerSheet
+        visible={routineChoices !== null}
+        title="Start a workout"
+        items={[
+          { id: FREESTYLE, label: 'Freestyle', note: 'Pick exercises as you go' },
+          ...(routineChoices ?? []).map((routine) => ({
+            id: routine.id,
+            label: routine.name,
+          })),
+        ]}
+        onSelect={([id]) => void startSession(id === FREESTYLE ? null : id)}
+        onClose={() => setRoutineChoices(null)}
+      />
 
       {sessions.length > 0 ? (
         <FadeInView style={styles.fabWrap} delay={120}>

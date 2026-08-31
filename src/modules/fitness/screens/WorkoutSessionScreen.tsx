@@ -31,7 +31,7 @@ import { formatEventDate } from '../../../core/date';
 import { fonts, radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
-import { ExercisePicker } from '../components/ExercisePicker';
+import { PickerSheet } from '../components/PickerSheet';
 import { RestTimer } from '../components/RestTimer';
 import { formatSet, type SessionSet } from '../types';
 import { useWorkoutSession } from '../useWorkoutSession';
@@ -230,11 +230,19 @@ export function WorkoutSessionScreen() {
         Single-select: mid-session you add one exercise, do it, then add the
         next - there is nothing to batch.
       */}
-      <ExercisePicker
+      <PickerSheet
         visible={picking}
         title="Add an exercise"
-        exercises={exercises}
-        disabledIds={blocks.map((block) => block.exerciseId)}
+        items={exercises.map((exercise) => ({
+          id: exercise.id,
+          label: exercise.name,
+          group: exercise.muscle_group,
+          disabled: blocks.some((block) => block.exerciseId === exercise.id),
+          note: blocks.some((block) => block.exerciseId === exercise.id)
+            ? 'Already added'
+            : undefined,
+        }))}
+        emptyText="No exercises yet. Add some in the Plan tab."
         onSelect={(ids) => ids.forEach(addExerciseToSession)}
         onClose={() => setPicking(false)}
       />
@@ -286,11 +294,16 @@ function ExerciseBlock({
     <GlassCard style={styles.block}>
       <Text style={styles.blockTitle}>{name}</Text>
 
-      {sets.map((set) => {
+      {sets.map((set, index) => {
         const pr = prSetIds[set.id];
         return (
           <View key={set.id} style={styles.setRow}>
-            <Text style={styles.setNumber}>{set.set_number}</Text>
+            {/*
+              Position in the list, not set.set_number. The stored number only
+              has to order the sets and never be reused; deleting a middle set
+              leaves a gap in it, and showing "1, 3, 4" would read as a bug.
+            */}
+            <Text style={styles.setNumber}>{index + 1}</Text>
             <Text style={styles.setText}>{formatSet(set.weight_kg, set.reps)}</Text>
 
             {pr ? (

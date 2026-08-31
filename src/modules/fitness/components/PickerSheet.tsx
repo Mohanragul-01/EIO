@@ -1,17 +1,18 @@
 /**
- * ExercisePicker - a sheet that lists every exercise you own.
+ * PickerSheet - a bottom sheet for choosing from a list.
  *
- * This replaces an `Alert.alert` whose buttons were the exercise names. That
- * looked fine with three exercises and broke silently with more: Android's
- * alert has exactly three button slots (positive, negative, neutral), so a
- * fourth exercise does not get its own button, it OVERWRITES an earlier one.
- * The list appeared to lose entries, and tapping a name could run a different
- * exercise's handler - which is why adding a second exercise looked like it was
- * replacing the first. Slicing to eight did not help; the cap is three.
+ * This replaces `Alert.alert` calls whose buttons were the list items. That
+ * looked fine with two items and broke silently with more: Android's alert has
+ * exactly three button slots (positive, negative, neutral), so a fourth item
+ * does not get its own button, it OVERWRITES an earlier one. Lists appeared to
+ * lose entries, and tapping a name could run a different item's handler - which
+ * is why adding a second exercise looked like it was replacing the first.
+ * Slicing the list shorter did not help; the cap is three, and both call sites
+ * had a Cancel button eating one of them.
  *
- * So: a real scrollable list. It also gets a search box and muscle-group
- * headers, which an alert could never have had, and it can stay open while you
- * pick several - the common case when you are building a routine.
+ * So: a real scrollable list. Now that it is a list rather than three buttons
+ * it can afford things an alert never could - a search box, group headers, and
+ * multi-select.
  *
  * A Modal rather than a pushed screen, because choosing an exercise mid-session
  * must not navigate away from the sets you are part-way through logging.
@@ -33,37 +34,32 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { radius, spacing } from '../../../core/theme';
-import { groupExercises } from '../exerciseSearch';
-import type { Exercise } from '../types';
+import { groupItems, isFlat, type PickerItem } from '../pickerItems';
 
-/** Below this many exercises a search box is clutter, not help. */
+/** Below this many items a search box is clutter, not help. */
 const SEARCH_THRESHOLD = 8;
 
-type ExercisePickerProps = {
+type PickerSheetProps = {
   visible: boolean;
   title: string;
-  exercises: Exercise[];
-  /**
-   * Exercises already used, shown greyed out and unselectable. Passed in rather
-   * than filtered out by the caller so you can SEE that a lift is already in
-   * the routine instead of wondering why it is missing from the list.
-   */
-  disabledIds?: string[];
+  items: PickerItem[];
   /** True when the sheet should stay open so several can be picked at once. */
   multiple?: boolean;
-  onSelect: (exerciseIds: string[]) => void;
+  /** Shown when there is nothing to choose from at all. */
+  emptyText?: string;
+  onSelect: (ids: string[]) => void;
   onClose: () => void;
 };
 
-export function ExercisePicker({
+export function PickerSheet({
   visible,
   title,
-  exercises,
-  disabledIds = [],
+  items,
   multiple = false,
+  emptyText = 'Nothing to choose from.',
   onSelect,
   onClose,
-}: ExercisePickerProps) {
+}: PickerSheetProps) {
   const styles = useStyles();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -81,24 +77,22 @@ export function ExercisePicker({
     }
   }, [visible]);
 
-  const disabled = useMemo(() => new Set(disabledIds), [disabledIds]);
+  const sections = useMemo(() => groupItems(items, query), [items, query]);
+  const flat = useMemo(() => isFlat(items), [items]);
+  const selectable = items.filter((item) => !item.disabled).length;
 
-  const sections = useMemo(() => groupExercises(exercises, query), [exercises, query]);
-
-  const selectable = exercises.length - disabled.size;
-
-  const handleRowPress = (exercise: Exercise) => {
+  const handleRowPress = (item: PickerItem) => {
     if (multiple) {
       setPicked((current) =>
-        current.includes(exercise.id)
-          ? current.filter((id) => id !== exercise.id)
-          : [...current, exercise.id],
+        current.includes(item.id)
+          ? current.filter((id) => id !== item.id)
+          : [...current, item.id],
       );
       return;
     }
     // Single mode commits on tap. Nothing to confirm, so a footer button would
     // just be a second tap for the same decision.
-    onSelect([exercise.id]);
+    onSelect([item.id]);
     onClose();
   };
 
@@ -106,6 +100,47 @@ export function ExercisePicker({
     if (picked.length === 0) return;
     onSelect(picked);
     onClose();
+  };
+
+  const renderRow = (item: PickerItem) => {
+    const isPicked = picked.includes(item.id);
+
+    return (
+      <Pressable
+        key={item.id}
+        onPress={() => handleRowPress(item)}
+        disabled={item.disabled}
+        style={({ pressed }) => [
+          styles.row,
+          isPicked && styles.rowPicked,
+          pressed && !item.disabled && styles.pressed,
+        ]}
+        accessibilityRole={multiple ? 'checkbox' : 'button'}
+        accessibilityState={{ checked: isPicked, disabled: !!item.disabled }}
+      >
+        <View style={styles.rowText}>
+          <Text
+            style={[styles.rowName, item.disabled && styles.rowNameDisabled]}
+            numberOfLines={1}
+          >
+            {item.label}
+          </Text>
+          {item.note ? <Text style={styles.rowNote}>{item.note}</Text> : null}
+        </View>
+
+        {item.disabled ? (
+          <Ionicons name="checkmark-done" size={18} color={colors.textFaint} />
+        ) : multiple ? (
+          <Ionicons
+            name={isPicked ? 'checkbox' : 'square-outline'}
+            size={20}
+            color={isPicked ? colors.primary : colors.textMuted}
+          />
+        ) : (
+          <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+        )}
+      </Pressable>
+    );
   };
 
   return (
@@ -152,13 +187,13 @@ export function ExercisePicker({
               </Pressable>
             </View>
 
-            {exercises.length >= SEARCH_THRESHOLD ? (
+            {items.length >= SEARCH_THRESHOLD ? (
               <View style={styles.searchRow}>
                 <Ionicons name="search" size={16} color={colors.textMuted} />
                 <TextInput
                   value={query}
                   onChangeText={setQuery}
-                  placeholder="Search exercises"
+                  placeholder="Search"
                   placeholderTextColor={colors.textFaint}
                   style={styles.searchInput}
                   autoCorrect={false}
@@ -180,57 +215,18 @@ export function ExercisePicker({
             >
               {sections.length === 0 ? (
                 <Text style={styles.empty}>
-                  {query
-                    ? `Nothing matches "${query.trim()}".`
-                    : 'No exercises yet. Add some in the Plan tab.'}
+                  {query ? `Nothing matches "${query.trim()}".` : emptyText}
                 </Text>
+              ) : flat ? (
+                // No headers when nothing carries a group: a lone "Other"
+                // heading labels nothing, because there is nothing to tell it
+                // apart from.
+                sections.flatMap((section) => section.items).map(renderRow)
               ) : (
                 sections.map((section) => (
                   <View key={section.group}>
                     <Text style={styles.groupLabel}>{section.group}</Text>
-                    {section.items.map((exercise) => {
-                      const isDisabled = disabled.has(exercise.id);
-                      const isPicked = picked.includes(exercise.id);
-
-                      return (
-                        <Pressable
-                          key={exercise.id}
-                          onPress={() => handleRowPress(exercise)}
-                          disabled={isDisabled}
-                          style={({ pressed }) => [
-                            styles.row,
-                            isPicked && styles.rowPicked,
-                            pressed && !isDisabled && styles.pressed,
-                          ]}
-                          accessibilityRole={multiple ? 'checkbox' : 'button'}
-                          accessibilityState={{ checked: isPicked, disabled: isDisabled }}
-                        >
-                          <View style={styles.rowText}>
-                            <Text
-                              style={[styles.rowName, isDisabled && styles.rowNameDisabled]}
-                              numberOfLines={1}
-                            >
-                              {exercise.name}
-                            </Text>
-                            {isDisabled ? (
-                              <Text style={styles.rowNote}>Already added</Text>
-                            ) : null}
-                          </View>
-
-                          {isDisabled ? (
-                            <Ionicons name="checkmark-done" size={18} color={colors.textFaint} />
-                          ) : multiple ? (
-                            <Ionicons
-                              name={isPicked ? 'checkbox' : 'square-outline'}
-                              size={20}
-                              color={isPicked ? colors.primary : colors.textMuted}
-                            />
-                          ) : (
-                            <Ionicons name="add" size={20} color={colors.primary} />
-                          )}
-                        </Pressable>
-                      );
-                    })}
+                    {section.items.map(renderRow)}
                   </View>
                 ))
               )}
@@ -238,7 +234,7 @@ export function ExercisePicker({
 
             {multiple ? (
               <Button
-                label={picked.length === 0 ? 'Select exercises' : `Add ${picked.length}`}
+                label={picked.length === 0 ? 'Select items' : `Add ${picked.length}`}
                 icon="add"
                 onPress={handleConfirm}
                 disabled={picked.length === 0 || selectable === 0}
