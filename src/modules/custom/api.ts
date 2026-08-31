@@ -124,14 +124,6 @@ export async function saveFields(
   const keptIds = drafts.map((d) => d.id).filter(Boolean) as string[];
   const removed = existing.filter((f) => !keptIds.includes(f.id));
 
-  if (removed.length > 0) {
-    const { error } = await supabase
-      .from(FIELDS)
-      .delete()
-      .in('id', removed.map((f) => f.id));
-    if (error) throw new Error(error.message);
-  }
-
   // Updates, one per changed field. A handful of fields per module makes
   // individual updates simpler and clearer than a bulk upsert.
   for (const [index, draft] of drafts.entries()) {
@@ -158,6 +150,27 @@ export async function saveFields(
       existing.map((f) => f.key),
       drafts.length - additions.length,
     );
+  }
+
+  // Deletions happen LAST, after every update and insert has succeeded.
+  //
+  // These are separate writes with no transaction around them, so the network
+  // can drop partway. Deleting first meant a failure landed on the one ordering
+  // that loses information: the removed fields were already gone, and the
+  // replacements never arrived. Doing it last means the same failure leaves
+  // STALE fields behind instead - visible on the next screen, and removable by
+  // saving again. An extra field you can delete beats a missing one you have
+  // to reconstruct.
+  //
+  // Key generation is unaffected by the move: it reads the in-memory `existing`
+  // array rather than the table, so a removed field's key is still reserved
+  // whether or not its row is gone yet.
+  if (removed.length > 0) {
+    const { error } = await supabase
+      .from(FIELDS)
+      .delete()
+      .in('id', removed.map((f) => f.id));
+    if (error) throw new Error(error.message);
   }
 }
 

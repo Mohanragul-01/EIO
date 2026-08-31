@@ -141,7 +141,20 @@ export async function completeTask(todo: Todo): Promise<Todo | null> {
     .select()
     .single();
 
-  if (insertError) throw new Error(insertError.message);
+  if (insertError) {
+    // Put the task back to open before reporting the failure.
+    //
+    // These are two writes with no transaction between them, so the network
+    // can drop after the first. Leaving it completed would end the recurrence
+    // SILENTLY: the task looks done, and the next occurrence that never
+    // arrives is not something you notice until you have already missed it.
+    // Reopening turns that into a visible, retryable error instead - and if
+    // this rollback fails too, the thrown message is the same one you would
+    // have got anyway, so it is never worse than not trying.
+    await supabase.from(TABLE).update({ is_done: false }).eq('id', todo.id);
+    throw new Error(insertError.message);
+  }
+
   return data;
 }
 

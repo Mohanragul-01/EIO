@@ -206,6 +206,9 @@ export async function saveRoutine(
   const ownerId = await getOwnerId();
 
   let routine: Routine;
+  /** Rows to remove once the replacements are safely in. */
+  let supersededIds: string[] = [];
+
   if (input.id) {
     const { data, error } = await supabase
       .from('routines')
@@ -216,11 +219,20 @@ export async function saveRoutine(
     if (error) throw new Error(error.message);
     routine = data;
 
-    const { error: clearError } = await supabase
+    // Note the old rows now, but do not delete them yet. These are separate
+    // writes with no transaction around them, so the network can drop partway,
+    // and clearing first meant a failure landed on the one ordering that loses
+    // the routine: the old exercises were already gone and the new ones never
+    // arrived, leaving an empty template. Writing first and deleting after
+    // means the same failure leaves DUPLICATES instead - obvious on the next
+    // open, and fixed by saving again. A doubled list you can see beats an
+    // empty one you have to rebuild from memory.
+    const { data: current, error: readError } = await supabase
       .from('routine_exercises')
-      .delete()
+      .select('id')
       .eq('routine_id', input.id);
-    if (clearError) throw new Error(clearError.message);
+    if (readError) throw new Error(readError.message);
+    supersededIds = (current ?? []).map((row: { id: string }) => row.id);
   } else {
     const { data, error } = await supabase
       .from('routines')
@@ -240,6 +252,13 @@ export async function saveRoutine(
         position: index,
       })),
     );
+    if (error) throw new Error(error.message);
+  }
+
+  // By id, not by routine_id: deleting by routine_id here would take the rows
+  // that were just inserted along with the old ones.
+  if (supersededIds.length > 0) {
+    const { error } = await supabase.from('routine_exercises').delete().in('id', supersededIds);
     if (error) throw new Error(error.message);
   }
 
