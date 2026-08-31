@@ -36,6 +36,7 @@ import {
 import * as api from '@app/modules/finance/api';
 import type { Transaction, TransactionInput, TransactionKind } from '@app/modules/finance/types';
 
+import { Icon } from '../components/Icon';
 import { Shell } from '../components/Shell';
 import {
   ChipPicker,
@@ -181,11 +182,11 @@ export function FinancePage() {
       subtitle={`${formatBalance(balance)} all-time balance`}
       actions={
         <div className="row">
-          <button className="btn btn-glass btn-sm" onClick={() => void exportCsv()}>
-            ↓ Export CSV
+          <button className="btn btn-secondary btn-sm" onClick={() => void exportCsv()}>
+            <Icon name="download" size={14} /> Export CSV
           </button>
           <button className="btn" onClick={() => setEditing('new')}>
-            ＋ New transaction
+            <Icon name="plus" /> New transaction
           </button>
         </div>
       }
@@ -195,11 +196,11 @@ export function FinancePage() {
       <div className="row-between" style={{ marginBottom: 'var(--space-xl)' }}>
         <div className="row" style={{ gap: 'var(--space-sm)' }}>
           <button className="icon-btn" onClick={() => shiftMonth(-1)} aria-label="Previous month">
-            ‹
+            <Icon name="chevronLeft" />
           </button>
           <span style={{ fontWeight: 600, minWidth: 150, textAlign: 'center' }}>{monthLabel}</span>
           <button className="icon-btn" onClick={() => shiftMonth(1)} aria-label="Next month">
-            ›
+            <Icon name="chevronRight" />
           </button>
           <button
             className="btn btn-ghost btn-sm"
@@ -214,7 +215,8 @@ export function FinancePage() {
 
         {categoryFilter ? (
           <button className="chip selected" onClick={() => setCategoryFilter(null)}>
-            {categoryDef(categoryFilter).label} · clear ✕
+            {categoryDef(categoryFilter).label}
+            <Icon name="close" size={12} />
           </button>
         ) : null}
       </div>
@@ -226,12 +228,12 @@ export function FinancePage() {
             <Spinner center />
           ) : rows.length === 0 ? (
             <Empty
-              icon="₹"
+              icon="finance"
               title="Nothing this month"
               message="Add a transaction and it will show up here, in the charts, and in the running balance."
               action={
                 <button className="btn" onClick={() => setEditing('new')}>
-                  ＋ Add one
+                  <Icon name="plus" /> Add one
                 </button>
               }
             />
@@ -241,14 +243,14 @@ export function FinancePage() {
                 <thead>
                   <tr>
                     <th className="sortable" onClick={() => toggleSort('date')}>
-                      Date {sort.key === 'date' ? (sort.dir === 'asc' ? '↑' : '↓') : ''}
+                      Date {sort.key === 'date' ? (sort.dir === 'asc' ? 'up' : 'down') : ''}
                     </th>
                     <th className="sortable" onClick={() => toggleSort('category')}>
-                      Category {sort.key === 'category' ? (sort.dir === 'asc' ? '↑' : '↓') : ''}
+                      Category {sort.key === 'category' ? (sort.dir === 'asc' ? 'up' : 'down') : ''}
                     </th>
                     <th>Note</th>
                     <th className="sortable num" onClick={() => toggleSort('amount_minor')}>
-                      Amount {sort.key === 'amount_minor' ? (sort.dir === 'asc' ? '↑' : '↓') : ''}
+                      Amount {sort.key === 'amount_minor' ? (sort.dir === 'asc' ? 'up' : 'down') : ''}
                     </th>
                     <th style={{ width: 76 }} />
                   </tr>
@@ -289,14 +291,14 @@ export function FinancePage() {
                               onClick={() => setEditing(transaction)}
                               aria-label="Edit"
                             >
-                              ✎
+                              <Icon name="edit" />
                             </button>
                             <button
                               className="icon-btn danger"
                               onClick={() => void remove(transaction)}
                               aria-label="Delete"
                             >
-                              🗑
+                              <Icon name="trash" />
                             </button>
                           </div>
                         </td>
@@ -311,7 +313,7 @@ export function FinancePage() {
 
         {/* RAIL --------------------------------------------------------- */}
         <div className="col" style={{ gap: 'var(--space-lg)' }}>
-          <div className="card card-pad rise" style={{ animationDelay: '60ms' }}>
+          <div className="card card-pad rise">
             <div className="stat-row">
               <Stat
                 label="Balance"
@@ -328,7 +330,7 @@ export function FinancePage() {
           </div>
 
           {byCategory.length > 0 ? (
-            <div className="card card-pad rise" style={{ animationDelay: '110ms' }}>
+            <div className="card card-pad rise">
               <div className="overline" style={{ marginBottom: 'var(--space-md)' }}>
                 Where it went
               </div>
@@ -366,7 +368,7 @@ export function FinancePage() {
                       style={{
                         fontSize: 12.5,
                         width: '100%',
-                        background: active ? 'var(--glass)' : 'none',
+                        background: active ? 'var(--surface-2)' : 'none',
                         border: 0,
                         borderRadius: 'var(--radius-sm)',
                         padding: '3px 6px',
@@ -393,7 +395,7 @@ export function FinancePage() {
             </div>
           ) : null}
 
-          <div className="card card-pad rise" style={{ animationDelay: '160ms' }}>
+          <div className="card card-pad rise">
             <div className="overline" style={{ marginBottom: 'var(--space-md)' }}>
               Last 6 months
             </div>
@@ -416,7 +418,7 @@ export function FinancePage() {
                 <Tooltip
                   formatter={(value) => formatMoney(Number(value))}
                   contentStyle={TOOLTIP_STYLE}
-                  cursor={{ fill: 'var(--glass)' }}
+                  cursor={{ fill: 'var(--surface-2)' }}
                 />
                 <Bar dataKey="incomeMinor" name="In" fill="var(--success)" radius={[3, 3, 0, 0]} />
                 <Bar dataKey="expenseMinor" name="Out" fill="var(--accent-rose)" radius={[3, 3, 0, 0]} />
@@ -505,7 +507,7 @@ function TransactionDialog({
       onClose={onClose}
       footer={
         <>
-          <button className="btn btn-glass" onClick={onClose}>
+          <button className="btn btn-secondary" onClick={onClose}>
             Cancel
           </button>
           <button className="btn" onClick={() => void save()} disabled={saving}>

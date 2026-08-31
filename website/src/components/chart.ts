@@ -7,8 +7,8 @@
  * charts included, for one style object.
  */
 export const TOOLTIP_STYLE = {
-  background: 'var(--background-elevated)',
-  border: '1px solid var(--glass-border-strong)',
+  background: 'var(--surface)',
+  border: '1px solid var(--border-strong)',
   borderRadius: 10,
   fontSize: 12,
   color: 'var(--text)',

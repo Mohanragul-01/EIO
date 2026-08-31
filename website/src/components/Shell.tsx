@@ -8,17 +8,18 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 
+import { Icon, type IconName } from './Icon';
 import { useAuth } from '../lib/auth';
 import { useCustomModules } from '../modules/custom/useCustomModules';
 
 /** Built-in modules, mirroring app/src/modules/registry.ts. */
-const NAV = [
-  { to: '/', icon: '◈', label: 'Dashboard', exact: true },
-  { to: '/todo', icon: '✓', label: 'Tasks' },
-  { to: '/notes', icon: '✎', label: 'Notes' },
-  { to: '/finance', icon: '₹', label: 'Finance' },
-  { to: '/subscriptions', icon: '↻', label: 'Subscriptions' },
-  { to: '/fitness', icon: '◑', label: 'Fitness' },
+const NAV: { to: string; icon: IconName; label: string; exact?: boolean }[] = [
+  { to: '/', icon: 'dashboard', label: 'Dashboard', exact: true },
+  { to: '/todo', icon: 'tasks', label: 'Tasks' },
+  { to: '/notes', icon: 'notes', label: 'Notes' },
+  { to: '/finance', icon: 'finance', label: 'Finance' },
+  { to: '/subscriptions', icon: 'subscriptions', label: 'Subscriptions' },
+  { to: '/fitness', icon: 'fitness', label: 'Fitness' },
 ];
 
 type Theme = 'system' | 'light' | 'dark';
@@ -98,21 +99,14 @@ export function Shell({
             // icon alone has to be identifiable.
             title={item.label}
           >
-            <span className="nav-icon" aria-hidden>
-              {item.icon}
-            </span>
-            <span>{item.label}</span>
+            <Icon name={item.icon} className="nav-icon" />
+            <span className="nav-text">{item.label}</span>
           </NavLink>
         ))}
 
         {modules.length > 0 ? (
           <>
-            <div
-              className="overline"
-              style={{ padding: 'var(--space-lg) var(--space-md) var(--space-sm)' }}
-            >
-              Yours
-            </div>
+            <div className="nav-section">Yours</div>
             {modules.map((module) => (
               <NavLink
                 key={module.id}
@@ -120,10 +114,13 @@ export function Shell({
                 className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
                 title={module.name}
               >
-                <span className="nav-icon" aria-hidden style={{ color: module.color }}>
-                  ●
-                </span>
-                <span className="truncate">{module.name}</span>
+                {/* The module's own colour is its identity, so the dot keeps it
+                    rather than taking the nav's active tint. */}
+                <span
+                  className="dot nav-icon"
+                  style={{ background: module.color, margin: '0 5px' }}
+                />
+                <span className="nav-text truncate">{module.name}</span>
               </NavLink>
             ))}
           </>
@@ -151,10 +148,8 @@ export function Shell({
             to="/builder"
             className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
           >
-            <span className="nav-icon" aria-hidden>
-              ＋
-            </span>
-            <span>New module</span>
+            <Icon name="plus" className="nav-icon" />
+            <span className="nav-text">New module</span>
           </NavLink>
 
           <button
@@ -163,11 +158,12 @@ export function Shell({
             style={{ background: 'none' }}
             title={`Theme: ${theme}`}
           >
-            <span className="nav-icon" aria-hidden>
-              {theme === 'dark' ? '☾' : theme === 'light' ? '☀' : '◐'}
-            </span>
-            <span>
-              {theme === 'system' ? 'System theme' : theme === 'dark' ? 'Dark' : 'Light'}
+            <Icon
+              name={theme === 'dark' ? 'moon' : theme === 'light' ? 'sun' : 'monitor'}
+              className="nav-icon"
+            />
+            <span className="nav-text">
+              {theme === 'system' ? 'System' : theme === 'dark' ? 'Dark' : 'Light'}
             </span>
           </button>
 
@@ -177,10 +173,8 @@ export function Shell({
             style={{ background: 'none' }}
             title="Sign out"
           >
-            <span className="nav-icon" aria-hidden>
-              ⏻
-            </span>
-            <span>Sign out</span>
+            <Icon name="logout" className="nav-icon" />
+            <span className="nav-text">Sign out</span>
           </button>
         </div>
       </nav>

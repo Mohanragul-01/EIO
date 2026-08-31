@@ -82,8 +82,8 @@ just needs to remember.**
 - `react-router-dom` with a **hash** router, so a built copy opens from disk
   with no server to rewrite deep links
 - `recharts` for charts
-- Hand-written CSS with custom properties, no framework: the palettes are
-  ported from `app/src/core/theme.ts` so both clients look like one product
+- Hand-written CSS with custom properties, no framework
+- A hand-drawn SVG icon set, one 24px grid at one stroke weight
 - No state library here either
 
 Chosen over Next.js because every byte of EIO is behind auth and scoped to one
@@ -305,6 +305,23 @@ the same signal the library itself uses. See
 **jsonb is sorted in JavaScript, not SQL.** Ordering a custom module's records
 by `data->>'key'` compares everything as TEXT, which puts 100 before 9 for a
 number field. It looks right until you scroll.
+
+**The two clients no longer look alike, on purpose.** The website first copied
+the phone's aesthetic - translucent panels over animated gradients. That reads
+well on a phone, which shows one thing at a time and can afford atmosphere. On a
+monitor showing four task columns, a ledger and two charts at once, it is
+decoration competing with data, and it is the most recognisable house style of
+generated dashboards. So the site is flat and dense now: neutral surfaces, one
+accent, hairline borders instead of blur, small radii, and colour reserved for
+meaning.
+
+**Never build an icon set out of Unicode characters.** The site used `✎`, `🗑`,
+`＋`, `↻`, `⚙` - glyphs from a dozen unrelated blocks, each resolved from
+whatever font happened to have it, so no two shared a stroke weight, an optical
+size or a baseline. `🗑` is worse: on Windows it is a full-colour emoji, so a
+neutral toolbar had one glossy bin in it. They are now drawn paths on one grid,
+in [`Icon.tsx`](website/src/components/Icon.tsx). Nothing else moved the needle
+on "this looks designed" as far.
 
 **Never build a list out of `Alert.alert` buttons.** Android has exactly three
 button slots - positive, negative, neutral - and a fourth button does not fail

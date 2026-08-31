@@ -27,6 +27,7 @@ import {
   type SummaryAgg,
 } from '@app/modules/custom/types';
 
+import { Icon } from '../components/Icon';
 import { Shell } from '../components/Shell';
 import {
   ErrorBanner,
@@ -183,7 +184,7 @@ export function ModuleBuilderPage() {
       actions={
         <div className="row">
           {isEditing ? (
-            <button className="btn btn-glass btn-sm" onClick={() => void destroy()}>
+            <button className="btn btn-secondary btn-sm" onClick={() => void destroy()}>
               Delete
             </button>
           ) : null}
@@ -233,14 +234,14 @@ export function ModuleBuilderPage() {
             </div>
           </div>
 
-          <div className="card card-pad rise" style={{ animationDelay: '60ms' }}>
+          <div className="card card-pad rise">
             <div className="row-between" style={{ marginBottom: 'var(--space-lg)' }}>
               <span className="overline">Fields</span>
               <button
-                className="btn btn-glass btn-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setDrafts((current) => [...current, newDraft()])}
               >
-                ＋ Add field
+                <Icon name="plus" /> Add field
               </button>
             </div>
 
@@ -250,7 +251,7 @@ export function ModuleBuilderPage() {
                   key={draft.localId}
                   style={{
                     padding: 'var(--space-lg)',
-                    border: '1px solid var(--glass-border)',
+                    border: '1px solid var(--border)',
                     borderRadius: 'var(--radius-md)',
                   }}
                 >
@@ -270,7 +271,7 @@ export function ModuleBuilderPage() {
                       }
                       aria-label="Remove field"
                     >
-                      ✕
+                      <Icon name="close" />
                     </button>
                   </div>
 
@@ -314,7 +315,7 @@ export function ModuleBuilderPage() {
                       onClick={() => update(draft.localId, { required: !draft.required })}
                       aria-pressed={draft.required}
                     >
-                      {draft.required ? '✓' : ''}
+                      {draft.required ? <Icon name="check" size={11} strokeWidth={2.5} /> : null}
                     </button>
                     <span style={{ fontSize: 13 }}>Required</span>
                   </label>
@@ -388,7 +389,7 @@ export function ModuleBuilderPage() {
                 </div>
               </div>
 
-              <div className="card card-pad rise" style={{ animationDelay: '60ms' }}>
+              <div className="card card-pad rise">
                 <div className="overline" style={{ marginBottom: 'var(--space-md)' }}>
                   Sort entries by
                 </div>

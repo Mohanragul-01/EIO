@@ -29,6 +29,7 @@ import {
   type SubscriptionInput,
 } from '@app/modules/subscriptions/types';
 
+import { Icon } from '../components/Icon';
 import { Shell } from '../components/Shell';
 import {
   ChipPicker,
@@ -171,7 +172,7 @@ export function SubscriptionsPage() {
       }
       actions={
         <button className="btn" onClick={() => setEditing('new')}>
-          ＋ New subscription
+          <Icon name="plus" /> New subscription
         </button>
       }
     >
@@ -195,12 +196,12 @@ export function SubscriptionsPage() {
       ) : subscriptions.length === 0 ? (
         <div className="card">
           <Empty
-            icon="↻"
+            icon="subscriptions"
             title="Nothing tracked yet"
             message="Add the things that renew on their own, and marking one paid logs the expense to Finance for you."
             action={
               <button className="btn" onClick={() => setEditing('new')}>
-                ＋ Add one
+                <Icon name="plus" /> Add one
               </button>
             }
           />
@@ -230,7 +231,7 @@ export function SubscriptionsPage() {
           </div>
 
           <div className="col" style={{ gap: 'var(--space-2xl)' }}>
-            {(Object.keys(BUCKET_LABEL) as Bucket[]).map((bucket, index) => {
+            {(Object.keys(BUCKET_LABEL) as Bucket[]).map((bucket) => {
               const items = grouped[bucket];
               if (items.length === 0) return null;
 
@@ -238,7 +239,7 @@ export function SubscriptionsPage() {
                 <section
                   key={bucket}
                   className="rise"
-                  style={{ animationDelay: `${index * 50}ms` }}
+                  
                 >
                   <div className="row" style={{ gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
                     <span className="dot" style={{ background: BUCKET_COLOR[bucket] }} />
@@ -305,7 +306,7 @@ function SubscriptionRow({
   const category = categoryDef(subscription.category || DEFAULT_SUBSCRIPTION_CATEGORY);
 
   return (
-    <div className="list-row">
+    <div className="list-row bordered">
       <span className="dot" style={{ background: category.color, width: 9, height: 9 }} />
 
       <div className="grow" style={{ minWidth: 0 }}>
@@ -328,7 +329,7 @@ function SubscriptionRow({
       </div>
 
       {subscription.is_active ? (
-        <button className="btn btn-glass btn-sm" onClick={onPay} disabled={busy}>
+        <button className="btn btn-secondary btn-sm" onClick={onPay} disabled={busy}>
           {busy ? <span className="spinner" /> : 'Mark paid'}
         </button>
       ) : null}
@@ -340,13 +341,13 @@ function SubscriptionRow({
           title={subscription.is_active ? 'Pause' : 'Resume'}
           aria-label={subscription.is_active ? 'Pause' : 'Resume'}
         >
-          {subscription.is_active ? '⏸' : '▶'}
+          {subscription.is_active ? 'pause' : 'play'}
         </button>
         <button className="icon-btn" onClick={onEdit} title="Edit" aria-label="Edit">
-          ✎
+          <Icon name="edit" />
         </button>
         <button className="icon-btn danger" onClick={onDelete} title="Delete" aria-label="Delete">
-          🗑
+          <Icon name="trash" />
         </button>
       </div>
     </div>
@@ -421,7 +422,7 @@ function SubscriptionDialog({
       onClose={onClose}
       footer={
         <>
-          <button className="btn btn-glass" onClick={onClose}>
+          <button className="btn btn-secondary" onClick={onClose}>
             Cancel
           </button>
           <button className="btn" onClick={() => void save()} disabled={saving}>
@@ -501,7 +502,7 @@ function SubscriptionDialog({
           onClick={() => setIsActive(!isActive)}
           aria-pressed={isActive}
         >
-          {isActive ? '✓' : ''}
+          {isActive ? <Icon name="check" size={11} strokeWidth={2.5} /> : null}
         </button>
         <span>
           <div style={{ fontWeight: 500 }}>Active</div>

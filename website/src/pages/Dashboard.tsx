@@ -23,6 +23,7 @@ import * as subsApi from '@app/modules/subscriptions/api';
 import { toMonthlyMinor } from '@app/modules/subscriptions/types';
 import * as todoApi from '@app/modules/todo/api';
 
+import { Icon, type IconName } from '../components/Icon';
 import { Shell } from '../components/Shell';
 import { Spinner } from '../components/ui';
 import { useAsync } from '../lib/useAsync';
@@ -110,12 +111,19 @@ const TONE_COLOR = {
 
 type Summary = { text: string; sub?: string; tone: keyof typeof TONE_COLOR };
 
-const TILES = [
-  { key: 'todo', title: 'Tasks', icon: '✓', to: '/todo', accent: 'var(--accent-indigo)', load: todoSummary },
-  { key: 'notes', title: 'Notes', icon: '✎', to: '/notes', accent: 'var(--accent-amber)', load: notesSummary },
-  { key: 'finance', title: 'Finance', icon: '₹', to: '/finance', accent: 'var(--accent-emerald)', load: financeSummary },
-  { key: 'subscriptions', title: 'Subscriptions', icon: '↻', to: '/subscriptions', accent: 'var(--accent-cyan)', load: subscriptionsSummary },
-  { key: 'fitness', title: 'Fitness', icon: '◑', to: '/fitness', accent: 'var(--accent-rose)', load: fitnessSummary },
+const TILES: {
+  key: string;
+  title: string;
+  icon: IconName;
+  to: string;
+  accent: string;
+  load: () => Promise<Summary>;
+}[] = [
+  { key: 'todo', title: 'Tasks', icon: 'tasks', to: '/todo', accent: 'var(--accent-indigo)', load: todoSummary },
+  { key: 'notes', title: 'Notes', icon: 'notes', to: '/notes', accent: 'var(--accent-amber)', load: notesSummary },
+  { key: 'finance', title: 'Finance', icon: 'finance', to: '/finance', accent: 'var(--accent-emerald)', load: financeSummary },
+  { key: 'subscriptions', title: 'Subscriptions', icon: 'subscriptions', to: '/subscriptions', accent: 'var(--accent-cyan)', load: subscriptionsSummary },
+  { key: 'fitness', title: 'Fitness', icon: 'fitness', to: '/fitness', accent: 'var(--accent-rose)', load: fitnessSummary },
 ];
 
 export function Dashboard() {
@@ -131,24 +139,24 @@ export function Dashboard() {
   return (
     <Shell title="Dashboard" subtitle={greeting}>
       <div className="tile-grid">
-        {TILES.map(({ key, ...tile }, index) => (
+        {TILES.map(({ key, ...tile }) => (
           // `key` is destructured out: React consumes it, and leaving it in the
           // spread would set a `key` prop as well as the reserved one.
-          <ModuleTile key={key} {...tile} delay={index * 50} />
+          <ModuleTile key={key} {...tile} />
         ))}
 
-        {modules.map((module, index) => {
+        {modules.map((module) => {
           const summary = summaries[module.id];
           return (
             <Link
               key={module.id}
               to={`/m/${module.id}`}
-              className="card card-pad card-hover rise"
-              style={{ animationDelay: `${(TILES.length + index) * 50}ms`, color: 'inherit' }}
+              className="card card-pad card-hover"
+              style={{ color: 'inherit' }}
             >
               <div className="row-between" style={{ marginBottom: 'var(--space-lg)' }}>
                 <span className="overline">{module.name}</span>
-                <span style={{ color: module.color, fontSize: 15 }}>●</span>
+                <span className="dot" style={{ background: module.color }} />
               </div>
               <div className="stat-value numeric">{summary?.text ?? '—'}</div>
               <div className="faint" style={{ fontSize: 12.5, marginTop: 2 }}>
@@ -168,14 +176,12 @@ function ModuleTile({
   to,
   accent,
   load,
-  delay,
 }: {
   title: string;
-  icon: string;
+  icon: IconName;
   to: string;
   accent: string;
   load: () => Promise<Summary>;
-  delay: number;
 }) {
   const loader = useCallback(() => load(), [load]);
   const { data, loading, error } = useAsync(loader, to);
@@ -183,14 +189,12 @@ function ModuleTile({
   return (
     <Link
       to={to}
-      className="card card-pad card-hover rise"
-      style={{ animationDelay: `${delay}ms`, color: 'inherit' }}
+      className="card card-pad card-hover"
+      style={{ color: 'inherit' }}
     >
       <div className="row-between" style={{ marginBottom: 'var(--space-lg)' }}>
         <span className="overline">{title}</span>
-        <span style={{ color: accent, fontSize: 15 }} aria-hidden>
-          {icon}
-        </span>
+        <Icon name={icon} size={15} style={{ color: accent }} />
       </div>
 
       {loading ? (
@@ -205,7 +209,7 @@ function ModuleTile({
             {data?.text}
           </div>
           <div className="faint" style={{ fontSize: 12.5, marginTop: 2 }}>
-            {data?.sub ?? ' '}
+            {data?.sub ?? ''}
           </div>
         </>
       )}

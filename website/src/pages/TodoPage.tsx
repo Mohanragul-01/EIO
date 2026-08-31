@@ -27,6 +27,7 @@ import {
   type TodoInput,
 } from '@app/modules/todo/types';
 
+import { Icon } from '../components/Icon';
 import { Shell } from '../components/Shell';
 import {
   ChipPicker,
@@ -176,7 +177,7 @@ export function TodoPage() {
               setEditing('new');
             }}
           >
-            ＋ New task
+            <Icon name="plus" /> New task
           </button>
         </div>
       }
@@ -187,15 +188,15 @@ export function TodoPage() {
         <Spinner center />
       ) : (
         <div className="columns" style={{ marginTop: error || actionError ? 16 : 0 }}>
-          {FREQUENCIES.map((frequency, index) => {
+          {FREQUENCIES.map((frequency) => {
             const todos = visible?.[frequency] ?? [];
             const openHere = data?.[frequency].open.length ?? 0;
 
             return (
               <section
-                className="column rise"
+                className="column"
                 key={frequency}
-                style={{ animationDelay: `${index * 45}ms` }}
+                
                 aria-label={FREQUENCY_LABEL[frequency]}
               >
                 <header className="column-head">
@@ -211,21 +212,13 @@ export function TodoPage() {
                       setEditing('new');
                     }}
                   >
-                    ＋
+                    <Icon name="plus" />
                   </button>
                 </header>
 
                 <div className="column-body">
                   {todos.length === 0 ? (
-                    <div
-                      className="card"
-                      style={{
-                        padding: 'var(--space-xl)',
-                        textAlign: 'center',
-                        color: 'var(--text-faint)',
-                        fontSize: 13,
-                      }}
-                    >
+                    <div className="column-empty">
                       {filter === 'done' ? 'Nothing completed' : 'All clear'}
                     </div>
                   ) : (
@@ -292,7 +285,7 @@ function TaskRow({
         aria-label={todo.is_done ? 'Reopen task' : 'Complete task'}
         style={{ marginTop: 1 }}
       >
-        {todo.is_done ? '✓' : ''}
+        {todo.is_done ? <Icon name="check" size={11} strokeWidth={2.5} /> : null}
       </button>
 
       {/*
@@ -346,7 +339,7 @@ function TaskRow({
 
           {todo.is_repeat ? (
             <span className="faint" style={{ fontSize: 12 }} title="Repeats when completed">
-              ↻
+              <Icon name="repeat" size={13} />
             </span>
           ) : null}
         </div>
@@ -354,7 +347,7 @@ function TaskRow({
 
       <div className="row-actions">
         <button className="icon-btn" onClick={onEdit} title="Edit" aria-label="Edit task">
-          ✎
+          <Icon name="edit" />
         </button>
         <button
           className="icon-btn danger"
@@ -362,7 +355,7 @@ function TaskRow({
           title="Delete"
           aria-label="Delete task"
         >
-          🗑
+          <Icon name="trash" />
         </button>
       </div>
     </div>
@@ -427,7 +420,7 @@ function TaskDialog({
       onClose={onClose}
       footer={
         <>
-          <button className="btn btn-glass" onClick={onClose}>
+          <button className="btn btn-secondary" onClick={onClose}>
             Cancel
           </button>
           <button className="btn" onClick={() => void save()} disabled={saving}>
@@ -476,7 +469,7 @@ function TaskDialog({
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
           />
-          <button className="btn btn-glass btn-sm" onClick={() => setDueDate(todayISO())}>
+          <button className="btn btn-secondary btn-sm" onClick={() => setDueDate(todayISO())}>
             Today
           </button>
           {dueDate ? (
@@ -494,7 +487,7 @@ function TaskDialog({
           onClick={() => setIsRepeat(!isRepeat)}
           aria-pressed={isRepeat}
         >
-          {isRepeat ? '✓' : ''}
+          {isRepeat ? <Icon name="check" size={11} strokeWidth={2.5} /> : null}
         </button>
         <span>
           <div style={{ fontWeight: 500 }}>Repeat {FREQUENCY_LABEL[freq].toLowerCase()}</div>

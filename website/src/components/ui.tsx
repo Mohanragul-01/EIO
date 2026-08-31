@@ -16,6 +16,8 @@ import {
   type TextareaHTMLAttributes,
 } from 'react';
 
+import { Icon, type IconName } from './Icon';
+
 /* SPINNER ------------------------------------------------------------------ */
 
 export function Spinner({ center = false }: { center?: boolean }) {
@@ -31,14 +33,18 @@ export function Empty({
   message,
   action,
 }: {
-  icon?: ReactNode;
+  icon?: IconName;
   title: string;
   message?: string;
   action?: ReactNode;
 }) {
   return (
     <div className="empty">
-      {icon ? <div style={{ fontSize: 30, opacity: 0.5 }}>{icon}</div> : null}
+      {icon ? (
+        <div className="empty-icon">
+          <Icon name={icon} size={18} />
+        </div>
+      ) : null}
       <div className="empty-title">{title}</div>
       {message ? <p className="empty-msg">{message}</p> : null}
       {action ? <div style={{ marginTop: 'var(--space-sm)' }}>{action}</div> : null}
@@ -52,7 +58,8 @@ export function ErrorBanner({ message }: { message: string | null }) {
   if (!message) return null;
   return (
     <div className="banner" role="alert">
-      {message}
+      <Icon name="alert" size={15} style={{ marginTop: 1 }} />
+      <span>{message}</span>
     </div>
   );
 }
@@ -249,9 +256,9 @@ export function Modal({
     >
       <div className="modal-inner">
         <header className="modal-head">
-          <h2 style={{ fontSize: 16 }}>{title}</h2>
+          <h2 className="modal-title">{title}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
-            ✕
+            <Icon name="close" />
           </button>
         </header>
 
@@ -299,7 +306,7 @@ export function useConfirm() {
       width={420}
       footer={
         <>
-          <button className="btn btn-glass" onClick={() => settle(false)}>
+          <button className="btn btn-secondary" onClick={() => settle(false)}>
             Cancel
           </button>
           <button className="btn btn-danger" onClick={() => settle(true)}>
@@ -358,11 +365,11 @@ export function Stat({
 }) {
   return (
     <div className="stat">
-      <div className="overline">{label}</div>
+      <div className="stat-label">{label}</div>
       <div className="stat-value numeric" style={color ? { color } : undefined}>
         {value}
       </div>
-      {sub ? <div className="faint" style={{ fontSize: 12.5 }}>{sub}</div> : null}
+      {sub ? <div className="stat-sub">{sub}</div> : null}
     </div>
   );
 }

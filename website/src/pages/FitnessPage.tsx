@@ -39,6 +39,7 @@ import {
   type WorkoutSession,
 } from '@app/modules/fitness/types';
 
+import { Icon } from '../components/Icon';
 import { Shell } from '../components/Shell';
 import {
   ChipPicker,
@@ -154,15 +155,15 @@ function LogView() {
           {(data?.routines ?? []).map((routine) => (
             <button
               key={routine.id}
-              className="btn btn-glass btn-sm"
+              className="btn btn-secondary btn-sm"
               onClick={() => void start(routine.id)}
               disabled={starting}
             >
-              ▶ {routine.name}
+              <Icon name="play" size={11} /> {routine.name}
             </button>
           ))}
           <button className="btn" onClick={() => void start(null)} disabled={starting}>
-            {starting ? <span className="spinner" /> : '＋ Freestyle'}
+            {starting ? <span className="spinner" /> : 'Freestyle'}
           </button>
         </div>
       </div>
@@ -172,19 +173,18 @@ function LogView() {
       ) : sessions.length === 0 ? (
         <div className="card">
           <Empty
-            icon="◑"
+            icon="fitness"
             title="No workouts yet"
             message="Start a session and log sets as you go. Personal records are worked out from what you log."
           />
         </div>
       ) : (
         <div className="col" style={{ gap: 'var(--space-sm)' }}>
-          {sessions.map((session, index) => (
+          {sessions.map((session) => (
             <SessionRow
               key={session.id}
               session={session}
               routineName={data?.routines.find((r) => r.id === session.routine_id)?.name}
-              delay={Math.min(index, 8) * 35}
               onOpen={() => setOpenId(session.id)}
               onDelete={() => void remove(session)}
             />
@@ -214,18 +214,16 @@ function LogView() {
 function SessionRow({
   session,
   routineName,
-  delay,
   onOpen,
   onDelete,
 }: {
   session: WorkoutSession;
   routineName?: string;
-  delay: number;
   onOpen: () => void;
   onDelete: () => void;
 }) {
   return (
-    <div className="list-row rise" style={{ animationDelay: `${delay}ms` }}>
+    <div className="list-row">
       <button
         onClick={onOpen}
         className="grow row"
@@ -246,10 +244,10 @@ function SessionRow({
 
       <div className="row-actions">
         <button className="icon-btn" onClick={onOpen} aria-label="Open">
-          ✎
+          <Icon name="edit" />
         </button>
         <button className="icon-btn danger" onClick={onDelete} aria-label="Delete">
-          🗑
+          <Icon name="trash" />
         </button>
       </div>
     </div>
@@ -598,7 +596,7 @@ function ExerciseBlock({
             title="Remove from this session"
             aria-label="Remove from this session"
           >
-            ✕
+            <Icon name="close" />
           </button>
         ) : null}
       </div>
@@ -625,7 +623,7 @@ function ExerciseBlock({
             </span>
           ) : null}
           <button className="icon-btn danger" onClick={() => onRemove(set.id)} aria-label="Remove set">
-            ✕
+            <Icon name="close" />
           </button>
         </div>
       ))}
@@ -639,7 +637,7 @@ function ExerciseBlock({
           placeholder="kg"
           inputMode="decimal"
         />
-        <span className="faint">×</span>
+        <span className="faint"><Icon name="close" /></span>
         <input
           className="input"
           style={{ width: 80 }}
@@ -821,7 +819,7 @@ function PlanView() {
               </div>
               <div className="col" style={{ gap: 4 }}>
                 {items.map((exercise) => (
-                  <div className="list-row" key={exercise.id} style={{ padding: '9px 14px' }}>
+                  <div className="list-row bordered" key={exercise.id}>
                     <button
                       className="grow"
                       style={{ background: 'none', border: 0, padding: 0, textAlign: 'left' }}
@@ -836,7 +834,7 @@ function PlanView() {
                         aria-label="Progress"
                         title="Progress"
                       >
-                        ↗
+                        <Icon name="trend" />
                       </button>
                       <button
                         className="icon-btn"
@@ -844,7 +842,7 @@ function PlanView() {
                         aria-label="Rename"
                         title="Rename"
                       >
-                        ✎
+                        <Icon name="edit" />
                       </button>
                       <button
                         className="icon-btn danger"
@@ -852,7 +850,7 @@ function PlanView() {
                         aria-label="Delete"
                         title="Delete"
                       >
-                        🗑
+                        <Icon name="trash" />
                       </button>
                     </div>
                   </div>
@@ -890,8 +888,8 @@ function PlanView() {
         <div className="col" style={{ gap: 'var(--space-lg)' }}>
           <div className="row-between">
             <span className="column-title">Routines</span>
-            <button className="btn btn-glass btn-sm" onClick={() => setEditingRoutine('new')}>
-              ＋ New
+            <button className="btn btn-secondary btn-sm" onClick={() => setEditingRoutine('new')}>
+              <Icon name="plus" /> New
             </button>
           </div>
 
@@ -905,7 +903,7 @@ function PlanView() {
           ) : (
             <div className="col" style={{ gap: 'var(--space-sm)' }}>
               {(data?.routines ?? []).map((routine) => (
-                <div className="list-row" key={routine.id}>
+                <div className="list-row bordered" key={routine.id}>
                   <span className="grow" style={{ fontSize: 13, fontWeight: 500 }}>
                     {routine.name}
                   </span>
@@ -915,14 +913,14 @@ function PlanView() {
                       onClick={() => setEditingRoutine(routine)}
                       aria-label="Edit"
                     >
-                      ✎
+                      <Icon name="edit" />
                     </button>
                     <button
                       className="icon-btn danger"
                       onClick={() => void removeRoutine(routine)}
                       aria-label="Delete"
                     >
-                      🗑
+                      <Icon name="trash" />
                     </button>
                   </div>
                 </div>
@@ -1005,7 +1003,7 @@ function ExerciseDialog({
       width={460}
       footer={
         <>
-          <button className="btn btn-glass" onClick={onClose}>
+          <button className="btn btn-secondary" onClick={onClose}>
             Cancel
           </button>
           <button className="btn" onClick={() => void save()} disabled={saving}>
@@ -1089,7 +1087,7 @@ function ProgressDialog({ exercise, onClose }: { exercise: Exercise; onClose: ()
 
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={daily} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-              <CartesianGrid stroke="var(--glass-border)" vertical={false} />
+              <CartesianGrid stroke="var(--border)" vertical={false} />
               <XAxis
                 dataKey="date"
                 tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
@@ -1250,7 +1248,7 @@ function RoutineDialog({
       width={720}
       footer={
         <>
-          <button className="btn btn-glass" onClick={onClose}>
+          <button className="btn btn-secondary" onClick={onClose}>
             Cancel
           </button>
           <button className="btn" onClick={() => void save()} disabled={saving || !loaded}>
@@ -1292,7 +1290,7 @@ function RoutineDialog({
                       disabled={index === 0}
                       aria-label="Move up"
                     >
-                      ▲
+                      <Icon name="chevronUp" size={12} />
                     </button>
                     <button
                       className="icon-btn"
@@ -1301,7 +1299,7 @@ function RoutineDialog({
                       disabled={index === entries.length - 1}
                       aria-label="Move down"
                     >
-                      ▼
+                      <Icon name="chevronDown" size={12} />
                     </button>
                   </div>
 
@@ -1333,7 +1331,7 @@ function RoutineDialog({
                     onClick={() => toggle(entry.exercise_id)}
                     aria-label="Remove"
                   >
-                    ✕
+                    <Icon name="close" />
                   </button>
                 </div>
               ))}
@@ -1461,7 +1459,7 @@ function BodyView() {
               </div>
               <ResponsiveContainer width="100%" height={240}>
                 <LineChart data={chart} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                  <CartesianGrid stroke="var(--glass-border)" vertical={false} />
+                  <CartesianGrid stroke="var(--border)" vertical={false} />
                   <XAxis
                     dataKey="date"
                     tick={{ fontSize: 11, fill: 'var(--text-muted)' }}

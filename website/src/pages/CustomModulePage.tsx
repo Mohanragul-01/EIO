@@ -24,6 +24,7 @@ import {
   type CustomRecord,
 } from '@app/modules/custom/types';
 
+import { Icon } from '../components/Icon';
 import { Shell } from '../components/Shell';
 import {
   Empty,
@@ -150,11 +151,11 @@ export function CustomModulePage() {
       subtitle={summary?.text}
       actions={
         <div className="row">
-          <Link className="btn btn-glass btn-sm" to={`/builder/${module.id}`}>
-            ⚙ Edit module
+          <Link className="btn btn-secondary btn-sm" to={`/builder/${module.id}`}>
+            <Icon name="module" size={14} /> Edit module
           </Link>
           <button className="btn" onClick={() => setEditing('new')} disabled={fields.length === 0}>
-            ＋ New entry
+            <Icon name="plus" /> New entry
           </button>
         </div>
       }
@@ -207,7 +208,7 @@ export function CustomModulePage() {
                 action={
                   query ? undefined : (
                     <button className="btn" onClick={() => setEditing('new')}>
-                      ＋ Add one
+                      <Icon name="plus" /> Add one
                     </button>
                   )
                 }
@@ -232,7 +233,7 @@ export function CustomModulePage() {
                               active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'
                             }
                           >
-                            {field.label} {active ? (dir === 'asc' ? '↑' : '↓') : ''}
+                            {field.label} {active ? (dir === 'asc' ? 'up' : 'down') : ''}
                           </th>
                         );
                       })}
@@ -258,14 +259,14 @@ export function CustomModulePage() {
                               onClick={() => setEditing(record)}
                               aria-label="Edit"
                             >
-                              ✎
+                              <Icon name="edit" />
                             </button>
                             <button
                               className="icon-btn danger"
                               onClick={() => void remove(record)}
                               aria-label="Delete"
                             >
-                              🗑
+                              <Icon name="trash" />
                             </button>
                           </div>
                         </td>
@@ -351,7 +352,7 @@ function RecordDialog({
       onClose={onClose}
       footer={
         <>
-          <button className="btn btn-glass" onClick={onClose}>
+          <button className="btn btn-secondary" onClick={onClose}>
             Cancel
           </button>
           <button className="btn" onClick={() => void save()} disabled={saving}>
@@ -413,7 +414,7 @@ function FieldInput({
             onClick={() => onChange(value !== true)}
             aria-pressed={value === true}
           >
-            {value === true ? '✓' : ''}
+            {value === true ? <Icon name="check" size={11} strokeWidth={2.5} /> : null}
           </button>
           <span style={{ fontWeight: 500 }}>{label}</span>
           {error ? <span className="error-text">{error}</span> : null}

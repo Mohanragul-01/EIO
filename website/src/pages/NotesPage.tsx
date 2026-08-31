@@ -27,6 +27,7 @@ import {
   type NoteType,
 } from '@app/modules/notes/types';
 
+import { Icon } from '../components/Icon';
 import { Shell } from '../components/Shell';
 import {
   Empty,
@@ -174,7 +175,7 @@ export function NotesPage() {
       subtitle={loading ? 'Loading' : `${counts.all} total · ${counts.inbox} to file`}
       actions={
         <button className="btn" onClick={() => setEditing('new')}>
-          ＋ New note
+          <Icon name="plus" /> New note
         </button>
       }
     >
@@ -210,7 +211,7 @@ export function NotesPage() {
             </div>
           </form>
 
-          <div className="card card-pad rise" style={{ animationDelay: '60ms' }}>
+          <div className="card card-pad rise">
             <div className="overline" style={{ marginBottom: 'var(--space-md)' }}>
               Show
             </div>
@@ -254,7 +255,7 @@ export function NotesPage() {
           ) : visible.length === 0 ? (
             <div className="card">
               <Empty
-                icon="✎"
+                icon="notes"
                 title={query ? 'Nothing matches' : view === 'inbox' ? 'Inbox is clear' : 'No notes yet'}
                 message={
                   query
@@ -267,11 +268,10 @@ export function NotesPage() {
             </div>
           ) : (
             <div className="col" style={{ gap: 'var(--space-sm)' }}>
-              {visible.map((note, index) => (
+              {visible.map((note) => (
                 <NoteCard
                   key={note.id}
                   note={note}
-                  delay={Math.min(index, 8) * 35}
                   onOpen={() => setEditing(note)}
                   onDelete={() => void remove(note)}
                   onToggleItem={(i) => void toggleItem(note, i)}
@@ -302,13 +302,11 @@ export function NotesPage() {
 
 function NoteCard({
   note,
-  delay,
   onOpen,
   onDelete,
   onToggleItem,
 }: {
   note: Note;
-  delay: number;
   onOpen: () => void;
   onDelete: () => void;
   onToggleItem: (index: number) => void;
@@ -317,7 +315,7 @@ function NoteCard({
   const progress = checklistProgress(items);
 
   return (
-    <div className="card card-pad card-hover rise" style={{ animationDelay: `${delay}ms` }}>
+    <div className="card card-pad card-hover">
       <div className="row-between" style={{ alignItems: 'flex-start' }}>
         <button
           onClick={onOpen}
@@ -331,7 +329,7 @@ function NoteCard({
           }}
         >
           <div className="row" style={{ gap: 'var(--space-sm)', marginBottom: 4 }}>
-            <span className="pill" style={{ background: 'var(--glass)', color: 'var(--text-muted)' }}>
+            <span className="pill" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
               {NOTE_TYPE_LABEL[note.note_type]}
             </span>
             {note.is_inbox ? (
@@ -377,10 +375,10 @@ function NoteCard({
 
         <div className="row-actions">
           <button className="icon-btn" onClick={onOpen} aria-label="Edit">
-            ✎
+            <Icon name="edit" />
           </button>
           <button className="icon-btn danger" onClick={onDelete} aria-label="Delete">
-            🗑
+            <Icon name="trash" />
           </button>
         </div>
       </div>
@@ -393,7 +391,7 @@ function NoteCard({
                 flex: 1,
                 height: 4,
                 borderRadius: 2,
-                background: 'var(--glass-border)',
+                background: 'var(--border)',
                 overflow: 'hidden',
               }}
             >
@@ -424,7 +422,7 @@ function NoteCard({
                   onClick={() => onToggleItem(index)}
                   aria-label={item.done ? 'Untick' : 'Tick'}
                 >
-                  {item.done ? '✓' : ''}
+                  {item.done ? <Icon name="check" size={11} strokeWidth={2.5} /> : null}
                 </button>
                 <span className={item.done ? 'strike' : ''}>{item.text}</span>
               </label>
@@ -441,7 +439,7 @@ function NoteCard({
       {note.tags.length > 0 ? (
         <div className="chip-row" style={{ marginTop: 'var(--space-md)' }}>
           {note.tags.map((tag) => (
-            <span key={tag} className="pill" style={{ background: 'var(--glass)', color: 'var(--text-muted)' }}>
+            <span key={tag} className="pill" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
               #{tag}
             </span>
           ))}
@@ -521,7 +519,7 @@ function NoteDialog({
       width={620}
       footer={
         <>
-          <button className="btn btn-glass" onClick={onClose}>
+          <button className="btn btn-secondary" onClick={onClose}>
             Cancel
           </button>
           <button className="btn" onClick={() => void save()} disabled={saving}>
@@ -579,7 +577,7 @@ function NoteDialog({
                   }
                   aria-label={item.done ? 'Untick' : 'Tick'}
                 >
-                  {item.done ? '✓' : ''}
+                  {item.done ? <Icon name="check" size={11} strokeWidth={2.5} /> : null}
                 </button>
                 <input
                   className="input grow"
@@ -595,7 +593,7 @@ function NoteDialog({
                   onClick={() => setItems((current) => current.filter((_, i) => i !== index))}
                   aria-label="Remove item"
                 >
-                  ✕
+                  <Icon name="close" />
                 </button>
               </div>
             ))}
@@ -615,7 +613,7 @@ function NoteDialog({
                 }
               }}
             />
-            <button className="btn btn-glass" onClick={addItem} disabled={!newItem.trim()}>
+            <button className="btn btn-secondary" onClick={addItem} disabled={!newItem.trim()}>
               Add
             </button>
           </div>
@@ -628,7 +626,7 @@ function NoteDialog({
               // deciding when it starts again is the user's call.
               onClick={() => setItems((current) => current.map((i) => ({ ...i, done: false })))}
             >
-              ↺ Uncheck all
+              <Icon name="reset" size={13} /> Uncheck all
             </button>
           ) : null}
         </div>

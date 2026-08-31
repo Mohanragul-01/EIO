@@ -1,21 +1,28 @@
 /*
- * tokens.css - the app's design system, expressed as CSS custom properties.
+ * tokens.css - the design system.
  *
- * Every value here is copied from app/src/core/theme.ts so the two clients are
- * recognisably one product. They are duplicated rather than imported because
- * theme.ts exports JavaScript objects, and turning those into custom properties
- * at runtime would mean the first paint happens before the palette exists.
+ * WHAT CHANGED AND WHY. The first version copied the phone app's look:
+ * translucent "glass" panels floating over three animated aurora gradients.
+ * That reads well on a phone, where a screen holds one thing at a time and a
+ * bit of atmosphere is welcome. On a 27-inch monitor showing four task columns,
+ * a ledger and two charts at once, it reads as decoration competing with data -
+ * and it is the single most recognisable house style of generated dashboards.
  *
- * The palettes are TUNED SEPARATELY, not derived from one another: glass in
- * light mode is white at high alpha over a pale canvas, and reusing the dark
- * values with the colours flipped produces grey mud.
+ * So this is a flat, layered surface system instead: a quiet ground, panels
+ * lifted by one hairline border rather than by blur and shadow, and colour
+ * reserved almost entirely for meaning. That is how desktop tools people work
+ * in all day are built, and it is why they get out of the way.
  *
- * Theme resolution mirrors the app's three states - an explicit choice wins,
- * otherwise the OS decides.
+ * THE RULES THIS ENCODES
+ *   1. Neutrals carry the layout. Colour means something or is absent.
+ *   2. One accent. Five decorative accents made every screen a swatch chart.
+ *   3. Borders, not shadows. Elevation is for things that actually float.
+ *   4. Small radii. 20px corners on a dense table look like a toy.
+ *   5. A real type scale, so hierarchy comes from size and weight, not colour.
  */
 
 :root {
-  /* Spacing: the same 4pt scale the app uses. */
+  /* SPACING - 4px base, same scale as the app. */
   --space-xs: 4px;
   --space-sm: 8px;
   --space-md: 12px;
@@ -24,139 +31,163 @@
   --space-2xl: 28px;
   --space-3xl: 40px;
 
-  --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 26px;
+  /* RADII - restrained. A control is not a pill unless it is a pill. */
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
   --radius-pill: 999px;
 
-  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* TYPE SCALE */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 17px;
+  --text-xl: 21px;
+  --text-2xl: 28px;
+
+  --font:
+    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 
-  /* Desktop-only measurements. The phone has no equivalent of these. */
-  --sidebar-w: 232px;
-  --topbar-h: 60px;
-  --content-max: 1680px;
+  --sidebar-w: 216px;
+  --topbar-h: 52px;
+  --content-max: 1600px;
 
-  --transition: 160ms cubic-bezier(0.2, 0, 0.2, 1);
+  /* Fast enough to feel immediate, slow enough to be seen. */
+  --transition: 120ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* LIGHT PALETTE - the default, overridden below. */
-  --background: #f4f6fa;
-  --background-elevated: #ffffff;
+  /* ── LIGHT ──────────────────────────────────────────────────────────── */
 
-  --glass: rgba(255, 255, 255, 0.72);
-  --glass-strong: rgba(255, 255, 255, 0.92);
-  --glass-border: rgba(17, 24, 39, 0.09);
-  --glass-border-strong: rgba(17, 24, 39, 0.16);
+  /* Not pure white. A hair of warmth stops large panels from glaring. */
+  --background: #fbfbfc;
+  --surface: #ffffff;
+  --surface-2: #f4f4f6;
+  --surface-3: #ebebef;
 
-  --aurora-a: #a5b4fc;
-  --aurora-b: #c4b5fd;
-  --aurora-c: #5eead4;
-  --scrim: rgba(244, 246, 250, 0.62);
+  --border: #e6e6ea;
+  --border-strong: #d6d6dc;
 
+  --text: #16161a;
+  --text-secondary: #4a4a55;
+  --text-muted: #71717f;
+  --text-faint: #9b9ba7;
+
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-soft: #eef2ff;
+  --on-primary: #ffffff;
+
+  --success: #15803d;
+  --success-soft: #ecfdf3;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
+  --danger: #be123c;
+  --danger-soft: #fff1f2;
+
+  /* Category and module colours. Data, not decoration - these are only ever
+     used to identify a thing, never to brighten a surface. */
   --accent-indigo: #4f46e5;
   --accent-amber: #b45309;
   --accent-emerald: #047857;
   --accent-cyan: #0e7490;
   --accent-rose: #be123c;
 
-  --primary: #4f46e5;
-  --on-primary: #ffffff;
-
-  --success: #047857;
-  --warning: #b45309;
-  --danger: #be123c;
-
-  --text: #111827;
-  --text-secondary: #3f4757;
-  --text-muted: #606b7e;
-  --text-faint: #8b94a6;
-
-  --shadow-color: 30, 41, 59;
-  --shadow-card: 0 4px 12px rgba(var(--shadow-color), 0.08);
-  --shadow-float: 0 6px 16px rgba(var(--shadow-color), 0.14);
+  /* Elevation. Tight and low-opacity: a shadow you notice is too big. */
+  --shadow-sm: 0 1px 2px rgba(16, 16, 22, 0.05);
+  --shadow-md: 0 4px 12px -2px rgba(16, 16, 22, 0.08), 0 2px 4px -2px rgba(16, 16, 22, 0.04);
+  --shadow-lg: 0 16px 40px -8px rgba(16, 16, 22, 0.16), 0 4px 12px -4px rgba(16, 16, 22, 0.08);
 
   color-scheme: light;
 }
 
-/* Dark when the OS says so, unless the user has explicitly chosen light. */
+/* ── DARK ─────────────────────────────────────────────────────────────── */
+
+/*
+ * Tuned separately, not inverted. Inverting a light palette gives you grey mud
+ * and shadows that do nothing, because in the dark elevation reads as a
+ * LIGHTER surface rather than a darker shadow - which is why each layer here
+ * steps up in lightness instead of down.
+ */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --background: #12141b;
-    --background-elevated: #191c25;
+    --background: #0b0b0e;
+    --surface: #121216;
+    --surface-2: #17171c;
+    --surface-3: #1e1e24;
 
-    --glass: rgba(255, 255, 255, 0.085);
-    --glass-strong: rgba(255, 255, 255, 0.13);
-    --glass-border: rgba(255, 255, 255, 0.15);
-    --glass-border-strong: rgba(255, 255, 255, 0.24);
+    --border: #26262d;
+    --border-strong: #33333c;
 
-    --aurora-a: #4f46e5;
-    --aurora-b: #7c3aed;
-    --aurora-c: #0d9488;
-    --scrim: rgba(18, 20, 27, 0.55);
+    --text: #ededf0;
+    --text-secondary: #a7a7b3;
+    --text-muted: #82828f;
+    --text-faint: #5d5d68;
 
-    --accent-indigo: #8e97ff;
-    --accent-amber: #fcc53d;
-    --accent-emerald: #4adea9;
-    --accent-cyan: #3fdcf2;
-    --accent-rose: #ff8497;
+    --primary: #8b8cf8;
+    --primary-hover: #a3a4fa;
+    --primary-soft: #1a1a2e;
+    --on-primary: #0b0b0e;
 
-    --primary: #8e97ff;
-    --on-primary: #12141b;
+    --success: #4ade80;
+    --success-soft: #0c1f16;
+    --warning: #fbbf24;
+    --warning-soft: #241c08;
+    --danger: #fb7185;
+    --danger-soft: #24101a;
 
-    --success: #4adea9;
-    --warning: #fcc53d;
-    --danger: #ff8497;
+    --accent-indigo: #8b8cf8;
+    --accent-amber: #fbbf24;
+    --accent-emerald: #4ade80;
+    --accent-cyan: #38bdf8;
+    --accent-rose: #fb7185;
 
-    --text: #f7f8fa;
-    --text-secondary: #bfc5d2;
-    --text-muted: #8b93a5;
-    --text-faint: #646c7e;
-
-    --shadow-color: 0, 0, 0;
-    --shadow-card: 0 8px 20px rgba(var(--shadow-color), 0.35);
-    --shadow-float: 0 12px 28px rgba(var(--shadow-color), 0.45);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 16px 40px -8px rgba(0, 0, 0, 0.65);
 
     color-scheme: dark;
   }
 }
 
-/* An explicit dark choice wins in both directions, hence the duplication. */
+/* An explicit choice wins in both directions, hence the duplication. */
 :root[data-theme='dark'] {
-  --background: #12141b;
-  --background-elevated: #191c25;
+  --background: #0b0b0e;
+  --surface: #121216;
+  --surface-2: #17171c;
+  --surface-3: #1e1e24;
 
-  --glass: rgba(255, 255, 255, 0.085);
-  --glass-strong: rgba(255, 255, 255, 0.13);
-  --glass-border: rgba(255, 255, 255, 0.15);
-  --glass-border-strong: rgba(255, 255, 255, 0.24);
+  --border: #26262d;
+  --border-strong: #33333c;
 
-  --aurora-a: #4f46e5;
-  --aurora-b: #7c3aed;
-  --aurora-c: #0d9488;
-  --scrim: rgba(18, 20, 27, 0.55);
+  --text: #ededf0;
+  --text-secondary: #a7a7b3;
+  --text-muted: #82828f;
+  --text-faint: #5d5d68;
 
-  --accent-indigo: #8e97ff;
-  --accent-amber: #fcc53d;
-  --accent-emerald: #4adea9;
-  --accent-cyan: #3fdcf2;
-  --accent-rose: #ff8497;
+  --primary: #8b8cf8;
+  --primary-hover: #a3a4fa;
+  --primary-soft: #1a1a2e;
+  --on-primary: #0b0b0e;
 
-  --primary: #8e97ff;
-  --on-primary: #12141b;
+  --success: #4ade80;
+  --success-soft: #0c1f16;
+  --warning: #fbbf24;
+  --warning-soft: #241c08;
+  --danger: #fb7185;
+  --danger-soft: #24101a;
 
-  --success: #4adea9;
-  --warning: #fcc53d;
-  --danger: #ff8497;
+  --accent-indigo: #8b8cf8;
+  --accent-amber: #fbbf24;
+  --accent-emerald: #4ade80;
+  --accent-cyan: #38bdf8;
+  --accent-rose: #fb7185;
 
-  --text: #f7f8fa;
-  --text-secondary: #bfc5d2;
-  --text-muted: #8b93a5;
-  --text-faint: #646c7e;
-
-  --shadow-color: 0, 0, 0;
-  --shadow-card: 0 8px 20px rgba(var(--shadow-color), 0.35);
-  --shadow-float: 0 12px 28px rgba(var(--shadow-color), 0.45);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 16px 40px -8px rgba(0, 0, 0, 0.65);
 
   color-scheme: dark;
 }

@@ -30,6 +30,11 @@ There is one EIO. You reach it two ways.
 | Renewal reminders | **Yes** | No — see [Subscriptions](#subscriptions) |
 | Everything else | Identical | Identical |
 
+They look different, deliberately. The phone leans on colour and depth, which
+suits a screen showing one thing at a time. The website is flat and dense,
+because a monitor shows six things at once and decoration then competes with
+what you came to read.
+
 They are not a copy and a sync. They are two front doors onto **the same
 database row**. Add a task on your phone, refresh the website, it is there. There
 is no sync delay because there is nothing to sync — neither client keeps its own
