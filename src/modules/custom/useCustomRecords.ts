@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStableCallback } from '../../core/useStableCallback';
 
 import * as api from './api';
+import { sortRecords } from './summary';
 import type { CustomField, CustomModule, CustomRecord } from './types';
 
 export function useCustomRecords(moduleId: string) {
@@ -45,7 +46,17 @@ export function useCustomRecords(moduleId: string) {
         if (mounted.current) {
           setModule(moduleRow);
           setFields(fieldRows);
-          setRecords(recordRows);
+          // Sorted here rather than in SQL. Ordering by a jsonb value in
+          // Postgres means data->>'key', which compares everything as TEXT:
+          // that puts 100 before 9 for a number field, and it is not obviously
+          // wrong until you look closely.
+          setRecords(
+            sortRecords(
+              recordRows,
+              moduleRow,
+              fieldRows.find((field) => field.key === moduleRow.sort_field_key) ?? null,
+            ),
+          );
         }
       } catch (e) {
         if (mounted.current) setError(e instanceof Error ? e.message : 'Something went wrong');

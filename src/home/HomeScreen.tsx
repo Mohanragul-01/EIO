@@ -42,17 +42,20 @@ export function HomeScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
 
-  const { modules: customModules, counts, reload: reloadModules } = useCustomModules();
+  const { modules: customModules, summaries: customSummaries, reload: reloadModules } = useCustomModules();
   const { summaries, reload: reloadSummaries } = useHomeSummaries();
 
   // Refresh when returning, so a task ticked off or a module just created is
   // reflected straight away rather than on next launch.
   useFocusEffect(
+    // Both loaders are stable (useCallback with no deps, closing over nothing
+    // variable), so depending on them cannot loop. Declared rather than
+    // suppressed: the last real bug in this app hid behind exactly this
+    // suppression, in a hook whose loader was NOT stable.
     useCallback(() => {
       reloadModules();
       reloadSummaries();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
+    }, [reloadModules, reloadSummaries]),
   );
 
   const accentFor = useCallback(
@@ -81,11 +84,13 @@ export function HomeScreen() {
     }));
 
     const custom: Tile[] = customModules.map((module) => {
-      const count = counts[module.id] ?? 0;
+      // Whatever the module was configured to show: a total, an average, the
+      // most recent value, or a count when none of those applies.
+      const summary = customSummaries[module.id];
       return {
         id: module.id,
         title: module.name,
-        subtitle: count === 0 ? 'Nothing yet' : `${count} ${count === 1 ? 'entry' : 'entries'}`,
+        subtitle: summary?.text ?? 'No entries',
         icon: module.icon as keyof typeof Ionicons.glyphMap,
         accent: module.color,
         badge: null,
@@ -94,7 +99,7 @@ export function HomeScreen() {
     });
 
     return [...builtIn, ...custom];
-  }, [customModules, counts, summaries, navigation, accentFor]);
+  }, [customModules, customSummaries, summaries, navigation, accentFor]);
 
   return (
     <Screen padded={false}>

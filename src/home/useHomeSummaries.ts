@@ -93,11 +93,12 @@ async function subscriptionsSummary(): Promise<string> {
 }
 
 async function fitnessSummary(): Promise<string> {
-  const workouts = await fitnessApi.listWorkouts();
-  if (workouts.length === 0) return 'Nothing logged';
+  // Sessions now, not the v1 workouts table, which 0011 drops.
+  const sessions = await fitnessApi.listSessions();
+  if (sessions.length === 0) return 'Nothing logged';
 
-  const thisWeek = workouts.filter((w) => {
-    const days = daysUntil(w.date);
+  const thisWeek = sessions.filter((session) => {
+    const days = daysUntil(session.date);
     return days <= 0 && days > -7;
   }).length;
 

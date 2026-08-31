@@ -39,10 +39,15 @@ import {
   FIELD_TYPES,
   MODULE_COLORS,
   MODULE_ICONS,
+  SUMMARY_AGG_LABEL,
+  aggsForFieldType,
+  isSortableFieldType,
   needsOptions,
   type CustomField,
   type FieldDraft,
   type FieldType,
+  type SortDirection,
+  type SummaryAgg,
 } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'ModuleBuilder'>;
@@ -69,6 +74,17 @@ export function ModuleBuilderScreen() {
   ]);
 
   const [existingFields, setExistingFields] = useState<CustomField[]>([]);
+
+  /**
+   * Tile stat and list order. Held as field KEYS rather than draft ids, because
+   * that is what the database stores and what survives a rename. A field that
+   * has not been saved yet has no key, which is why the pickers below only
+   * offer saved fields.
+   */
+  const [summaryKey, setSummaryKey] = useState<string | null>(null);
+  const [summaryAgg, setSummaryAgg] = useState<SummaryAgg | null>(null);
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [nameError, setNameError] = useState<string | null>(null);
   const [loading, setLoading] = useState(isEditing);
   const [saving, setSaving] = useState(false);
@@ -92,6 +108,10 @@ export function ModuleBuilderScreen() {
         setName(module.name);
         setIcon(module.icon as (typeof MODULE_ICONS)[number]);
         setColor(module.color);
+        setSummaryKey(module.summary_field_key);
+        setSummaryAgg(module.summary_agg);
+        setSortKey(module.sort_field_key);
+        setSortDirection(module.sort_direction);
         setExistingFields(fields);
         setDrafts(
           fields.map((f) => ({
@@ -177,11 +197,23 @@ export function ModuleBuilderScreen() {
     setSaving(true);
 
     try {
+      const moduleInput = {
+        name: trimmedName,
+        icon,
+        color,
+        // A count needs no field, so the key is cleared rather than left
+        // pointing at something the summary will not read.
+        summary_field_key: summaryAgg && summaryAgg !== 'count' ? summaryKey : null,
+        summary_agg: summaryAgg,
+        sort_field_key: sortKey,
+        sort_direction: sortDirection,
+      };
+
       if (isEditing) {
-        await api.updateModule(editingId, { name: trimmedName, icon, color });
+        await api.updateModule(editingId, moduleInput);
         await api.saveFields(editingId, usable, existingFields);
       } else {
-        await api.createModule({ name: trimmedName, icon, color }, usable);
+        await api.createModule(moduleInput, usable);
       }
       navigation.goBack();
     } catch (e) {
@@ -324,6 +356,96 @@ export function ModuleBuilderScreen() {
             />
           </FadeInView>
 
+          {/*
+            Only offered once fields exist AND have been saved. Both settings
+            reference a field KEY, which is assigned on save, so offering them
+            for unsaved drafts would mean pointing at something with no key yet.
+          */}
+          {existingFields.length > 0 ? (
+            <FadeInView delay={90}>
+              <Text style={styles.sectionLabel}>Home tile</Text>
+              <Text style={styles.sectionHint}>
+                What the tile shows instead of a plain count.
+              </Text>
+
+              <GlassCard style={styles.fieldCard}>
+                <View style={styles.typeRow}>
+                  <PickerChip
+                    text="Count"
+                    selected={!summaryAgg || summaryAgg === 'count'}
+                    accent={color}
+                    onPress={() => {
+                      setSummaryAgg('count');
+                      setSummaryKey(null);
+                    }}
+                  />
+                  {existingFields.flatMap((field) =>
+                    // aggsForFieldType keeps this honest: you cannot total a
+                    // date or average a note, and offering it would produce a
+                    // tile showing NaN.
+                    aggsForFieldType(field.type)
+                      .filter((agg) => agg !== 'count')
+                      .map((agg) => (
+                        <PickerChip
+                          key={field.key + '-' + agg}
+                          text={SUMMARY_AGG_LABEL[agg] + ' ' + field.label}
+                          selected={summaryAgg === agg && summaryKey === field.key}
+                          accent={color}
+                          onPress={() => {
+                            setSummaryAgg(agg);
+                            setSummaryKey(field.key);
+                          }}
+                        />
+                      )),
+                  )}
+                </View>
+              </GlassCard>
+
+              <Text style={styles.sectionLabel}>Sort entries by</Text>
+              <GlassCard style={styles.fieldCard}>
+                <View style={styles.typeRow}>
+                  <PickerChip
+                    text="Newest first"
+                    selected={!sortKey}
+                    accent={color}
+                    onPress={() => {
+                      setSortKey(null);
+                      setSortDirection('desc');
+                    }}
+                  />
+                  {existingFields
+                    .filter((field) => isSortableFieldType(field.type))
+                    .map((field) => (
+                      <PickerChip
+                        key={field.key}
+                        text={field.label}
+                        selected={sortKey === field.key}
+                        accent={color}
+                        onPress={() => setSortKey(field.key)}
+                      />
+                    ))}
+                </View>
+
+                {sortKey ? (
+                  <View style={styles.directionRow}>
+                    <PickerChip
+                      text="Ascending"
+                      selected={sortDirection === 'asc'}
+                      accent={color}
+                      onPress={() => setSortDirection('asc')}
+                    />
+                    <PickerChip
+                      text="Descending"
+                      selected={sortDirection === 'desc'}
+                      accent={color}
+                      onPress={() => setSortDirection('desc')}
+                    />
+                  </View>
+                ) : null}
+              </GlassCard>
+            </FadeInView>
+          ) : null}
+
           <FadeInView delay={120}>
             <Button
               label={isEditing ? 'Save module' : 'Create module'}
@@ -346,6 +468,36 @@ export function ModuleBuilderScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
+  );
+}
+
+/** A selectable chip, shared by the summary and sort pickers. */
+function PickerChip({
+  text,
+  selected,
+  accent,
+  onPress,
+}: {
+  text: string;
+  selected: boolean;
+  accent: string;
+  onPress: () => void;
+}) {
+  const styles = useStyles();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.typeChip,
+        selected && { backgroundColor: accent + '26', borderColor: accent + '66' },
+        pressed && styles.pressed,
+      ]}
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+    >
+      <Text style={[styles.typeText, selected && { color: accent }]}>{text}</Text>
+    </Pressable>
   );
 }
 
@@ -651,6 +803,11 @@ const useStyles = makeStyles(({ colors, typography }) => ({
 
   addField: {
     marginTop: spacing.sm,
+  },
+  directionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
   },
   save: {
     marginTop: spacing.xxl,

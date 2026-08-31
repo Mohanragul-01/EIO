@@ -17,8 +17,8 @@ cheap and keeps the existing ones from tangling together.
 | **Notes** | Notes, checklists and a dated journal, plus quick capture and an inbox |
 | **Finance** | Running balance, monthly transactions, category pie, trend chart, CSV export |
 | **Subscriptions** | Billing cycles, renewal reminders 3 days ahead, "mark paid" logs the expense to Finance |
-| **Fitness** | Workout log with a seven-day activity strip and a streak |
-| **Module builder** | Define your own module from inside the app, no code and no migration |
+| **Fitness** | Exercise library, routines, per-set logging, personal records, progression charts, body metrics |
+| **Module builder** | Define your own module from inside the app, with a chosen tile stat and sort order |
 
 The module builder is the one worth explaining. A built-in module is
 hand-written code; a custom module is rows in a table, rendered by one generic
@@ -134,8 +134,10 @@ four policies (select, insert, update, delete), all `user_id = auth.uid()`.
 `UPDATE` needs both `USING` and `WITH CHECK`. With only `USING`, a row's
 `user_id` could be reassigned to someone else.
 
-> `0008_finance_v2.sql` is written but **not applied**. It belongs to a planned
-> second version. Migrations 0001 to 0007 are the live schema.
+> `0008_finance_v2.sql` is written but **not applied**. It belongs to a
+> different, still-planned change (accounts, assets, net worth) and is unrelated
+> to the 0009-0012 v2 work. Migrations 0001 to 0007 and 0009 to 0012 are the
+> live schema.
 
 ### Auth
 
@@ -150,14 +152,19 @@ confirmation email.
 ## Scripts
 
 ```bash
-npm test              # 98 tests
+npm test              # 141 tests
 npx tsc --noEmit      # type check
 npx expo start        # dev server
 ```
 
-Tests cover the logic where a silent bug does real damage: money round-tripping
-and float-free summing, the timezone off-by-one, due-versus-event date wording,
-billing cycle maths, custom-module field-key stability, and the theme palettes.
+Tests cover the logic where a silent bug does real damage and nothing would
+catch it: money round-tripping and float-free summing, the timezone off-by-one,
+due-versus-event date wording, billing cycle maths, the running balance, CSV
+escaping, task recurrence anchoring, reminder scheduling, personal-record
+detection, and custom-module summaries over jsonb.
+
+Two are regression tests for bugs that actually shipped, and both were verified
+to fail without their fix rather than assumed to work.
 
 ---
 
@@ -186,7 +193,20 @@ Android. `Screen` publishes that ref on a context and `GlassCard` consumes it.
 **Refetch on focus.** List screens refetch when they regain focus, through
 `useStableCallback`: one function identity that always reaches the latest
 closure. The naive version captures the first loader forever, which made Finance
-refetch the wrong month after an edit.
+refetch the wrong month after an edit. There are now **no
+`react-hooks/exhaustive-deps` suppressions anywhere in the app** - that
+suppression is where the bug had been hiding.
+
+**Native modules are required lazily, never imported.** `expo-notifications`
+resolves its native module at import and throws where it is absent, and Metro
+turns a module-evaluation throw into a fatal error rather than letting a
+try/catch see it. So it is loaded behind an `isRunningInExpoGo()` check, using
+the same signal the library itself uses. See
+[`src/modules/subscriptions/notifications.ts`](src/modules/subscriptions/notifications.ts).
+
+**jsonb is sorted in JavaScript, not SQL.** Ordering a custom module's records
+by `data->>'key'` compares everything as TEXT, which puts 100 before 9 for a
+number field. It looks right until you scroll.
 
 ---
 
@@ -204,6 +224,11 @@ Known limits, to be fixed only if daily use proves them worth fixing:
   notifications, no server). Tasks have no reminders. Reminders are scheduled
   on the device, so they do not survive a reinstall until each subscription is
   edited again, and they need the dev or production build rather than Expo Go.
+- **No AI or voice input.** Natural-language quick add was considered and
+  deliberately deferred.
+- **Custom modules have no relations or formula fields.** If a specific
+  cross-module link is ever needed, the answer is a small hand-written bridge in
+  `core/`, following `core/ledger.ts`, not a generic relations system.
 - Supabase free-tier projects **pause after 7 days idle** and need a manual
   resume from the dashboard.
 

@@ -1,40 +1,37 @@
 /**
- * WeekSummary - sessions and minutes this week, a streak, and a seven-day
- * activity strip.
+ * WeekStrip - sessions, volume and a streak over the last seven days.
  *
  * The strip is the point of this component. A list of past workouts tells you
- * what you did; seven bars tell you at a glance whether you've actually been
- * training this week. It's the cheapest possible version of the feedback loop
- * that makes a log worth keeping.
+ * what you did; seven bars tell you at a glance whether you have actually been
+ * training this week. It is the cheapest version of the feedback loop that makes
+ * keeping a log worth the effort.
  */
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, Text, View } from 'react-native';
 
 import { GlassCard } from '../../../core/components';
-import { radius, spacing } from '../../../core/theme';
-import { formatDuration } from '../types';
-import type { DayCell } from '../useWorkouts';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
+import { radius, spacing } from '../../../core/theme';
+import type { DayCell } from '../useFitness';
 
-type WeekSummaryProps = {
+type WeekStripProps = {
   week: DayCell[];
   weekSessions: number;
-  weekMinutes: number;
+  weekVolume: number;
   weekMax: number;
   streak: number;
 };
 
-export function WeekSummary({
+export function WeekStrip({
   week,
   weekSessions,
-  weekMinutes,
+  weekVolume,
   weekMax,
   streak,
-}: WeekSummaryProps) {
+}: WeekStripProps) {
   const styles = useStyles();
   const { colors } = useTheme();
-  const duration = formatDuration(weekMinutes);
 
   return (
     <GlassCard>
@@ -46,9 +43,13 @@ export function WeekSummary({
               ? 'No sessions'
               : `${weekSessions} ${weekSessions === 1 ? 'session' : 'sessions'}`}
           </Text>
-          {/* Only shown when at least one session had a recorded duration -
-              "0m" would imply you trained for no time at all. */}
-          {duration ? <Text style={styles.sub}>{duration} total</Text> : null}
+          {/* Only when there is volume to report. "0 kg lifted" is a sentence
+              that makes the card look broken rather than empty. */}
+          {weekVolume > 0 ? (
+            <Text style={styles.sub}>
+              {weekVolume.toLocaleString('en-IN')} kg moved
+            </Text>
+          ) : null}
         </View>
 
         {streak > 1 ? (
@@ -71,7 +72,8 @@ export function WeekSummary({
 function DayBar({ day, max }: { day: DayCell; max: number }) {
   const styles = useStyles();
   const height = useRef(new Animated.Value(0)).current;
-  // Scale to the busiest day so a single-session day still shows a clear bar,
+
+  // Scaled to the busiest day, so a single-session day still shows a clear bar
   // rather than a sliver against some arbitrary fixed maximum.
   const target = day.count === 0 ? 0 : day.count / max;
 
@@ -79,8 +81,8 @@ function DayBar({ day, max }: { day: DayCell; max: number }) {
     Animated.timing(height, {
       toValue: target,
       duration: 480,
-      // Animating height is a layout property, which the native driver can't
-      // handle - same trade-off as the Finance category bars.
+      // Height is a layout property, which the native driver cannot handle.
+      // Same trade-off as the Finance category bars.
       useNativeDriver: false,
     }).start();
   }, [target, height]);
@@ -95,8 +97,8 @@ function DayBar({ day, max }: { day: DayCell; max: number }) {
               {
                 height: height.interpolate({
                   inputRange: [0, 1],
-                  // Floor of 22% so a logged day is always visibly filled,
-                  // never a hairline that reads as empty.
+                  // Floor of 22%, so a day you trained always reads as filled
+                  // rather than as a hairline that looks like nothing.
                   outputRange: ['22%', '100%'],
                 }),
               },
@@ -104,7 +106,6 @@ function DayBar({ day, max }: { day: DayCell; max: number }) {
           />
         ) : null}
       </View>
-
       <Text style={[styles.dayLabel, day.isToday && styles.dayLabelToday]}>{day.label}</Text>
     </View>
   );
@@ -159,8 +160,7 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     backgroundColor: colors.glass,
     borderWidth: 1,
     borderColor: colors.glassBorder,
-    // Bars grow upward from the bottom of the track.
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-end', // bars grow upward from the bottom
     overflow: 'hidden',
   },
   barFill: {

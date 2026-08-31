@@ -56,8 +56,19 @@ export async function listFields(moduleId: string): Promise<CustomField[]> {
  * unlike the subscription case where a partial failure meant duplicate money.
  * Not worth an edge function to make atomic.
  */
+/** The module settings the builder can change. */
+export type ModuleInput = {
+  name: string;
+  icon: string;
+  color: string;
+  summary_field_key: string | null;
+  summary_agg: CustomModule['summary_agg'];
+  sort_field_key: string | null;
+  sort_direction: CustomModule['sort_direction'];
+};
+
 export async function createModule(
-  input: { name: string; icon: string; color: string },
+  input: ModuleInput,
   fields: FieldDraft[],
 ): Promise<CustomModule> {
   const ownerId = await getOwnerId();
@@ -77,10 +88,7 @@ export async function createModule(
   return module;
 }
 
-export async function updateModule(
-  id: string,
-  input: { name: string; icon: string; color: string },
-): Promise<CustomModule> {
+export async function updateModule(id: string, input: ModuleInput): Promise<CustomModule> {
   const { data, error } = await supabase
     .from(MODULES)
     .update(input)
@@ -246,21 +254,47 @@ export async function deleteRecord(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-/** Row counts per module, for the home screen tiles. */
-export async function countRecordsByModule(): Promise<Record<string, number>> {
+/**
+ * Every record, grouped by module, for the home screen tiles.
+ *
+ * This fetches `data` rather than just counting, because a tile can now show a
+ * total or an average and neither can be derived from a count. That is a real
+ * cost: it downloads every custom record on every visit to the home screen.
+ *
+ * Accepted because custom modules are the long tail - a sleep log, a reading
+ * list - measured in hundreds of rows, not thousands. If one ever grows large
+ * enough to notice, the fix is a Postgres view or an RPC per aggregation, and
+ * this is the single function that would change.
+ */
+export async function recordsByModule(): Promise<Record<string, CustomRecord[]>> {
   const ownerId = await getOwnerId();
 
-  // Only the module_id column is selected - we're counting, not reading data.
   const { data, error } = await supabase
     .from(RECORDS)
-    .select('module_id')
-    .eq('user_id', ownerId);
+    .select('*')
+    .eq('user_id', ownerId)
+    // Newest first, which is what the 'latest' summary depends on.
+    .order('created_at', { ascending: false });
 
   if (error) throw new Error(error.message);
 
-  const counts: Record<string, number> = {};
-  (data ?? []).forEach((row: { module_id: string }) => {
-    counts[row.module_id] = (counts[row.module_id] ?? 0) + 1;
+  const grouped: Record<string, CustomRecord[]> = {};
+  (data ?? []).forEach((row: CustomRecord) => {
+    (grouped[row.module_id] ??= []).push(row);
   });
-  return counts;
+  return grouped;
+}
+
+/** Every field across every module, so tiles can resolve their summary field. */
+export async function allFields(): Promise<CustomField[]> {
+  const ownerId = await getOwnerId();
+
+  const { data, error } = await supabase
+    .from(FIELDS)
+    .select('*')
+    .eq('user_id', ownerId)
+    .order('position', { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return data ?? [];
 }

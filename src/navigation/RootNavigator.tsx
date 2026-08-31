@@ -27,7 +27,9 @@ import { FinanceListScreen } from '../modules/finance/screens/FinanceListScreen'
 import { TransactionEditScreen } from '../modules/finance/screens/TransactionEditScreen';
 import { SubscriptionEditScreen } from '../modules/subscriptions/screens/SubscriptionEditScreen';
 import { FitnessListScreen } from '../modules/fitness/screens/FitnessListScreen';
-import { WorkoutEditScreen } from '../modules/fitness/screens/WorkoutEditScreen';
+import { ExerciseProgressScreen } from '../modules/fitness/screens/ExerciseProgressScreen';
+import { RoutineEditScreen } from '../modules/fitness/screens/RoutineEditScreen';
+import { WorkoutSessionScreen } from '../modules/fitness/screens/WorkoutSessionScreen';
 import { NoteEditScreen } from '../modules/notes/screens/NoteEditScreen';
 import { NotesListScreen } from '../modules/notes/screens/NotesListScreen';
 import { SubscriptionsListScreen } from '../modules/subscriptions/screens/SubscriptionsListScreen';
@@ -131,7 +133,11 @@ export function RootNavigator() {
           component={FitnessListScreen}
           options={{ title: 'Fitness' }}
         />
-        <Stack.Screen name="WorkoutEdit" component={WorkoutEditScreen} />
+        {/* Titles are set by the screens themselves, from data the navigator
+            does not have. */}
+        <Stack.Screen name="WorkoutSession" component={WorkoutSessionScreen} />
+        <Stack.Screen name="RoutineEdit" component={RoutineEditScreen} />
+        <Stack.Screen name="ExerciseProgress" component={ExerciseProgressScreen} />
 
         {/* Three screens covering every module you create. Their titles are
             set at runtime from the module's own data, so none are declared

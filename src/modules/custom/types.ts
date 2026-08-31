@@ -22,6 +22,16 @@ import type { Ionicons } from '@expo/vector-icons';
  */
 export type FieldType = 'text' | 'longtext' | 'number' | 'money' | 'date' | 'boolean' | 'select';
 
+/**
+ * How the home tile summarises a module.
+ *
+ * 'count' is here as an explicit choice as well as the fallback, so "I want a
+ * count" and "I have not chosen" are different states rather than the same one.
+ */
+export type SummaryAgg = 'sum' | 'average' | 'count' | 'latest';
+
+export type SortDirection = 'asc' | 'desc';
+
 export type CustomModule = {
   id: string;
   user_id: string;
@@ -29,6 +39,12 @@ export type CustomModule = {
   icon: string;
   color: string;
   position: number;
+  /** Field KEY, not id: keys are frozen, so a renamed field keeps its summary. */
+  summary_field_key: string | null;
+  summary_agg: SummaryAgg | null;
+  /** Null means order by created_at, which is what every module did before. */
+  sort_field_key: string | null;
+  sort_direction: SortDirection;
   created_at: string;
   updated_at: string;
 };
@@ -140,4 +156,30 @@ export function titleFieldOf(fields: CustomField[]): CustomField | null {
 /** The field used as a row's subtitle: the first date, if there is one. */
 export function subtitleFieldOf(fields: CustomField[], titleKey?: string): CustomField | null {
   return fields.find((f) => f.type === 'date' && f.key !== titleKey) ?? null;
+}
+
+export const SUMMARY_AGGS: SummaryAgg[] = ['count', 'sum', 'average', 'latest'];
+
+export const SUMMARY_AGG_LABEL: Record<SummaryAgg, string> = {
+  count: 'How many',
+  sum: 'Total',
+  average: 'Average',
+  latest: 'Most recent',
+};
+
+/**
+ * Which aggregations make sense for a field type.
+ *
+ * You cannot total a date or average a piece of text, and offering it would
+ * produce a tile showing NaN. 'count' and 'latest' work on anything, because
+ * they never do arithmetic on the value.
+ */
+export function aggsForFieldType(type: FieldType): SummaryAgg[] {
+  const numeric = type === 'number' || type === 'money';
+  return numeric ? ['sum', 'average', 'count', 'latest'] : ['count', 'latest'];
+}
+
+/** Field types worth sorting by. Booleans sort into two heaps, which is useless. */
+export function isSortableFieldType(type: FieldType): boolean {
+  return type !== 'boolean';
 }

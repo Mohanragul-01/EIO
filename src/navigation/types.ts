@@ -41,7 +41,15 @@ export type RootStackParamList = {
   SubscriptionsList: undefined;
   SubscriptionEdit: { id?: string };
   FitnessList: undefined;
-  WorkoutEdit: { id?: string };
+  /**
+   * The session row already exists before this opens, so every set has a parent
+   * to attach to. routineId only pre-fills which exercises appear; it logs
+   * nothing.
+   */
+  WorkoutSession: { sessionId: string; routineId: string | null };
+  RoutineEdit: { routineId?: string };
+  /** `name` is passed so the header has a title before the query resolves. */
+  ExerciseProgress: { exerciseId: string; name: string };
 
   //  User-created modules
   // Three screens serve EVERY module you build, however many you create.
