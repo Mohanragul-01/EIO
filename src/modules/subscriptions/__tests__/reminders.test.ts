@@ -8,6 +8,11 @@
  *
  * expo-notifications is mocked because importing it outside a native runtime
  * pulls in modules Jest cannot resolve. Only the pure helpers are exercised.
+ *
+ * The last block pins a real bug: the library resolves its native module at
+ * import time and throws when it is absent, so a STATIC import of it here took
+ * down the home screen in Expo Go. It is now require()d lazily, and the test
+ * below fails if anyone reverts that.
  */
 jest.mock('expo-notifications', () => ({
   setNotificationHandler: jest.fn(),
@@ -94,5 +99,47 @@ describe('reminderId', () => {
 
   it('differs per subscription', () => {
     expect(reminderId('abc')).not.toBe(reminderId('abd'));
+  });
+});
+
+describe('lazy loading of expo-notifications', () => {
+  it('does not touch the library just by importing this module', () => {
+    // THE REGRESSION. expo-notifications runs
+    //   requireNativeModule('ExpoNotificationScheduler')
+    // at module scope, which throws where that native module is absent. A
+    // static import is hoisted above every try/catch in the file, so the throw
+    // escaped the module and crashed the home screen at startup, because
+    // useHomeSummaries imports subscriptions/api which imports this file.
+    //
+    // Importing the module and calling a pure helper must not require it.
+    jest.resetModules();
+    const notifications = require('../notifications');
+
+    expect(notifications.reminderId('abc')).toBe('subscription-renewal-abc');
+    expect(notifications.reminderDateFor('2099-01-10', new Date(2099, 0, 1))).not.toBeNull();
+  });
+
+  it('reports unsupported rather than throwing when the library is missing', async () => {
+    jest.resetModules();
+    // Stand in for a runtime where the native module is absent: requiring it
+    // throws, exactly as it does in Expo Go.
+    jest.doMock('expo-notifications', () => {
+      throw new Error('Cannot find native module ExpoNotificationScheduler');
+    });
+
+    const notifications = require('../notifications');
+
+    await expect(notifications.ensurePermission()).resolves.toBe('unsupported');
+    // And the write paths stay quiet, so a subscription still saves.
+    await expect(notifications.cancelReminder('abc')).resolves.toBeUndefined();
+    await expect(
+      notifications.scheduleReminder({
+        id: 'abc',
+        name: 'Netflix',
+        next_due_date: '2099-01-10',
+        is_active: true,
+        amount_minor: 64900,
+      }),
+    ).resolves.toBe(false);
   });
 });
