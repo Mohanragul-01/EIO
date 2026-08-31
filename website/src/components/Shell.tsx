@@ -94,11 +94,14 @@ export function Shell({
             to={item.to}
             end={item.exact}
             className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+            // Kept for the collapsed rail, where the label is hidden and the
+            // icon alone has to be identifiable.
+            title={item.label}
           >
             <span className="nav-icon" aria-hidden>
               {item.icon}
             </span>
-            {item.label}
+            <span>{item.label}</span>
           </NavLink>
         ))}
 
@@ -115,6 +118,7 @@ export function Shell({
                 key={module.id}
                 to={`/m/${module.id}`}
                 className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+                title={module.name}
               >
                 <span className="nav-icon" aria-hidden style={{ color: module.color }}>
                   ●
@@ -126,6 +130,23 @@ export function Shell({
         ) : null}
 
         <div className="sidebar-foot">
+          {/*
+            Shortcuts are only discoverable if something says they exist.
+            Hidden on the collapsed rail, where there is no room and no space
+            for text anyway.
+          */}
+          <div className="hints">
+            <div className="hint-row">
+              <span className="kbd">/</span> search
+            </div>
+            <div className="hint-row">
+              <span className="kbd">n</span> new
+            </div>
+            <div className="hint-row">
+              <span className="kbd">esc</span> close
+            </div>
+          </div>
+
           <NavLink
             to="/builder"
             className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
@@ -133,21 +154,33 @@ export function Shell({
             <span className="nav-icon" aria-hidden>
               ＋
             </span>
-            New module
+            <span>New module</span>
           </NavLink>
 
-          <button className="nav-link" onClick={cycleTheme} style={{ background: 'none' }}>
+          <button
+            className="nav-link"
+            onClick={cycleTheme}
+            style={{ background: 'none' }}
+            title={`Theme: ${theme}`}
+          >
             <span className="nav-icon" aria-hidden>
               {theme === 'dark' ? '☾' : theme === 'light' ? '☀' : '◐'}
             </span>
-            {theme === 'system' ? 'System theme' : theme === 'dark' ? 'Dark' : 'Light'}
+            <span>
+              {theme === 'system' ? 'System theme' : theme === 'dark' ? 'Dark' : 'Light'}
+            </span>
           </button>
 
-          <button className="nav-link" onClick={() => void signOut()} style={{ background: 'none' }}>
+          <button
+            className="nav-link"
+            onClick={() => void signOut()}
+            style={{ background: 'none' }}
+            title="Sign out"
+          >
             <span className="nav-icon" aria-hidden>
               ⏻
             </span>
-            Sign out
+            <span>Sign out</span>
           </button>
         </div>
       </nav>

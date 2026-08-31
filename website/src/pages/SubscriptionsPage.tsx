@@ -12,7 +12,7 @@
  * otherwise with a web notification that only fires while this tab is open
  * would be worse than not offering it.
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { categoriesFor, categoryDef, DEFAULT_SUBSCRIPTION_CATEGORY } from '@app/core/categories';
 import { daysUntil, formatDueDate, todayISO } from '@app/core/date';
@@ -41,6 +41,7 @@ import {
   useConfirm,
 } from '../components/ui';
 import { useAsync } from '../lib/useAsync';
+import { useHotkeys } from '../lib/useHotkeys';
 
 type Bucket = 'overdue' | 'week' | 'later' | 'paused';
 
@@ -75,6 +76,16 @@ export function SubscriptionsPage() {
 
   const load = useCallback(() => api.listSubscriptions(), []);
   const { data, loading, error, reload } = useAsync(load, 'subscriptions');
+
+  // A success notice is worth showing and not worth keeping. Errors stay until
+  // something changes; a confirmation that lingers just becomes furniture.
+  useEffect(() => {
+    if (!notice) return;
+    const id = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [notice]);
+
+  useHotkeys({ onNew: () => setEditing('new') });
 
   const subscriptions = data ?? [];
   const active = subscriptions.filter((s) => s.is_active);

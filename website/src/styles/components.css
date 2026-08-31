@@ -298,10 +298,39 @@
   background: var(--glass-strong);
 }
 
-/* Row actions stay hidden until hover, so a long list is not a wall of icons. */
-.row-actions { display: flex; gap: 2px; opacity: 0; transition: opacity var(--transition); }
+/*
+ * Row actions are always PRESENT, just quiet until you approach the row.
+ *
+ * They used to be opacity:0 revealed by `.list-row:hover`, which had two
+ * problems. The scoping one: anything not inside a `.list-row` - the note
+ * cards, for instance - had no rule to reveal it, so its edit and delete
+ * buttons were invisible at every moment, which is indistinguishable from not
+ * existing. And the design one: a control you cannot see is a control nobody
+ * knows about, and "where is the delete button" is the whole answer to whether
+ * hiding it was worth the tidiness.
+ *
+ * So they sit at a low opacity and come up on hover or keyboard focus. The
+ * list still reads calmly, and the buttons are discoverable at rest.
+ */
+.row-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0.45;
+  transition: opacity var(--transition);
+}
 .list-row:hover .row-actions,
-.list-row:focus-within .row-actions { opacity: 1; }
+.list-row:focus-within .row-actions,
+.card:hover .row-actions,
+.card:focus-within .row-actions,
+.row-actions:hover,
+.row-actions:focus-within {
+  opacity: 1;
+}
+
+/* Touch and stylus have no hover at all, so nothing should depend on it. */
+@media (hover: none) {
+  .row-actions { opacity: 1; }
+}
 
 /* TABLE -------------------------------------------------------------------- */
 
@@ -387,3 +416,61 @@ table.data tbody tr:last-child td { border-bottom: 0; }
   padding: var(--space-xl);
 }
 .auth-card { width: 100%; max-width: 400px; }
+
+/* RESPONSIVE --------------------------------------------------------------- */
+
+/*
+ * The sidebar collapses to icons before it collapses away.
+ *
+ * A fixed 232px rail is most of a narrow window, and the content it squeezes is
+ * the reason you opened the page. Below 1080px the labels go and the icons
+ * stay, which keeps navigation one click away instead of hiding it behind a
+ * menu button.
+ */
+@media (max-width: 1080px) {
+  :root { --sidebar-w: 60px; }
+
+  .sidebar { padding: var(--space-lg) var(--space-sm); align-items: center; }
+  .brand-name,
+  .nav-link span:not(.nav-icon):not(.nav-badge),
+  .sidebar .overline { display: none; }
+
+  .nav-link {
+    justify-content: center;
+    padding: 10px 0;
+    width: 100%;
+  }
+  .nav-badge {
+    position: absolute;
+    margin: 0;
+    transform: translate(14px, -12px);
+    font-size: 9.5px;
+    min-width: 16px;
+    padding: 0 4px;
+  }
+  .nav-link { position: relative; }
+
+  .content { padding: var(--space-lg); }
+  .topbar { padding: 0 var(--space-lg); }
+}
+
+/* Below this the split rails stack, which the grid already handles, but the
+   dense stat rows and table padding need to give a little more. */
+@media (max-width: 720px) {
+  .stat-row { grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); }
+  table.data th,
+  table.data td { padding: var(--space-sm); }
+  .modal-body { padding: var(--space-lg); }
+}
+
+/* The keyboard hint strip in the sidebar foot. */
+.hints {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-md) var(--space-md) var(--space-sm);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.hint-row { display: flex; align-items: center; gap: 6px; }
+@media (max-width: 1080px) { .hints { display: none; } }

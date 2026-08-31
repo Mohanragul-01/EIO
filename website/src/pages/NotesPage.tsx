@@ -10,11 +10,12 @@
  * inbox is a filter too - a note is "in the inbox" when it has no title and no
  * tags, which is a property of the note, not a place it lives.
  */
-import { useCallback, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useMemo, useRef, useState, type FormEvent } from 'react';
 
 import { formatEventDate, todayISO } from '@app/core/date';
 import * as api from '@app/modules/notes/api';
 import {
+  belongsInInbox,
   checklistProgress,
   formatTags,
   parseTags,
@@ -38,6 +39,7 @@ import {
   useConfirm,
 } from '../components/ui';
 import { useAsync } from '../lib/useAsync';
+import { useHotkeys } from '../lib/useHotkeys';
 
 type View = 'all' | 'inbox' | 'note' | 'checklist' | 'journal';
 
@@ -49,6 +51,12 @@ export function NotesPage() {
   const [capturing, setCapturing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const { confirm, dialog } = useConfirm();
+
+  const searchRef = useRef<HTMLInputElement>(null);
+  useHotkeys({
+    onSearch: () => searchRef.current?.focus(),
+    onNew: () => setEditing('new'),
+  });
 
   // listNotes deliberately excludes journals, so the journal list is fetched
   // separately and the two are combined here.
@@ -114,9 +122,9 @@ export function NotesPage() {
     setCapturing(true);
     setActionError(null);
     try {
-      // No title and no tags, which is exactly what puts it in the inbox -
-      // belongsInInbox decides that from the content, and api.createNote
-      // applies it, so nothing here has to know the rule.
+      // No title and no tags, which by the belongsInInbox rule is exactly
+      // what the inbox means - so this is that rule's answer for this shape of
+      // note, not a separate decision.
       await api.createNote({
         title: '',
         body,
@@ -233,10 +241,11 @@ export function NotesPage() {
         {/* LIST ---------------------------------------------------------- */}
         <div className="col" style={{ gap: 'var(--space-lg)' }}>
           <input
+            ref={searchRef}
             className="input"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search titles, bodies, tags and list items"
+            placeholder="Search titles, bodies, tags and list items    /"
             type="search"
           />
 
@@ -475,14 +484,20 @@ function NoteDialog({
     setSaving(true);
     setError(null);
 
+    const trimmedTitle = title.trim();
+    const tags = parseTags(tagText);
+
     const input: NoteInput = {
-      title: title.trim(),
+      title: trimmedTitle,
       body: body.trim(),
-      tags: parseTags(tagText),
+      tags,
       note_type: noteType,
-      // Recomputed by the api from the content, so passing the old value is
-      // harmless; belongsInInbox is the single source of truth for it.
-      is_inbox: false,
+      // Computed here, at the save site, exactly as the app's edit screen does.
+      // createNote and updateNote store whatever they are given - so hardcoding
+      // false meant a note whose title and tags you had just cleared stayed
+      // filed instead of returning to the inbox, and a note created through
+      // this dialog with neither never reached it at all.
+      is_inbox: belongsInInbox({ title: trimmedTitle, tags, note_type: noteType }),
       // A journal entry is ABOUT a day; nothing else has one.
       entry_date: noteType === 'journal' ? entryDate : null,
       checklist_items: noteType === 'checklist' ? items : null,

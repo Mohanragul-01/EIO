@@ -52,6 +52,39 @@ export async function listTodosByFrequency(frequency: Frequency): Promise<Todo[]
   return data ?? [];
 }
 
+/**
+ * COMPLETED tasks in one frequency, newest first.
+ *
+ * Separate from listTodosByFrequency, which filters to open tasks in SQL,
+ * because completed tasks are never deleted and will outnumber open ones many
+ * times over. Fetching them together would mean downloading a growing pile of
+ * finished work every time you open the list.
+ *
+ * So this is opt-in and BOUNDED. The phone never calls it - it only shows open
+ * tasks - but a desktop screen has room for a "Done" view, and that view only
+ * needs the recent past to be useful.
+ */
+export async function listCompletedByFrequency(
+  frequency: Frequency,
+  limit = 100,
+): Promise<Todo[]> {
+  const ownerId = await getOwnerId();
+
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select('*')
+    .eq('user_id', ownerId)
+    .eq('frequency', frequency)
+    .eq('is_done', true)
+    // By when it was completed, not when it was due: the useful order for
+    // finished work is most-recently-done first.
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
 /** Fetch one todo by id - used by the edit screen. */
 export async function getTodo(id: string): Promise<Todo> {
   const { data, error } = await supabase

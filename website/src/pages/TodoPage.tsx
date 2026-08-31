@@ -38,6 +38,7 @@ import {
   useConfirm,
 } from '../components/ui';
 import { useAsync } from '../lib/useAsync';
+import { useHotkeys } from '../lib/useHotkeys';
 
 /** Only "high" gets a loud colour; colouring all three would make none urgent. */
 function priorityColor(priority: Priority): string {
@@ -56,35 +57,59 @@ export function TodoPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const { confirm, dialog } = useConfirm();
 
-  // All four lists in one round of parallel requests. The phone fetches one
-  // tab at a time because it only ever shows one.
-  const load = useCallback(async () => {
-    const lists = await Promise.all(FREQUENCIES.map((f) => api.listTodosByFrequency(f)));
-    return Object.fromEntries(FREQUENCIES.map((f, i) => [f, lists[i]])) as Record<
-      Frequency,
-      Todo[]
-    >;
-  }, []);
+  useHotkeys({
+    onNew: () => {
+      setNewIn('daily');
+      setEditing('new');
+    },
+  });
 
-  const { data, loading, error, reload } = useAsync(load, 'todos');
+  /**
+   * All four lists in one round of parallel requests. The phone fetches one tab
+   * at a time because it only ever shows one.
+   *
+   * Completed tasks are a SEPARATE, bounded query, and only run when a view
+   * actually needs them. listTodosByFrequency filters to open tasks in SQL
+   * because finished ones are never deleted and pile up indefinitely - so
+   * "Done" asks for them explicitly rather than everything always paying for
+   * a view most visits never open.
+   */
+  const wantsDone = filter !== 'open';
+
+  const load = useCallback(async () => {
+    const [open, done] = await Promise.all([
+      Promise.all(FREQUENCIES.map((f) => api.listTodosByFrequency(f))),
+      wantsDone
+        ? Promise.all(FREQUENCIES.map((f) => api.listCompletedByFrequency(f)))
+        : Promise.resolve(FREQUENCIES.map(() => [] as Todo[])),
+    ]);
+
+    return Object.fromEntries(
+      FREQUENCIES.map((f, i) => [f, { open: open[i], done: done[i] }]),
+    ) as Record<Frequency, { open: Todo[]; done: Todo[] }>;
+  }, [wantsDone]);
+
+  // The key includes whether done tasks are wanted, so switching to "Done"
+  // refetches instead of filtering an array that never contained them - which
+  // is exactly why the tab came up empty before.
+  const { data, loading, error, reload } = useAsync(load, `todos-${wantsDone}`);
 
   const visible = useMemo(() => {
     if (!data) return null;
-    const pick = (todos: Todo[]) =>
-      todos.filter((todo) =>
-        filter === 'all' ? true : filter === 'done' ? todo.is_done : !todo.is_done,
-      );
-    return Object.fromEntries(FREQUENCIES.map((f) => [f, pick(data[f])])) as Record<
-      Frequency,
-      Todo[]
-    >;
+    return Object.fromEntries(
+      FREQUENCIES.map((f) => [
+        f,
+        filter === 'open'
+          ? data[f].open
+          : filter === 'done'
+            ? data[f].done
+            : [...data[f].open, ...data[f].done],
+      ]),
+    ) as Record<Frequency, Todo[]>;
   }, [data, filter]);
 
   const openCount = useMemo(
-    () =>
-      data
-        ? FREQUENCIES.reduce((total, f) => total + data[f].filter((t) => !t.is_done).length, 0)
-        : 0,
+    () => (data ? FREQUENCIES.reduce((total, f) => total + data[f].open.length, 0) : 0),
     [data],
   );
 
@@ -93,8 +118,7 @@ export function TodoPage() {
       data
         ? FREQUENCIES.reduce(
             (total, f) =>
-              total +
-              data[f].filter((t) => !t.is_done && t.due_date && isOverdue(t.due_date)).length,
+              total + data[f].open.filter((t) => t.due_date && isOverdue(t.due_date)).length,
             0,
           )
         : 0,
@@ -165,7 +189,7 @@ export function TodoPage() {
         <div className="columns" style={{ marginTop: error || actionError ? 16 : 0 }}>
           {FREQUENCIES.map((frequency, index) => {
             const todos = visible?.[frequency] ?? [];
-            const openHere = data?.[frequency].filter((t) => !t.is_done).length ?? 0;
+            const openHere = data?.[frequency].open.length ?? 0;
 
             return (
               <section
@@ -271,8 +295,22 @@ function TaskRow({
         {todo.is_done ? '✓' : ''}
       </button>
 
-      <div className="grow" style={{ minWidth: 0 }}>
-        <div className={`row${todo.is_done ? '' : ''}`} style={{ gap: 6, alignItems: 'center' }}>
+      {/*
+        The title opens the editor. Leaving edit only on the pencil made the
+        obvious gesture - clicking the thing you want to change - do nothing.
+      */}
+      <button
+        className="grow"
+        onClick={onEdit}
+        style={{
+          minWidth: 0,
+          background: 'none',
+          border: 0,
+          padding: 0,
+          textAlign: 'left',
+        }}
+      >
+        <div className="row" style={{ gap: 6, alignItems: 'center' }}>
           {/* Only high priority gets a dot, for the same reason it gets the colour. */}
           {todo.priority === 'high' && !todo.is_done ? (
             <span className="dot" style={{ background: priorityColor('high') }} />
@@ -312,7 +350,7 @@ function TaskRow({
             </span>
           ) : null}
         </div>
-      </div>
+      </button>
 
       <div className="row-actions">
         <button className="icon-btn" onClick={onEdit} title="Edit" aria-label="Edit task">

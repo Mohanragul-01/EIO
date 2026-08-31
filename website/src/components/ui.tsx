@@ -195,6 +195,8 @@ export function Modal({
   width?: number;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  /** What had focus before the dialog opened, so it can be given back. */
+  const restoreTo = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -202,8 +204,28 @@ export function Modal({
 
     // showModal() throws if it is already open, and close() on an already
     // closed dialog fires a spurious cancel, so both are guarded.
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) {
+      restoreTo.current = document.activeElement as HTMLElement | null;
+      dialog.showModal();
+    }
     if (!open && dialog.open) dialog.close();
+  }, [open]);
+
+  /**
+   * Give focus back to whatever opened this.
+   *
+   * Keyed on `open` rather than done in an unmount cleanup. Most dialogs are
+   * conditionally rendered and do unmount, but the confirm dialog lives in the
+   * tree permanently and only toggles `open` - so a cleanup-only version
+   * restored focus for some dialogs and silently not for others. Without it,
+   * closing one drops focus onto <body> and the next Tab starts from the top of
+   * the page, which on a keyboard loses your place entirely.
+   */
+  useEffect(() => {
+    if (open) return;
+    const previous = restoreTo.current;
+    restoreTo.current = null;
+    previous?.focus?.();
   }, [open]);
 
   if (!open) return null;

@@ -23,6 +23,7 @@ import {
 
 import { formatEventDate, todayISO } from '@app/core/date';
 import * as api from '@app/modules/fitness/api';
+import { groupItems } from '@app/modules/fitness/pickerItems';
 import {
   bmi,
   bmiLabel,
@@ -130,6 +131,10 @@ function LogView() {
     }
   };
 
+  // Resolved from the loaded list rather than stored, so an edit made in the
+  // dialog is reflected the moment the list reloads.
+  const openSession = sessions.find((s) => s.id === openId) ?? null;
+
   const weekCount = sessions.filter((s) => {
     const diff = (Date.now() - new Date(`${s.date}T00:00:00`).getTime()) / 86400000;
     return diff >= 0 && diff < 7;
@@ -187,9 +192,12 @@ function LogView() {
         </div>
       )}
 
-      {openId ? (
+      {openSession ? (
         <SessionDialog
-          sessionId={openId}
+          // Keyed by id so switching between sessions remounts rather than
+          // carrying the previous workout's sets into the next one.
+          key={openSession.id}
+          session={openSession}
           exercises={exercises}
           onClose={() => {
             setOpenId(null);
@@ -251,54 +259,86 @@ function SessionRow({
 /* SESSION ------------------------------------------------------------------ */
 
 function SessionDialog({
-  sessionId,
+  session,
   exercises,
   onClose,
 }: {
-  sessionId: string;
+  session: WorkoutSession;
   exercises: Exercise[];
   onClose: () => void;
 }) {
-  const [sets, setSets] = useState<SessionSet[] | null>(null);
-  const [notes, setNotes] = useState('');
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [sets, setSets] = useState<SessionSet[]>([]);
+  const [notes, setNotes] = useState(session.notes);
+  const [savedNotes, setSavedNotes] = useState(session.notes);
+  const [date, setDate] = useState(session.date);
+
+  /**
+   * The exercises showing in this session, in order.
+   *
+   * Held as its own state rather than derived from `sets`. Deriving it meant an
+   * exercise you had picked but not yet logged a set for existed only while it
+   * was the "active" one - so picking a second exercise made the first vanish,
+   * taking the input you were about to use with it.
+   */
+  const [order, setOrder] = useState<string[]>([]);
   const [prIds, setPrIds] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    const rows = await api.listSessionSets(sessionId);
-    setSets(rows);
-    // The first exercise in the session, so opening a part-finished workout
-    // lands you where you were rather than on a blank pane.
-    if (rows.length > 0 && !activeId) setActiveId(rows[0].exercise_id);
-    return rows;
-    // activeId is deliberately not a dependency: it is seeded once here and
-    // owned by the user afterwards.
-  }, [sessionId, activeId]);
+  useEffect(() => {
+    let active = true;
 
-  useAsync(load, `session-${sessionId}`);
+    (async () => {
+      try {
+        const rows = await api.listSessionSets(session.id);
+        if (!active) return;
+        setSets(rows);
 
-  const blocks = useMemo(() => {
-    const order: string[] = [];
-    (sets ?? []).forEach((set) => {
-      if (!order.includes(set.exercise_id)) order.push(set.exercise_id);
-    });
-    if (activeId && !order.includes(activeId)) order.push(activeId);
-    return order;
-  }, [sets, activeId]);
+        // Whatever already has sets, in the order it was logged.
+        const seen: string[] = [];
+        rows.forEach((set) => {
+          if (!seen.includes(set.exercise_id)) seen.push(set.exercise_id);
+        });
 
-  const volume = totalVolume(sets ?? []);
+        // Then the routine's own list, if this session came from one, so a
+        // planned workout opens pre-filled instead of blank.
+        if (session.routine_id) {
+          try {
+            const planned = await api.listRoutineExercises(session.routine_id);
+            if (!active) return;
+            planned.forEach((row) => {
+              if (!seen.includes(row.exercise_id)) seen.push(row.exercise_id);
+            });
+          } catch {
+            // A deleted routine leaves the session ad-hoc, which is fine.
+          }
+        }
+
+        if (active) setOrder(seen);
+      } catch (e) {
+        if (active) setError(e instanceof Error ? e.message : 'Could not load this session');
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [session.id, session.routine_id]);
+
+  const volume = totalVolume(sets);
 
   const logSet = async (exerciseId: string, reps: number, weightKg: number) => {
     setError(null);
     try {
       // History EXCLUDES this session, so a set is never compared against
       // itself or against its own warm-ups.
-      const history = await api.listExerciseHistory(exerciseId, sessionId);
+      const history = await api.listExerciseHistory(exerciseId, session.id);
       const isPr = isPersonalRecord(history, { exercise_id: exerciseId, reps, weight_kg: weightKg });
 
-      const mine = (sets ?? []).filter((s) => s.exercise_id === exerciseId);
-      const saved = await api.addSet(sessionId, {
+      const mine = sets.filter((s) => s.exercise_id === exerciseId);
+      const saved = await api.addSet(session.id, {
         exercise_id: exerciseId,
         reps,
         weight_kg: weightKg,
@@ -306,12 +346,10 @@ function SessionDialog({
         set_number: nextSetNumber(mine),
       });
 
-      setSets((current) => [...(current ?? []), saved]);
+      setSets((current) => [...current, saved]);
 
       if (isPr) {
-        const previous = Math.max(
-          ...history.filter((h) => h.reps === reps).map((h) => h.weight_kg),
-        );
+        const previous = Math.max(...history.filter((h) => h.reps === reps).map((h) => h.weight_kg));
         setPrIds((current) => ({ ...current, [saved.id]: previous }));
       }
     } catch (e) {
@@ -321,7 +359,7 @@ function SessionDialog({
 
   const removeSet = async (id: string) => {
     const snapshot = sets;
-    setSets((current) => (current ?? []).filter((s) => s.id !== id));
+    setSets((current) => current.filter((s) => s.id !== id));
     try {
       await api.deleteSet(id);
     } catch (e) {
@@ -330,90 +368,190 @@ function SessionDialog({
     }
   };
 
+  /**
+   * Save notes on blur, and ONLY when they actually changed.
+   *
+   * The unconditional version was a data-loss bug: `notes` started empty and
+   * was never seeded from the row, so opening an existing workout and merely
+   * clicking in and out of the field wrote an empty string over whatever you
+   * had written. Seeding from the session fixes the cause; comparing against
+   * the last saved value also stops a pointless write on every focus change.
+   */
   const saveNotes = async () => {
+    if (notes === savedNotes) return;
     try {
-      await api.updateSession(sessionId, { notes });
-    } catch {
-      // A failed note is not worth interrupting a workout for; it is retried
-      // the next time the field loses focus.
+      await api.updateSession(session.id, { notes });
+      setSavedNotes(notes);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save your notes');
     }
   };
 
+  const changeDate = async (next: string) => {
+    if (!next) return;
+    setDate(next);
+    try {
+      await api.updateSession(session.id, { date: next });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not change the date');
+    }
+  };
+
+  const addExercise = (id: string) =>
+    setOrder((current) => (current.includes(id) ? current : [...current, id]));
+
+  const dismissExercise = (id: string) =>
+    // Only removes it from the view. Sets are deleted one at a time and on
+    // purpose, so this can never take logged work with it.
+    setOrder((current) => current.filter((x) => x !== id));
+
   return (
-    <Modal open title="Workout" onClose={onClose} width={980}>
+    <Modal open title="Workout" onClose={onClose} width={1000}>
       <ErrorBanner message={error} />
 
-      <div className="row-between">
-        <Stat label="Volume" value={`${volume.toLocaleString('en-IN')} kg`} sub="moved this session" />
+      <div className="row-between wrap" style={{ gap: 'var(--space-lg)' }}>
+        <div className="row" style={{ gap: 'var(--space-2xl)' }}>
+          <label className="field" style={{ gap: 2 }}>
+            <span className="label">Date</span>
+            <input
+              className="input"
+              type="date"
+              value={date}
+              onChange={(e) => void changeDate(e.target.value)}
+              style={{ width: 160 }}
+            />
+          </label>
+          <Stat label="Volume" value={volume.toLocaleString('en-IN') + ' kg'} sub="moved" />
+          <Stat label="Sets" value={sets.length} sub="logged" />
+        </div>
         <RestTimer />
       </div>
 
-      <div className="split" style={{ gridTemplateColumns: 'minmax(0,1fr) 300px' }}>
+      <div className="split" style={{ gridTemplateColumns: 'minmax(0,1fr) 290px' }}>
         <div className="col" style={{ gap: 'var(--space-md)' }}>
-          {sets === null ? (
+          {loading ? (
             <Spinner center />
-          ) : blocks.length === 0 ? (
-            <Empty title="No exercises yet" message="Pick one on the right to start logging." />
+          ) : order.length === 0 ? (
+            <Empty
+              title="No exercises yet"
+              message="Pick one from the list to start logging sets."
+            />
           ) : (
-            blocks.map((exerciseId) => (
+            order.map((exerciseId) => (
               <ExerciseBlock
                 key={exerciseId}
                 exercise={exercises.find((e) => e.id === exerciseId)}
-                sets={(sets ?? []).filter((s) => s.exercise_id === exerciseId)}
+                sets={sets.filter((s) => s.exercise_id === exerciseId)}
                 prIds={prIds}
                 onLog={(reps, weight) => void logSet(exerciseId, reps, weight)}
                 onRemove={(id) => void removeSet(id)}
+                onDismiss={() => dismissExercise(exerciseId)}
               />
             ))
           )}
 
-          <textarea
-            className="input"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            onBlur={() => void saveNotes()}
-            placeholder="How did it go?"
-            rows={2}
-          />
+          <label className="field">
+            <span className="label">Session notes</span>
+            <textarea
+              className="input"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              onBlur={() => void saveNotes()}
+              placeholder="How did it go?"
+              rows={2}
+            />
+          </label>
         </div>
 
         <div className="col" style={{ gap: 'var(--space-sm)' }}>
           <div className="overline">Add an exercise</div>
-          <div
-            className="col"
-            style={{ gap: 4, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}
-          >
-            {exercises.map((exercise) => {
-              const already = blocks.includes(exercise.id);
-              return (
-                <button
-                  key={exercise.id}
-                  className={`list-row${already ? '' : ''}`}
-                  style={{
-                    padding: '8px 12px',
-                    opacity: already ? 0.5 : 1,
-                    cursor: already ? 'default' : 'pointer',
-                    textAlign: 'left',
-                  }}
-                  disabled={already}
-                  onClick={() => setActiveId(exercise.id)}
-                >
-                  <div className="grow" style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{exercise.name}</div>
-                    <div className="faint" style={{ fontSize: 11.5 }}>
-                      {exercise.muscle_group ?? 'Other'}
-                      {already ? ' · added' : ''}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          <ExerciseChooser exercises={exercises} chosen={order} onPick={addExercise} />
         </div>
       </div>
     </Modal>
   );
 }
+
+/** Searchable exercise list for the session pane. */
+function ExerciseChooser({
+  exercises,
+  chosen,
+  onPick,
+}: {
+  exercises: Exercise[];
+  chosen: string[];
+  onPick: (id: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+
+  // The shared grouping the app's picker uses: matches the muscle group too,
+  // so typing "legs" finds the squat, and "Other" sinks to the bottom.
+  const sections = useMemo(
+    () =>
+      groupItems(
+        exercises.map((exercise) => ({
+          id: exercise.id,
+          label: exercise.name,
+          group: exercise.muscle_group,
+          disabled: chosen.includes(exercise.id),
+        })),
+        query,
+      ),
+    [exercises, chosen, query],
+  );
+
+  return (
+    <>
+      <input
+        className="input"
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search exercises"
+      />
+
+      <div className="col" style={{ gap: 4, maxHeight: 380, overflowY: 'auto', paddingRight: 4 }}>
+        {sections.length === 0 ? (
+          <p className="faint" style={{ fontSize: 12.5, padding: 'var(--space-md) 0' }}>
+            Nothing matches that search.
+          </p>
+        ) : (
+          sections.map((section) => (
+            <div key={section.group}>
+              <div className="overline" style={{ marginTop: 'var(--space-sm)', marginBottom: 4 }}>
+                {section.group}
+              </div>
+              {section.items.map((item) => (
+                <button
+                  key={item.id}
+                  className="list-row"
+                  style={{
+                    padding: '7px 11px',
+                    width: '100%',
+                    opacity: item.disabled ? 0.45 : 1,
+                    cursor: item.disabled ? 'default' : 'pointer',
+                    textAlign: 'left',
+                    marginBottom: 3,
+                  }}
+                  disabled={item.disabled}
+                  onClick={() => onPick(item.id)}
+                >
+                  <span className="grow" style={{ fontSize: 12.5 }}>
+                    {item.label}
+                  </span>
+                  <span className="faint" style={{ fontSize: 11 }}>
+                    {item.disabled ? 'added' : '+'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ))
+        )}
+      </div>
+    </>
+  );
+}
+
 
 function ExerciseBlock({
   exercise,
@@ -421,12 +559,14 @@ function ExerciseBlock({
   prIds,
   onLog,
   onRemove,
+  onDismiss,
 }: {
   exercise: Exercise | undefined;
   sets: SessionSet[];
   prIds: Record<string, number>;
   onLog: (reps: number, weight: number) => void;
   onRemove: (id: string) => void;
+  onDismiss: () => void;
 }) {
   const last = sets[sets.length - 1];
   const [weight, setWeight] = useState(last ? String(last.weight_kg) : '');
@@ -443,8 +583,24 @@ function ExerciseBlock({
 
   return (
     <div className="card card-pad">
-      <div style={{ fontWeight: 600, fontSize: 13.5, marginBottom: 'var(--space-md)' }}>
-        {exercise?.name ?? 'Exercise'}
+      <div className="row-between" style={{ marginBottom: 'var(--space-md)' }}>
+        <span style={{ fontWeight: 600, fontSize: 13.5 }}>{exercise?.name ?? 'Exercise'}</span>
+
+        {/*
+          Only offered while the block is empty. Once sets exist, removing it
+          from the view would hide logged work behind no obvious way back, so
+          those are deleted set by set instead.
+        */}
+        {sets.length === 0 ? (
+          <button
+            className="icon-btn"
+            onClick={onDismiss}
+            title="Remove from this session"
+            aria-label="Remove from this session"
+          >
+            ✕
+          </button>
+        ) : null}
       </div>
 
       {sets.map((set, index) => (
@@ -575,6 +731,7 @@ function PlanView() {
   const [newExercise, setNewExercise] = useState('');
   const [group, setGroup] = useState<string>(MUSCLE_GROUPS[0]);
   const [progressFor, setProgressFor] = useState<Exercise | null>(null);
+  const [renaming, setRenaming] = useState<Exercise | null>(null);
   const [editingRoutine, setEditingRoutine] = useState<Routine | 'new' | null>(null);
   const { confirm, dialog } = useConfirm();
 
@@ -599,6 +756,15 @@ function PlanView() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not add that exercise');
     }
+  };
+
+  const rename = async (exercise: Exercise, name: string, muscleGroup: string) => {
+    // The KEY thing a rename must not do is orphan history: session_sets
+    // reference the exercise by id, so the name is only a label and changing
+    // it keeps every set and every personal record attached.
+    await api.updateExercise(exercise.id, { name: name.trim(), muscle_group: muscleGroup });
+    setRenaming(null);
+    await reload();
   };
 
   const removeExercise = async (exercise: Exercise) => {
@@ -673,9 +839,18 @@ function PlanView() {
                         ↗
                       </button>
                       <button
+                        className="icon-btn"
+                        onClick={() => setRenaming(exercise)}
+                        aria-label="Rename"
+                        title="Rename"
+                      >
+                        ✎
+                      </button>
+                      <button
                         className="icon-btn danger"
                         onClick={() => void removeExercise(exercise)}
                         aria-label="Delete"
+                        title="Delete"
                       >
                         🗑
                       </button>
@@ -761,6 +936,14 @@ function PlanView() {
         <ProgressDialog exercise={progressFor} onClose={() => setProgressFor(null)} />
       ) : null}
 
+      {renaming ? (
+        <ExerciseDialog
+          exercise={renaming}
+          onClose={() => setRenaming(null)}
+          onSave={(name, group) => rename(renaming, name, group)}
+        />
+      ) : null}
+
       {editingRoutine ? (
         <RoutineDialog
           routine={editingRoutine === 'new' ? null : editingRoutine}
@@ -775,6 +958,83 @@ function PlanView() {
 
       {dialog}
     </>
+  );
+}
+
+/** Rename an exercise, or move it to a different muscle group. */
+function ExerciseDialog({
+  exercise,
+  onClose,
+  onSave,
+}: {
+  exercise: Exercise;
+  onClose: () => void;
+  onSave: (name: string, muscleGroup: string) => Promise<void>;
+}) {
+  const [name, setName] = useState(exercise.name);
+  const [group, setGroup] = useState<string>(exercise.muscle_group ?? MUSCLE_GROUPS[0]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    if (!name.trim()) return setError('Give it a name');
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(name, group);
+    } catch (e) {
+      // The unique constraint on (user, name) surfaces here, which is the
+      // useful failure: two exercises with one name would split the PR history
+      // across them without that being visible anywhere.
+      setError(
+        e instanceof Error && e.message.includes('duplicate')
+          ? 'You already have an exercise with that name.'
+          : e instanceof Error
+            ? e.message
+            : 'Could not rename that',
+      );
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      title="Edit exercise"
+      onClose={onClose}
+      width={460}
+      footer={
+        <>
+          <button className="btn btn-glass" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn" onClick={() => void save()} disabled={saving}>
+            {saving ? <span className="spinner" /> : 'Save'}
+          </button>
+        </>
+      }
+    >
+      <TextField
+        label="Name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') void save();
+        }}
+      />
+      <ChipPicker
+        label="Muscle group"
+        value={group}
+        onChange={setGroup}
+        options={MUSCLE_GROUPS.map((g) => ({ value: g, label: g }))}
+      />
+      <p className="faint" style={{ fontSize: 12 }}>
+        Renaming is safe. Sets reference this exercise by id, so every logged set and personal
+        record stays attached.
+      </p>
+      <ErrorBanner message={error} />
+    </Modal>
   );
 }
 
@@ -881,33 +1141,97 @@ function RoutineDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  /** One row per chosen exercise, in order, with its optional targets. */
+  type Entry = { exercise_id: string; sets: string; reps: string };
+
   const [name, setName] = useState(routine?.name ?? '');
-  const [picked, setPicked] = useState<string[]>([]);
+  const [entries, setEntries] = useState<Entry[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(routine === null);
+  const [query, setQuery] = useState('');
 
-  const load = useCallback(async () => {
-    if (!routine) return [];
-    const rows = await api.listRoutineExercises(routine.id);
-    setPicked(rows.map((r) => r.exercise_id));
-    setLoaded(true);
-    return rows;
+  useEffect(() => {
+    if (!routine) return;
+    let active = true;
+
+    api
+      .listRoutineExercises(routine.id)
+      .then((rows) => {
+        if (!active) return;
+        setEntries(
+          rows.map((row) => ({
+            exercise_id: row.exercise_id,
+            sets: row.target_sets === null ? '' : String(row.target_sets),
+            reps: row.target_reps === null ? '' : String(row.target_reps),
+          })),
+        );
+        setLoaded(true);
+      })
+      .catch((e) => {
+        if (active) setError(e instanceof Error ? e.message : 'Could not load that routine');
+      });
+
+    return () => {
+      active = false;
+    };
   }, [routine]);
 
-  useAsync(load, `routine-${routine?.id ?? 'new'}`);
+  const chosen = entries.map((entry) => entry.exercise_id);
+
+  const toggle = (id: string) =>
+    setEntries((current) =>
+      current.some((entry) => entry.exercise_id === id)
+        ? current.filter((entry) => entry.exercise_id !== id)
+        : [...current, { exercise_id: id, sets: '', reps: '' }],
+    );
+
+  const patch = (id: string, change: Partial<Entry>) =>
+    setEntries((current) =>
+      current.map((entry) => (entry.exercise_id === id ? { ...entry, ...change } : entry)),
+    );
+
+  /** Position IS the order a session is pre-filled in, so it has to be editable. */
+  const move = (index: number, delta: number) => {
+    const target = index + delta;
+    if (target < 0 || target >= entries.length) return;
+    setEntries((current) => {
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
+
+  const sections = useMemo(
+    () =>
+      groupItems(
+        exercises.map((exercise) => ({
+          id: exercise.id,
+          label: exercise.name,
+          group: exercise.muscle_group,
+        })),
+        query,
+      ),
+    [exercises, query],
+  );
 
   const save = async () => {
     const trimmed = name.trim();
     if (!trimmed) return setError('Give the routine a name');
-    if (picked.length === 0) return setError('A routine with nothing in it would pre-fill nothing');
+    if (entries.length === 0) return setError('A routine with nothing in it would pre-fill nothing');
 
     setSaving(true);
     setError(null);
     try {
       await api.saveRoutine(
         { id: routine?.id, name: trimmed },
-        picked.map((id) => ({ exercise_id: id, target_sets: null, target_reps: null })),
+        entries.map((entry) => ({
+          exercise_id: entry.exercise_id,
+          // Blank means "no target", which is different from zero. null keeps
+          // that distinction in the database rather than flattening it.
+          target_sets: entry.sets.trim() ? Number(entry.sets) : null,
+          target_reps: entry.reps.trim() ? Number(entry.reps) : null,
+        })),
       );
       onSaved();
     } catch (e) {
@@ -916,12 +1240,14 @@ function RoutineDialog({
     }
   };
 
+  const nameOf = (id: string) => exercises.find((e) => e.id === id)?.name ?? 'Exercise';
+
   return (
     <Modal
       open
       title={routine ? 'Edit routine' : 'New routine'}
       onClose={onClose}
-      width={560}
+      width={720}
       footer={
         <>
           <button className="btn btn-glass" onClick={onClose}>
@@ -941,38 +1267,122 @@ function RoutineDialog({
         autoFocus
       />
 
-      <div className="field">
-        <span className="label">Exercises ({picked.length})</span>
-        <div className="col" style={{ gap: 4, maxHeight: 320, overflowY: 'auto' }}>
-          {exercises.map((exercise) => {
-            const on = picked.includes(exercise.id);
-            return (
-              <label
-                key={exercise.id}
-                className="row"
-                style={{ gap: 'var(--space-md)', padding: '6px 2px', cursor: 'pointer' }}
-              >
-                <button
-                  type="button"
-                  className={`check${on ? ' on' : ''}`}
-                  onClick={() =>
-                    setPicked((current) =>
-                      on ? current.filter((id) => id !== exercise.id) : [...current, exercise.id],
-                    )
-                  }
-                  aria-pressed={on}
+      <div className="split" style={{ gridTemplateColumns: 'minmax(0,1fr) 260px' }}>
+        <div className="field">
+          <span className="label">In this routine ({entries.length})</span>
+
+          {entries.length === 0 ? (
+            <p className="faint" style={{ fontSize: 12.5 }}>
+              Pick exercises on the right. Targets are optional — leave them blank if you just want
+              the exercise pre-filled.
+            </p>
+          ) : (
+            <div className="col" style={{ gap: 6 }}>
+              {entries.map((entry, index) => (
+                <div
+                  key={entry.exercise_id}
+                  className="row"
+                  style={{ gap: 'var(--space-sm)', alignItems: 'center' }}
                 >
-                  {on ? '✓' : ''}
-                </button>
-                <span className="grow" style={{ fontSize: 13 }}>
-                  {exercise.name}
-                </span>
-                <span className="faint" style={{ fontSize: 11.5 }}>
-                  {exercise.muscle_group ?? 'Other'}
-                </span>
-              </label>
-            );
-          })}
+                  <div className="col" style={{ gap: 0 }}>
+                    <button
+                      className="icon-btn"
+                      style={{ height: 16, width: 20 }}
+                      onClick={() => move(index, -1)}
+                      disabled={index === 0}
+                      aria-label="Move up"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      className="icon-btn"
+                      style={{ height: 16, width: 20 }}
+                      onClick={() => move(index, 1)}
+                      disabled={index === entries.length - 1}
+                      aria-label="Move down"
+                    >
+                      ▼
+                    </button>
+                  </div>
+
+                  <span className="grow truncate" style={{ fontSize: 13 }}>
+                    {nameOf(entry.exercise_id)}
+                  </span>
+
+                  <input
+                    className="input"
+                    style={{ width: 64 }}
+                    value={entry.sets}
+                    onChange={(e) => patch(entry.exercise_id, { sets: e.target.value })}
+                    placeholder="sets"
+                    inputMode="numeric"
+                    aria-label={`Target sets for ${nameOf(entry.exercise_id)}`}
+                  />
+                  <input
+                    className="input"
+                    style={{ width: 64 }}
+                    value={entry.reps}
+                    onChange={(e) => patch(entry.exercise_id, { reps: e.target.value })}
+                    placeholder="reps"
+                    inputMode="numeric"
+                    aria-label={`Target reps for ${nameOf(entry.exercise_id)}`}
+                  />
+
+                  <button
+                    className="icon-btn danger"
+                    onClick={() => toggle(entry.exercise_id)}
+                    aria-label="Remove"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="field">
+          <span className="label">Add</span>
+          <input
+            className="input"
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search"
+          />
+          <div className="col" style={{ gap: 3, maxHeight: 300, overflowY: 'auto', marginTop: 6 }}>
+            {sections.map((section) => (
+              <div key={section.group}>
+                <div className="overline" style={{ marginTop: 6, marginBottom: 3 }}>
+                  {section.group}
+                </div>
+                {section.items.map((item) => {
+                  const on = chosen.includes(item.id);
+                  return (
+                    <button
+                      key={item.id}
+                      className="list-row"
+                      style={{
+                        padding: '6px 10px',
+                        width: '100%',
+                        textAlign: 'left',
+                        marginBottom: 3,
+                        opacity: on ? 0.5 : 1,
+                      }}
+                      onClick={() => toggle(item.id)}
+                    >
+                      <span className="grow" style={{ fontSize: 12.5 }}>
+                        {item.label}
+                      </span>
+                      <span className="faint" style={{ fontSize: 11 }}>
+                        {on ? 'added' : '+'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

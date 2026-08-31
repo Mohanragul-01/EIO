@@ -11,7 +11,7 @@
  * of a table is comparing rows down a column, and a module with five fields is
  * exactly the shape that benefits.
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import * as api from '@app/modules/custom/api';
@@ -36,6 +36,7 @@ import {
   useConfirm,
 } from '../components/ui';
 import { useAsync } from '../lib/useAsync';
+import { useHotkeys } from '../lib/useHotkeys';
 
 export function CustomModulePage() {
   const { moduleId = '' } = useParams();
@@ -43,6 +44,22 @@ export function CustomModulePage() {
   const [query, setQuery] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const { confirm, dialog } = useConfirm();
+
+  /**
+   * A sort chosen by clicking a column, which overrides the module's saved
+   * default for this visit only.
+   *
+   * Not persisted, deliberately: the saved order is a property of the module
+   * you set in the builder, and a click meant to answer one question should
+   * not quietly redefine it.
+   */
+  const [clickSort, setClickSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
+
+  const searchRef = useRef<HTMLInputElement>(null);
+  useHotkeys({
+    onSearch: () => searchRef.current?.focus(),
+    onNew: () => setEditing('new'),
+  });
 
   const load = useCallback(async () => {
     const [module, fields, records] = await Promise.all([
@@ -61,11 +78,27 @@ export function CustomModulePage() {
 
   const sorted = useMemo(() => {
     if (!module) return [];
-    const sortField = fields.find((f) => f.key === module.sort_field_key) ?? null;
+
+    const activeKey = clickSort?.key ?? module.sort_field_key;
+    const activeDir = clickSort?.dir ?? module.sort_direction;
+    const sortField = fields.find((f) => f.key === activeKey) ?? null;
+
     // Sorted in JavaScript, not SQL. `data->>'key'` compares as text, which
-    // puts 100 before 9 for a number field.
-    return sortRecords(records, module, sortField);
-  }, [module, fields, records]);
+    // puts 100 before 9 for a number field. sortRecords is the app's own
+    // function, so a click here orders records exactly as the phone would.
+    return sortRecords(
+      records,
+      { sort_field_key: activeKey, sort_direction: activeDir },
+      sortField,
+    );
+  }, [module, fields, records, clickSort]);
+
+  const toggleSort = (key: string) =>
+    setClickSort((current) =>
+      current?.key === key
+        ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: 'asc' },
+    );
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -152,12 +185,13 @@ export function CustomModulePage() {
               />
             </div>
             <input
+              ref={searchRef}
               className="input"
               style={{ maxWidth: 280 }}
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search entries"
+              placeholder="Search entries    /"
             />
           </div>
 
@@ -183,16 +217,25 @@ export function CustomModulePage() {
                 <table className="data">
                   <thead>
                     <tr>
-                      {fields.map((field) => (
-                        <th
-                          key={field.id}
-                          className={
-                            field.type === 'number' || field.type === 'money' ? 'num' : undefined
-                          }
-                        >
-                          {field.label}
-                        </th>
-                      ))}
+                      {fields.map((field) => {
+                        const numeric = field.type === 'number' || field.type === 'money';
+                        const active =
+                          (clickSort?.key ?? module.sort_field_key) === field.key;
+                        const dir = clickSort?.dir ?? module.sort_direction;
+                        return (
+                          <th
+                            key={field.id}
+                            className={`sortable${numeric ? ' num' : ''}`}
+                            onClick={() => toggleSort(field.key)}
+                            title={`Sort by ${field.label}`}
+                            aria-sort={
+                              active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'
+                            }
+                          >
+                            {field.label} {active ? (dir === 'asc' ? '↑' : '↓') : ''}
+                          </th>
+                        );
+                      })}
                       <th style={{ width: 76 }} />
                     </tr>
                   </thead>

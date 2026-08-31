@@ -49,6 +49,7 @@ import {
   useConfirm,
 } from '../components/ui';
 import { useAsync } from '../lib/useAsync';
+import { useHotkeys } from '../lib/useHotkeys';
 import { downloadCsv } from '../lib/download';
 import { TOOLTIP_STYLE } from '../components/chart';
 
@@ -64,7 +65,11 @@ export function FinancePage() {
     dir: 'desc',
   });
   const [actionError, setActionError] = useState<string | null>(null);
+  /** Category to narrow the table to, set by clicking the breakdown. */
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const { confirm, dialog } = useConfirm();
+
+  useHotkeys({ onNew: () => setEditing('new') });
 
   const load = useCallback(
     async () => {
@@ -111,12 +116,18 @@ export function FinancePage() {
 
   const sorted = useMemo(() => {
     const factor = sort.dir === 'asc' ? 1 : -1;
-    return [...rows].sort((a, b) => {
+    // The filter narrows the TABLE only. The charts keep showing the whole
+    // month, because they are the thing you are reading the filter against -
+    // a pie that redrew to one slice would answer nothing.
+    const visible = categoryFilter
+      ? rows.filter((t) => t.category === categoryFilter)
+      : rows;
+    return [...visible].sort((a, b) => {
       if (sort.key === 'amount_minor') return factor * (a.amount_minor - b.amount_minor);
       if (sort.key === 'category') return factor * a.category.localeCompare(b.category);
       return factor * a.date.localeCompare(b.date);
     });
-  }, [rows, sort]);
+  }, [rows, sort, categoryFilter]);
 
   const toggleSort = (key: SortKey) =>
     setSort((current) =>
@@ -200,6 +211,12 @@ export function FinancePage() {
             This month
           </button>
         </div>
+
+        {categoryFilter ? (
+          <button className="chip selected" onClick={() => setCategoryFilter(null)}>
+            {categoryDef(categoryFilter).label} · clear ✕
+          </button>
+        ) : null}
       </div>
 
       <div className="split">
@@ -337,21 +354,41 @@ export function FinancePage() {
               </ResponsiveContainer>
 
               <div className="col" style={{ gap: 6, marginTop: 'var(--space-md)' }}>
-                {byCategory.slice(0, 6).map((slice) => (
-                  <div className="row-between" key={slice.key} style={{ fontSize: 12.5 }}>
-                    <span className="row" style={{ gap: 6 }}>
-                      <span className="dot" style={{ background: slice.color }} />
-                      {slice.label}
-                    </span>
-                    <span className="numeric secondary">
-                      {formatMoney(slice.value, { compact: true })}
-                      <span className="faint">
-                        {' '}
-                        · {Math.round((slice.value / spent) * 100)}%
+                {byCategory.slice(0, 8).map((slice) => {
+                  const active = categoryFilter === slice.key;
+                  return (
+                    <button
+                      key={slice.key}
+                      className="row-between"
+                      // Clicking the same one again clears it, so the control
+                      // that applied the filter is also the one that removes it.
+                      onClick={() => setCategoryFilter(active ? null : slice.key)}
+                      style={{
+                        fontSize: 12.5,
+                        width: '100%',
+                        background: active ? 'var(--glass)' : 'none',
+                        border: 0,
+                        borderRadius: 'var(--radius-sm)',
+                        padding: '3px 6px',
+                        margin: '0 -6px',
+                        textAlign: 'left',
+                        opacity: categoryFilter && !active ? 0.5 : 1,
+                      }}
+                    >
+                      <span className="row" style={{ gap: 6 }}>
+                        <span className="dot" style={{ background: slice.color }} />
+                        {slice.label}
                       </span>
-                    </span>
-                  </div>
-                ))}
+                      <span className="numeric secondary">
+                        {formatMoney(slice.value, { compact: true })}
+                        <span className="faint">
+                          {' '}
+                          · {Math.round((slice.value / spent) * 100)}%
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : null}

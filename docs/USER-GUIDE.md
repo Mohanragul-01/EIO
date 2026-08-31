@@ -468,13 +468,23 @@ Things the website does that the phone cannot:
 
 - **Everything at once.** Four task columns, charts beside the ledger, a session
   beside its history.
-- **Sortable tables** in Finance and your own modules.
+- **Sortable tables** in Finance and your own modules — click any column
+  header. In a custom module this overrides the saved sort order for that visit
+  only; the order you chose in the builder is a property of the module and a
+  click is not meant to redefine it.
+- **Click a category** in Finance's breakdown to narrow the table to it. The
+  charts deliberately keep showing the whole month, because they are what you
+  are reading the filtered rows against.
 - **Always-on quick capture** in Notes, focused when the page opens.
 - **Sidebar navigation** — every module one click from every other, with your
   own modules listed underneath.
-- **Keyboard.** `Enter` saves most dialogs. `Ctrl`/`Cmd`+`Enter` saves quick
-  capture. `Esc` closes any dialog. `Tab` moves through forms in a sensible
-  order.
+- **Keyboard.** `/` focuses the search box, `n` opens a new entry, `Esc` closes
+  any dialog, `Enter` saves most of them, and `Ctrl`/`Cmd`+`Enter` saves quick
+  capture. `/` and `n` are single keys with no modifier, so they are ignored
+  while you are typing in a field or while a dialog is open. The shortcuts are
+  listed at the bottom of the sidebar.
+- **A collapsing sidebar.** Below about 1080px wide the labels drop and the
+  icons stay, so navigation is still one click rather than hidden behind a menu.
 - **A theme toggle** — light, dark, or follow your system.
 - **Real browser things** — the page title follows the module, so several tabs
   are readable; back and forward work.
