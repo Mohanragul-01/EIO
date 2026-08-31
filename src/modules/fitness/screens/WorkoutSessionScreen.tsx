@@ -31,6 +31,7 @@ import { formatEventDate } from '../../../core/date';
 import { fonts, radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
+import { ExercisePicker } from '../components/ExercisePicker';
 import { RestTimer } from '../components/RestTimer';
 import { formatSet, type SessionSet } from '../types';
 import { useWorkoutSession } from '../useWorkoutSession';
@@ -63,6 +64,7 @@ export function WorkoutSessionScreen() {
 
   const [notes, setNotes] = useState('');
   const [notesLoaded, setNotesLoaded] = useState(false);
+  const [picking, setPicking] = useState(false);
 
   const confirmDelete = useCallback(() => {
     Alert.alert('Delete this workout', 'Every set in it is deleted too.', [
@@ -133,17 +135,8 @@ export function WorkoutSessionScreen() {
       Alert.alert('No exercises', 'Add some in the Plan tab first.');
       return;
     }
-
-    // An Alert rather than a picker screen: choosing an exercise mid-session
-    // should not navigate away from the sets you are in the middle of logging.
-    Alert.alert('Add an exercise', undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      ...exercises.slice(0, 8).map((exercise) => ({
-        text: exercise.name,
-        onPress: () => addExerciseToSession(exercise.id),
-      })),
-    ]);
-  }, [exercises, addExerciseToSession]);
+    setPicking(true);
+  }, [exercises]);
 
   if (loading) {
     return (
@@ -230,6 +223,21 @@ export function WorkoutSessionScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/*
+        Blocks already in the session are shown disabled rather than hidden, so
+        you can see the lift is present instead of hunting for a missing row.
+        Single-select: mid-session you add one exercise, do it, then add the
+        next - there is nothing to batch.
+      */}
+      <ExercisePicker
+        visible={picking}
+        title="Add an exercise"
+        exercises={exercises}
+        disabledIds={blocks.map((block) => block.exerciseId)}
+        onSelect={(ids) => ids.forEach(addExerciseToSession)}
+        onClose={() => setPicking(false)}
+      />
     </Screen>
   );
 }

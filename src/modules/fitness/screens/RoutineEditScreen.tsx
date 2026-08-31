@@ -27,6 +27,7 @@ import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { fonts, radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
+import { ExercisePicker } from '../components/ExercisePicker';
 import type { Exercise } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'RoutineEdit'>;
@@ -53,6 +54,7 @@ export function RoutineEditScreen() {
   const [nameError, setNameError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [picking, setPicking] = useState(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({ title: isEditing ? 'Edit routine' : 'New routine' });
@@ -98,14 +100,16 @@ export function RoutineEditScreen() {
   }, [routineId]);
 
   const addEntry = () => {
-    // Only exercises not already in the routine: the same lift twice in one
+    // Exercises already in the routine are not filtered out - the picker shows
+    // them greyed out and unselectable instead. The same lift twice in one
     // template is almost always a mis-tap, and it would make the pre-filled
-    // session show two identical blocks.
-    const available = exercises.filter(
+    // session show two identical blocks, but hiding them entirely leaves you
+    // wondering where the exercise went.
+    const remaining = exercises.filter(
       (exercise) => !entries.some((entry) => entry.exercise_id === exercise.id),
     );
 
-    if (available.length === 0) {
+    if (remaining.length === 0) {
       Alert.alert(
         exercises.length === 0 ? 'No exercises' : 'All added',
         exercises.length === 0
@@ -115,18 +119,15 @@ export function RoutineEditScreen() {
       return;
     }
 
-    Alert.alert('Add to routine', undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      ...available.slice(0, 8).map((exercise) => ({
-        text: exercise.name,
-        onPress: () =>
-          setEntries((current) => [
-            ...current,
-            { exercise_id: exercise.id, target_sets: '', target_reps: '' },
-          ]),
-      })),
-    ]);
+    setPicking(true);
   };
+
+  /** Append everything picked, in the order it was ticked. */
+  const addPicked = (ids: string[]) =>
+    setEntries((current) => [
+      ...current,
+      ...ids.map((exercise_id) => ({ exercise_id, target_sets: '', target_reps: '' })),
+    ]);
 
   const updateEntry = (index: number, patch: Partial<Entry>) =>
     setEntries((current) =>
@@ -297,6 +298,21 @@ export function RoutineEditScreen() {
           </FadeInView>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/*
+        Multi-select here, unlike mid-session: building a routine means picking
+        six exercises at once, and reopening the sheet for each one would be
+        six times the taps for one decision.
+      */}
+      <ExercisePicker
+        visible={picking}
+        title="Add to routine"
+        multiple
+        exercises={exercises}
+        disabledIds={entries.map((entry) => entry.exercise_id)}
+        onSelect={addPicked}
+        onClose={() => setPicking(false)}
+      />
     </Screen>
   );
 }
