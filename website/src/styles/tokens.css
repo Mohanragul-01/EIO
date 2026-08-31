@@ -1,0 +1,162 @@
+/*
+ * tokens.css - the app's design system, expressed as CSS custom properties.
+ *
+ * Every value here is copied from app/src/core/theme.ts so the two clients are
+ * recognisably one product. They are duplicated rather than imported because
+ * theme.ts exports JavaScript objects, and turning those into custom properties
+ * at runtime would mean the first paint happens before the palette exists.
+ *
+ * The palettes are TUNED SEPARATELY, not derived from one another: glass in
+ * light mode is white at high alpha over a pale canvas, and reusing the dark
+ * values with the colours flipped produces grey mud.
+ *
+ * Theme resolution mirrors the app's three states - an explicit choice wins,
+ * otherwise the OS decides.
+ */
+
+:root {
+  /* Spacing: the same 4pt scale the app uses. */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 28px;
+  --space-3xl: 40px;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 26px;
+  --radius-pill: 999px;
+
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Desktop-only measurements. The phone has no equivalent of these. */
+  --sidebar-w: 232px;
+  --topbar-h: 60px;
+  --content-max: 1680px;
+
+  --transition: 160ms cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* LIGHT PALETTE - the default, overridden below. */
+  --background: #f4f6fa;
+  --background-elevated: #ffffff;
+
+  --glass: rgba(255, 255, 255, 0.72);
+  --glass-strong: rgba(255, 255, 255, 0.92);
+  --glass-border: rgba(17, 24, 39, 0.09);
+  --glass-border-strong: rgba(17, 24, 39, 0.16);
+
+  --aurora-a: #a5b4fc;
+  --aurora-b: #c4b5fd;
+  --aurora-c: #5eead4;
+  --scrim: rgba(244, 246, 250, 0.62);
+
+  --accent-indigo: #4f46e5;
+  --accent-amber: #b45309;
+  --accent-emerald: #047857;
+  --accent-cyan: #0e7490;
+  --accent-rose: #be123c;
+
+  --primary: #4f46e5;
+  --on-primary: #ffffff;
+
+  --success: #047857;
+  --warning: #b45309;
+  --danger: #be123c;
+
+  --text: #111827;
+  --text-secondary: #3f4757;
+  --text-muted: #606b7e;
+  --text-faint: #8b94a6;
+
+  --shadow-color: 30, 41, 59;
+  --shadow-card: 0 4px 12px rgba(var(--shadow-color), 0.08);
+  --shadow-float: 0 6px 16px rgba(var(--shadow-color), 0.14);
+
+  color-scheme: light;
+}
+
+/* Dark when the OS says so, unless the user has explicitly chosen light. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --background: #12141b;
+    --background-elevated: #191c25;
+
+    --glass: rgba(255, 255, 255, 0.085);
+    --glass-strong: rgba(255, 255, 255, 0.13);
+    --glass-border: rgba(255, 255, 255, 0.15);
+    --glass-border-strong: rgba(255, 255, 255, 0.24);
+
+    --aurora-a: #4f46e5;
+    --aurora-b: #7c3aed;
+    --aurora-c: #0d9488;
+    --scrim: rgba(18, 20, 27, 0.55);
+
+    --accent-indigo: #8e97ff;
+    --accent-amber: #fcc53d;
+    --accent-emerald: #4adea9;
+    --accent-cyan: #3fdcf2;
+    --accent-rose: #ff8497;
+
+    --primary: #8e97ff;
+    --on-primary: #12141b;
+
+    --success: #4adea9;
+    --warning: #fcc53d;
+    --danger: #ff8497;
+
+    --text: #f7f8fa;
+    --text-secondary: #bfc5d2;
+    --text-muted: #8b93a5;
+    --text-faint: #646c7e;
+
+    --shadow-color: 0, 0, 0;
+    --shadow-card: 0 8px 20px rgba(var(--shadow-color), 0.35);
+    --shadow-float: 0 12px 28px rgba(var(--shadow-color), 0.45);
+
+    color-scheme: dark;
+  }
+}
+
+/* An explicit dark choice wins in both directions, hence the duplication. */
+:root[data-theme='dark'] {
+  --background: #12141b;
+  --background-elevated: #191c25;
+
+  --glass: rgba(255, 255, 255, 0.085);
+  --glass-strong: rgba(255, 255, 255, 0.13);
+  --glass-border: rgba(255, 255, 255, 0.15);
+  --glass-border-strong: rgba(255, 255, 255, 0.24);
+
+  --aurora-a: #4f46e5;
+  --aurora-b: #7c3aed;
+  --aurora-c: #0d9488;
+  --scrim: rgba(18, 20, 27, 0.55);
+
+  --accent-indigo: #8e97ff;
+  --accent-amber: #fcc53d;
+  --accent-emerald: #4adea9;
+  --accent-cyan: #3fdcf2;
+  --accent-rose: #ff8497;
+
+  --primary: #8e97ff;
+  --on-primary: #12141b;
+
+  --success: #4adea9;
+  --warning: #fcc53d;
+  --danger: #ff8497;
+
+  --text: #f7f8fa;
+  --text-secondary: #bfc5d2;
+  --text-muted: #8b93a5;
+  --text-faint: #646c7e;
+
+  --shadow-color: 0, 0, 0;
+  --shadow-card: 0 8px 20px rgba(var(--shadow-color), 0.35);
+  --shadow-float: 0 12px 28px rgba(var(--shadow-color), 0.45);
+
+  color-scheme: dark;
+}

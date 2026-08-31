@@ -9,7 +9,7 @@
  */
 import { formatMoney } from '../../core/money';
 import { formatEventDate } from '../../core/date';
-import type { CustomField, CustomModule, CustomRecord, SummaryAgg } from './types';
+import type { CustomField, CustomModule, CustomRecord } from './types';
 
 /**
  * Read a numeric value from a jsonb field, or null if it is not one.

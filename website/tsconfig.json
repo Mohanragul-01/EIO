@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": false,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@app/*": ["../app/src/*"],
+      "react-native-url-polyfill/auto": ["./src/lib/shims/urlPolyfill.ts"],
+      "@react-native-async-storage/async-storage": ["./src/lib/shims/asyncStorage.ts"],
+      "@expo/vector-icons": ["./src/lib/types/expo-vector-icons.d.ts"],
+      "react-native": ["./src/lib/shims/reactNative.ts"],
+      "expo": ["./src/lib/shims/expo.ts"],
+      "expo-notifications": ["./src/lib/types/expo-notifications.d.ts"]
+    },
+    "types": ["vite/client"]
+  },
+  // Only `src`. Shared modules under ../app/src are checked transitively, as
+  // dependencies of what this site actually imports - listing them here instead
+  // would drag in the React Native .tsx components, which cannot compile for a
+  // browser and which nothing here uses.
+  "include": ["src", "vite.config.ts"]
+}

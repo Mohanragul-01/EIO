@@ -1,0 +1,389 @@
+/*
+ * components.css - styling for the shared primitives and the app shell.
+ */
+
+/* MODAL -------------------------------------------------------------------- */
+
+.modal {
+  padding: 0;
+  border: 1px solid var(--glass-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--background-elevated);
+  color: var(--text);
+  box-shadow: var(--shadow-float);
+  max-height: calc(100vh - 64px);
+  overflow: hidden;
+}
+
+/* The browser paints its own backdrop; this makes it match the app's scrim. */
+.modal::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.modal-inner {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 64px);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-lg) var(--space-xl);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding: var(--space-xl);
+  overflow-y: auto;
+}
+
+.modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  padding: var(--space-lg) var(--space-xl);
+  border-top: 1px solid var(--glass-border);
+}
+
+/* SEGMENTED CONTROL -------------------------------------------------------- */
+
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border);
+  background: var(--glass);
+}
+
+.segmented-item {
+  padding: 5px var(--space-md);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  transition: all var(--transition);
+}
+.segmented-item:hover { color: var(--text); }
+.segmented-item.active {
+  background: var(--glass-strong);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* STAT --------------------------------------------------------------------- */
+
+.stat { display: flex; flex-direction: column; gap: 2px; }
+.stat-value { font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
+
+/* SHELL -------------------------------------------------------------------- */
+
+.shell { display: flex; min-height: 100vh; }
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  width: var(--sidebar-w);
+  height: 100vh;
+  padding: var(--space-lg) var(--space-md);
+  border-right: 1px solid var(--glass-border);
+  background: var(--glass);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  flex-shrink: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md) var(--space-lg);
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--aurora-a), var(--aurora-b));
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: -0.02em;
+}
+.brand-name { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 9px var(--space-md);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  transition: all var(--transition);
+}
+.nav-link:hover { background: var(--glass); color: var(--text); }
+.nav-link.active {
+  background: var(--glass-strong);
+  border-color: var(--glass-border);
+  color: var(--text);
+  font-weight: 600;
+}
+.nav-icon { width: 18px; text-align: center; font-size: 15px; flex-shrink: 0; }
+
+/* The count that rides on a nav item, e.g. overdue tasks. */
+.nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+.nav-badge.warn {
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
+  color: var(--danger);
+}
+
+.sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: var(--space-xs); }
+
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  height: var(--topbar-h);
+  padding: 0 var(--space-2xl);
+  border-bottom: 1px solid var(--glass-border);
+  background: color-mix(in srgb, var(--background) 78%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.page-title { font-size: 17px; font-weight: 700; letter-spacing: -0.015em; }
+.page-sub { font-size: 12.5px; color: var(--text-muted); }
+
+.content {
+  flex: 1;
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--space-2xl);
+}
+
+/* A keyboard hint, e.g. the "/" on the search box. */
+.kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 5px;
+  border: 1px solid var(--glass-border-strong);
+  background: var(--glass);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1;
+}
+
+/* COLUMNS ------------------------------------------------------------------ */
+
+/*
+ * The desktop payoff: what the phone shows one tab at a time, side by side.
+ * auto-fit with a minimum means the columns collapse to fewer as the window
+ * narrows, rather than being crushed or forcing a horizontal scroll.
+ */
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(272px, 1fr));
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.column-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: 0 var(--space-xs) var(--space-md);
+}
+
+.column-title { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; }
+
+.column-count {
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.column-body { display: flex; flex-direction: column; gap: var(--space-sm); }
+
+/* GRIDS -------------------------------------------------------------------- */
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+  gap: var(--space-lg);
+}
+
+/* Wide-screen split: main content beside a narrower rail of charts/summary. */
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-xl);
+}
+@media (min-width: 1180px) {
+  .split { grid-template-columns: minmax(0, 1fr) 380px; }
+}
+@media (min-width: 1180px) {
+  .split-wide { grid-template-columns: 340px minmax(0, 1fr); }
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-lg);
+}
+
+/* LIST ROWS ---------------------------------------------------------------- */
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border);
+  background: var(--glass);
+  transition: all var(--transition);
+}
+.list-row:hover {
+  border-color: var(--glass-border-strong);
+  background: var(--glass-strong);
+}
+
+/* Row actions stay hidden until hover, so a long list is not a wall of icons. */
+.row-actions { display: flex; gap: 2px; opacity: 0; transition: opacity var(--transition); }
+.list-row:hover .row-actions,
+.list-row:focus-within .row-actions { opacity: 1; }
+
+/* TABLE -------------------------------------------------------------------- */
+
+.table-wrap { overflow-x: auto; }
+
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+table.data th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-sm) var(--space-md);
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--background-elevated);
+  border-bottom: 1px solid var(--glass-border);
+  white-space: nowrap;
+}
+table.data th.sortable { cursor: pointer; user-select: none; }
+table.data th.sortable:hover { color: var(--text); }
+table.data td {
+  padding: var(--space-md);
+  border-bottom: 1px solid var(--glass-border);
+  vertical-align: middle;
+}
+table.data tbody tr { transition: background var(--transition); }
+table.data tbody tr:hover { background: var(--glass); }
+table.data tbody tr:last-child td { border-bottom: 0; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* CHECKBOX ----------------------------------------------------------------- */
+
+.check {
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: 1.5px solid var(--glass-border-strong);
+  background: transparent;
+  color: transparent;
+  font-size: 11px;
+  transition: all var(--transition);
+}
+.check:hover { border-color: var(--primary); }
+.check.on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+
+/* MISC --------------------------------------------------------------------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+.strike { text-decoration: line-through; color: var(--text-faint); }
+
+/* AUTH --------------------------------------------------------------------- */
+
+.auth-wrap {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: var(--space-xl);
+}
+.auth-card { width: 100%; max-width: 400px; }

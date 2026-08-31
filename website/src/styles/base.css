@@ -1,0 +1,336 @@
+/*
+ * base.css - reset, the aurora canvas, and the primitives every screen uses.
+ *
+ * Written as a small set of composable classes rather than a utility framework:
+ * the app has about a dozen visual primitives and they are all here, which is
+ * easier to keep coherent than a thousand utilities would be.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+ * The aurora. Three large, soft radial gradients on a fixed layer, matching the
+ * moving background the phone app draws. Fixed rather than scrolling, so the
+ * light stays put while content moves over it - scrolling it turns a calm
+ * backdrop into a distraction.
+ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 50% at 12% 8%, color-mix(in srgb, var(--aurora-a) 34%, transparent), transparent 70%),
+    radial-gradient(55% 45% at 88% 12%, color-mix(in srgb, var(--aurora-b) 30%, transparent), transparent 70%),
+    radial-gradient(65% 55% at 50% 100%, color-mix(in srgb, var(--aurora-c) 24%, transparent), transparent 70%);
+}
+
+h1, h2, h3, h4 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+p { margin: 0; }
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+input, textarea, select {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+/* Visible focus everywhere, since this client is driven by a keyboard. */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+/* Scrollbars, themed. The default light scrollbar on a dark panel is jarring. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--glass-border-strong) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--glass-border-strong);
+  border-radius: var(--radius-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background-clip: content-box; background-color: var(--text-faint); }
+
+/* PRIMITIVES ------------------------------------------------------------- */
+
+/*
+ * The glass card. On the phone this is a real BlurView; here backdrop-filter
+ * does the same job natively, and degrades to a flat translucent panel where
+ * it is unsupported rather than disappearing.
+ */
+.card {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  box-shadow: var(--shadow-card);
+}
+
+.card-pad { padding: var(--space-xl); }
+
+.card-hover {
+  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  border-color: var(--glass-border-strong);
+  box-shadow: var(--shadow-float);
+}
+
+.overline {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.muted { color: var(--text-muted); }
+.faint { color: var(--text-faint); }
+.secondary { color: var(--text-secondary); }
+
+.numeric {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Buttons ---------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: 9px var(--space-lg);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+  font-size: 13.5px;
+  white-space: nowrap;
+  transition: filter var(--transition), transform var(--transition), background var(--transition);
+}
+.btn:hover:not(:disabled) { filter: brightness(1.08); }
+.btn:active:not(:disabled) { transform: scale(0.98); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-glass {
+  background: var(--glass);
+  border-color: var(--glass-border);
+  color: var(--text);
+}
+.btn-glass:hover:not(:disabled) {
+  background: var(--glass-strong);
+  border-color: var(--glass-border-strong);
+  filter: none;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+  padding: 6px 10px;
+}
+.btn-ghost:hover:not(:disabled) { background: var(--glass); color: var(--text); filter: none; }
+
+.btn-danger { background: var(--danger); color: var(--on-primary); }
+
+.btn-sm { padding: 5px 10px; font-size: 12.5px; border-radius: var(--radius-sm); }
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  transition: background var(--transition), color var(--transition);
+}
+.icon-btn:hover { background: var(--glass); color: var(--text); }
+.icon-btn.danger:hover { color: var(--danger); }
+
+/* Form fields ------------------------------------------------------------ */
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.input,
+textarea.input,
+select.input {
+  width: 100%;
+  padding: 9px var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border);
+  background: var(--glass);
+  color: var(--text);
+  transition: border-color var(--transition), background var(--transition);
+}
+.input::placeholder { color: var(--text-faint); }
+.input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: var(--glass-strong);
+}
+.input.invalid { border-color: var(--danger); }
+textarea.input { resize: vertical; min-height: 76px; line-height: 1.55; }
+
+.error-text { color: var(--danger); font-size: 12.5px; }
+
+/* Chips, used for every single-choice picker in the app. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px var(--space-md);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--glass-border);
+  background: var(--glass);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  transition: all var(--transition);
+}
+.chip:hover { border-color: var(--glass-border-strong); color: var(--text); }
+.chip[aria-pressed='true'],
+.chip.selected {
+  border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  color: var(--primary);
+}
+
+.chip-row { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+
+/* Layout helpers --------------------------------------------------------- */
+
+.row { display: flex; align-items: center; gap: var(--space-md); }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
+.col { display: flex; flex-direction: column; }
+.grow { flex: 1; min-width: 0; }
+.wrap { flex-wrap: wrap; }
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.divider { height: 1px; background: var(--glass-border); border: 0; margin: 0; }
+
+/* Empty state, shared by every list in the app. */
+.empty {
+  display: grid;
+  place-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-3xl) var(--space-xl);
+  text-align: center;
+  color: var(--text-muted);
+}
+.empty-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.empty-msg { max-width: 42ch; font-size: 13px; }
+
+/* Entrance animation, matching the app's staggered fade-in. */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rise { animation: rise 380ms cubic-bezier(0.2, 0, 0.2, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Loading spinner. */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--glass-border-strong);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 620ms linear infinite;
+}
+.spinner-center { display: grid; place-items: center; padding: var(--space-3xl); }
+
+/* A banner for errors that must not steal focus from what you were doing. */
+.banner {
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
