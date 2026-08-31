@@ -8,6 +8,7 @@ import { useStableCallback } from '../../core/useStableCallback';
 import { daysUntil } from '../../core/date';
 import { sumMinor } from '../../core/money';
 import * as api from './api';
+import { ensurePermission, type PermissionState } from './notifications';
 import { toMonthlyMinor, type Subscription } from './types';
 
 export function useSubscriptions() {
@@ -15,6 +16,11 @@ export function useSubscriptions() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Whether reminders can actually fire. Null until checked, so the banner does
+   * not flash on every open before the answer is known.
+   */
+  const [permission, setPermission] = useState<PermissionState | null>(null);
 
   const mounted = useRef(true);
   useEffect(() => {
@@ -44,6 +50,21 @@ export function useSubscriptions() {
   useEffect(() => {
     load();
   }, [load]);
+
+  /**
+   * Asked once per mount rather than on every focus. The point is to notice
+   * that reminders are off, not to re-prompt every time you open the module,
+   * which would be the fastest way to train someone to dismiss it.
+   */
+  useEffect(() => {
+    let active = true;
+    ensurePermission().then((state) => {
+      if (active) setPermission(state);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const summary = useMemo(() => {
     const active = subscriptions.filter((s) => s.is_active);
@@ -137,6 +158,7 @@ export function useSubscriptions() {
   return {
     subscriptions,
     summary,
+    permission,
     loading,
     refreshing,
     error,

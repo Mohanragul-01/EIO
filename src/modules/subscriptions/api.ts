@@ -5,6 +5,7 @@ import { todayISO } from '../../core/date';
 import { LEDGER_CATEGORY, recordEntry } from '../../core/ledger';
 import { supabase } from '../../core/supabase';
 import { getOwnerId } from '../../core/session';
+import { cancelReminder, scheduleReminder } from './notifications';
 import { advanceDueDate, type Subscription, type SubscriptionInput } from './types';
 
 const TABLE = 'subscriptions';
@@ -46,6 +47,11 @@ export async function createSubscription(input: SubscriptionInput): Promise<Subs
     .single();
 
   if (error) throw new Error(error.message);
+
+  // After the insert, never before: a failed write must not leave a reminder
+  // for a subscription that does not exist. scheduleReminder never throws, so
+  // a device without notifications still gets a saved subscription.
+  await scheduleReminder(data);
   return data;
 }
 
@@ -61,6 +67,15 @@ export async function updateSubscription(
     .single();
 
   if (error) throw new Error(error.message);
+
+  // Rescheduled from the row the database returned, not from `input`: this is a
+  // PARTIAL update, so the input on its own does not describe the whole row and
+  // scheduling from it would use a stale due date or name.
+  //
+  // scheduleReminder cancels before it schedules, so an edited date can never
+  // leave the old date's reminder behind. That is also why markPaid needs no
+  // notification code of its own: it goes through here.
+  await scheduleReminder(data);
   return data;
 }
 
@@ -130,4 +145,8 @@ export async function markPaid(subscription: Subscription): Promise<MarkPaidResu
 export async function deleteSubscription(id: string): Promise<void> {
   const { error } = await supabase.from(TABLE).delete().eq('id', id);
   if (error) throw new Error(error.message);
+
+  // After the delete succeeds. Cancelling first would silently drop the
+  // reminder for a subscription that then failed to delete.
+  await cancelReminder(id);
 }

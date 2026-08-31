@@ -14,7 +14,7 @@ import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { GlassCard } from '../../../core/components';
 import { formatMoney } from '../../../core/money';
 import { formatBalance } from '../analytics';
-import { CategoryDonut } from './CategoryDonut';
+import { CategoryPie } from './CategoryPie';
 import { radius, spacing } from '../../../core/theme';
 import type { CategoryTotal } from '../useTransactions';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
@@ -127,7 +127,7 @@ export function MonthSummary({
       {categoryTotals.length > 0 ? (
         <View style={styles.breakdown}>
           <Text style={styles.breakdownLabel}>Where it went</Text>
-          <CategoryDonut categoryTotals={categoryTotals} />
+          <CategoryPie categoryTotals={categoryTotals} />
           {categoryTotals.map((category) => (
             <CategoryBar key={category.key} category={category} />
           ))}

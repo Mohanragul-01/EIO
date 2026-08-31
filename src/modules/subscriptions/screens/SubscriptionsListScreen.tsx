@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Linking,
   Pressable,
   RefreshControl,
   Text,
@@ -35,7 +36,7 @@ export function SubscriptionsListScreen() {
   const styles = useStyles();
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
-  const { subscriptions, summary, loading, refreshing, error, refresh, reload, markPaid } =
+  const { subscriptions, summary, permission, loading, refreshing, error, refresh, reload, markPaid } =
     useSubscriptions();
 
   /**
@@ -114,6 +115,32 @@ export function SubscriptionsListScreen() {
         ListHeaderComponent={
           hasData ? (
             <FadeInView>
+              {/*
+                Reminders failing silently is worse than not having them: you
+                would assume you were covered. So when they cannot fire, the
+                module says so rather than looking the same either way.
+              */}
+              {permission === 'denied' || permission === 'unsupported' ? (
+                <Pressable
+                  onPress={() => {
+                    // Only Settings can undo a denial; nothing in-app can.
+                    if (permission === 'denied') void Linking.openSettings();
+                  }}
+                  style={styles.permissionBanner}
+                >
+                  <Ionicons
+                    name="notifications-off-outline"
+                    size={16}
+                    color={colors.warning}
+                  />
+                  <Text style={styles.permissionText}>
+                    {permission === 'denied'
+                      ? 'Reminders are off. Tap to enable notifications in Settings.'
+                      : 'Reminders need the EIO app build, not Expo Go.'}
+                  </Text>
+                </Pressable>
+              ) : null}
+
               <GlassCard style={styles.summaryCard}>
                 <Text style={styles.summaryLabel}>Costing you</Text>
                 <Text style={styles.summaryAmount}>
@@ -225,6 +252,23 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   listEmpty: {
     flexGrow: 1,
     paddingTop: 80,
+  },
+  permissionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.warning + '1A',
+    borderWidth: 1,
+    borderColor: colors.warning + '33',
+  },
+  permissionText: {
+    ...typography.caption,
+    fontSize: 12,
+    color: colors.text,
+    flex: 1,
   },
   summaryCard: {},
   summaryLabel: {

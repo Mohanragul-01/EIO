@@ -13,10 +13,10 @@ cheap and keeps the existing ones from tangling together.
 
 | Module | What it does |
 | --- | --- |
-| **Tasks** | Due dates, priority, optimistic complete and delete |
-| **Notes** | Body text and tags, with search and tag filtering |
-| **Finance** | Monthly transactions, category breakdown, income against expense |
-| **Subscriptions** | Billing cycles, renewal tracking, "mark paid" logs the expense to Finance |
+| **Tasks** | Daily/Weekly/Monthly/Yearly tabs, repeating tasks, due dates, priority |
+| **Notes** | Notes, checklists and a dated journal, plus quick capture and an inbox |
+| **Finance** | Running balance, monthly transactions, category pie, trend chart, CSV export |
+| **Subscriptions** | Billing cycles, renewal reminders 3 days ahead, "mark paid" logs the expense to Finance |
 | **Fitness** | Workout log with a seven-day activity strip and a streak |
 | **Module builder** | Define your own module from inside the app, no code and no migration |
 
@@ -32,6 +32,8 @@ just needs to remember.**
 ## Stack
 
 - **React Native** via **Expo** (SDK 57), TypeScript
+- `react-native-chart-kit` on `react-native-svg` for charts
+- `expo-notifications` for local renewal reminders
 - **Supabase** for Postgres, auth and row level security
 - **React Navigation** (native stack)
 - Plain hooks for data fetching, no state library
@@ -148,7 +150,7 @@ confirmation email.
 ## Scripts
 
 ```bash
-npm test              # 51 tests
+npm test              # 98 tests
 npx tsc --noEmit      # type check
 npx expo start        # dev server
 ```
@@ -198,7 +200,10 @@ so nothing is lost.
 Known limits, to be fixed only if daily use proves them worth fixing:
 
 - **Network required.** No offline cache.
-- **No reminders.** Nothing notifies you of a due task or an upcoming bill.
+- **Reminders exist for subscription renewals only** (3 days ahead, local
+  notifications, no server). Tasks have no reminders. Reminders are scheduled
+  on the device, so they do not survive a reinstall until each subscription is
+  edited again, and they need the dev or production build rather than Expo Go.
 - Supabase free-tier projects **pause after 7 days idle** and need a manual
   resume from the dashboard.
 
