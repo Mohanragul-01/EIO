@@ -47,7 +47,7 @@ clients run the identical file.
 
 | Module | What it does |
 | --- | --- |
-| **Tasks** | Daily/Weekly/Monthly/Yearly tabs, repeating tasks, due dates, priority |
+| **Tasks** | Daily/Weekly/Monthly/Yearly, repeating tasks, due dates, priority; a drag-and-drop kanban board on the web |
 | **Notes** | Notes, checklists and a dated journal, plus quick capture and an inbox |
 | **Finance** | Running balance, monthly transactions, category pie, trend chart, CSV export |
 | **Subscriptions** | Billing cycles, renewal reminders 3 days ahead, "mark paid" logs the expense to Finance |
@@ -81,6 +81,8 @@ just needs to remember.**
 - **React 19** on **Vite**, TypeScript
 - `react-router-dom` with a **hash** router, so a built copy opens from disk
   with no server to rewrite deep links
+- `@dnd-kit` for the task board - chosen over the HTML5 drag API for real
+  keyboard support and sane touch behaviour
 - `recharts` for charts
 - Hand-written CSS with custom properties, no framework
 - A hand-drawn SVG icon set, one 24px grid at one stroke weight

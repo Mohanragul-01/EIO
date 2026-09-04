@@ -30,6 +30,7 @@ import {
 } from '@app/modules/subscriptions/types';
 
 import { Icon } from '../components/Icon';
+import { FilterBar, type FilterSpec } from '../components/FilterBar';
 import { Shell } from '../components/Shell';
 import {
   ChipPicker,
@@ -73,6 +74,10 @@ export function SubscriptionsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [cycle, setCycle] = useState<'any' | BillingCycle>('any');
+  const [category, setCategory] = useState('any');
+  const [state, setState] = useState<'any' | 'active' | 'paused'>('any');
   const { confirm, dialog } = useConfirm();
 
   const load = useCallback(() => api.listSubscriptions(), []);
@@ -88,7 +93,24 @@ export function SubscriptionsPage() {
 
   useHotkeys({ onNew: () => setEditing('new') });
 
-  const subscriptions = data ?? [];
+  const all = useMemo(() => data ?? [], [data]);
+
+  const subscriptions = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return all.filter((s) => {
+      if (cycle !== 'any' && s.billing_cycle !== cycle) return false;
+      if (category !== 'any' && (s.category || DEFAULT_SUBSCRIPTION_CATEGORY) !== category)
+        return false;
+      if (state === 'active' && !s.is_active) return false;
+      if (state === 'paused' && s.is_active) return false;
+      if (needle && !`${s.name} ${s.note}`.toLowerCase().includes(needle)) return false;
+      return true;
+    });
+  }, [all, query, cycle, category, state]);
+
+  // The headline figures follow the FILTER, so narrowing to one category tells
+  // you what that category costs a month - which is the question you narrowed
+  // it to ask.
   const active = subscriptions.filter((s) => s.is_active);
 
   const monthlyTotal = useMemo(
@@ -162,6 +184,49 @@ export function SubscriptionsPage() {
     }
   };
 
+  const subFiltersActive =
+    query.trim() !== '' || cycle !== 'any' || category !== 'any' || state !== 'any';
+
+  const subFilters: FilterSpec[] = [
+    {
+      key: 'state',
+      label: 'State',
+      value: state,
+      onChange: (v) => setState(v as 'any' | 'active' | 'paused'),
+      options: [
+        { value: 'any', label: 'Active and paused' },
+        { value: 'active', label: 'Active only' },
+        { value: 'paused', label: 'Paused only' },
+      ],
+    },
+    {
+      key: 'cycle',
+      label: 'Billing cycle',
+      value: cycle,
+      onChange: (v) => setCycle(v as 'any' | BillingCycle),
+      options: [
+        { value: 'any', label: 'Any cycle' },
+        ...BILLING_CYCLES.map((c) => ({ value: c, label: CYCLE_LABEL[c] })),
+      ],
+    },
+    {
+      key: 'category',
+      label: 'Category',
+      value: category,
+      onChange: setCategory,
+      options: [
+        { value: 'any', label: 'All categories' },
+        ...[...new Set(all.map((s) => s.category || DEFAULT_SUBSCRIPTION_CATEGORY))]
+          .map((key) => ({
+            value: key,
+            label: categoryDef(key).label,
+            dot: categoryDef(key).color,
+          }))
+          .sort((a, b) => a.label.localeCompare(b.label)),
+      ],
+    },
+  ];
+
   return (
     <Shell
       title="Subscriptions"
@@ -177,6 +242,21 @@ export function SubscriptionsPage() {
       }
     >
       <ErrorBanner message={error ?? actionError} />
+
+      <FilterBar
+        search={{ value: query, onChange: setQuery, placeholder: 'Search subscriptions' }}
+        filters={subFilters}
+        onReset={
+          subFiltersActive
+            ? () => {
+                setQuery('');
+                setCycle('any');
+                setCategory('any');
+                setState('any');
+              }
+            : undefined
+        }
+      />
       {notice ? (
         <div
           className="banner"

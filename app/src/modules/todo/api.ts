@@ -45,6 +45,11 @@ export async function listTodosByFrequency(frequency: Frequency): Promise<Todo[]
     .eq('user_id', ownerId)
     .eq('frequency', frequency)
     .eq('is_done', false)
+    // `position` first: it is the order you arranged by hand, and it should
+    // beat anything the database would have chosen. Due date is the tie-break
+    // for tasks you have never dragged, which is what the backfill in 0013 set
+    // them to anyway - so an untouched list looks exactly as it did before.
+    .order('position', { ascending: true })
     .order('due_date', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: false });
 
@@ -83,6 +88,38 @@ export async function listCompletedByFrequency(
 
   if (error) throw new Error(error.message);
   return data ?? [];
+}
+
+/**
+ * Renumber a frequency column to match the order given.
+ *
+ * One RPC rather than one update per task: a drag can move every row below the
+ * drop point, and doing that as N requests would be N chances to fail partway
+ * and leave the column half-ordered. `reorder_todos` does it in a single
+ * statement, and runs as the caller so row level security still applies - ids
+ * that are not yours simply match nothing.
+ *
+ * Send the WHOLE column in its new order, not just what moved. Positions are
+ * plain integers, so the only way to be sure of the result is to state it.
+ */
+export async function reorderTodos(orderedIds: string[]): Promise<void> {
+  if (orderedIds.length === 0) return;
+
+  const { error } = await supabase.rpc('reorder_todos', { p_ids: orderedIds });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Move a task to a different frequency.
+ *
+ * Separate from updateTodo because the board changes one column and nothing
+ * else, and because a drag between columns must not touch the due date - a
+ * weekly task dragged to Monthly is still due when it was due; only how often
+ * it recurs has changed.
+ */
+export async function setFrequency(id: string, frequency: Frequency): Promise<void> {
+  const { error } = await supabase.from(TABLE).update({ frequency }).eq('id', id);
+  if (error) throw new Error(error.message);
 }
 
 /** Fetch one todo by id - used by the edit screen. */

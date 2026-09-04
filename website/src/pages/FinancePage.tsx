@@ -37,6 +37,7 @@ import * as api from '@app/modules/finance/api';
 import type { Transaction, TransactionInput, TransactionKind } from '@app/modules/finance/types';
 
 import { Icon } from '../components/Icon';
+import { FilterBar, type FilterSpec } from '../components/FilterBar';
 import { Shell } from '../components/Shell';
 import {
   ChipPicker,
@@ -66,8 +67,10 @@ export function FinancePage() {
     dir: 'desc',
   });
   const [actionError, setActionError] = useState<string | null>(null);
-  /** Category to narrow the table to, set by clicking the breakdown. */
+  /** Category to narrow the table to, set by the filter or by clicking the breakdown. */
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [kind, setKind] = useState<'any' | TransactionKind>('any');
+  const [query, setQuery] = useState('');
   const { confirm, dialog } = useConfirm();
 
   useHotkeys({ onNew: () => setEditing('new') });
@@ -120,15 +123,24 @@ export function FinancePage() {
     // The filter narrows the TABLE only. The charts keep showing the whole
     // month, because they are the thing you are reading the filter against -
     // a pie that redrew to one slice would answer nothing.
-    const visible = categoryFilter
-      ? rows.filter((t) => t.category === categoryFilter)
-      : rows;
+    const needle = query.trim().toLowerCase();
+    const visible = rows.filter((t) => {
+      if (categoryFilter && t.category !== categoryFilter) return false;
+      if (kind !== 'any' && t.kind !== kind) return false;
+      if (needle) {
+        // The category label as well as the note, so "food" finds the row even
+        // when you never typed a note on it.
+        const haystack = `${t.note} ${categoryDef(t.category).label}`.toLowerCase();
+        if (!haystack.includes(needle)) return false;
+      }
+      return true;
+    });
     return [...visible].sort((a, b) => {
       if (sort.key === 'amount_minor') return factor * (a.amount_minor - b.amount_minor);
       if (sort.key === 'category') return factor * a.category.localeCompare(b.category);
       return factor * a.date.localeCompare(b.date);
     });
-  }, [rows, sort, categoryFilter]);
+  }, [rows, sort, categoryFilter, kind, query]);
 
   const toggleSort = (key: SortKey) =>
     setSort((current) =>
@@ -171,6 +183,43 @@ export function FinancePage() {
     }
   };
 
+  const financeFiltersActive = kind !== 'any' || categoryFilter !== null || query.trim() !== '';
+
+  /**
+   * Category options come from what is in THIS month, not the whole catalogue.
+   * Offering twelve categories when four were used makes the list mostly dead
+   * ends, and the counts say how much is behind each one before you pick it.
+   */
+  const financeFilters: FilterSpec[] = [
+    {
+      key: 'kind',
+      label: 'Kind',
+      value: kind,
+      onChange: (v) => setKind(v as 'any' | TransactionKind),
+      options: [
+        { value: 'any', label: 'In and out' },
+        { value: 'expense', label: 'Expenses' },
+        { value: 'income', label: 'Income' },
+      ],
+    },
+    {
+      key: 'category',
+      label: 'Category',
+      value: categoryFilter ?? 'any',
+      onChange: (v) => setCategoryFilter(v === 'any' ? null : v),
+      options: [
+        { value: 'any', label: 'All categories' },
+        ...[...new Set(rows.map((t) => t.category))]
+          .map((key) => ({
+            value: key,
+            label: `${categoryDef(key).label} (${rows.filter((t) => t.category === key).length})`,
+            dot: categoryDef(key).color,
+          }))
+          .sort((a, b) => a.label.localeCompare(b.label)),
+      ],
+    },
+  ];
+
   const monthLabel = new Date(year, month - 1, 1).toLocaleDateString(undefined, {
     month: 'long',
     year: 'numeric',
@@ -193,7 +242,21 @@ export function FinancePage() {
     >
       <ErrorBanner message={error ?? actionError} />
 
-      <div className="row-between" style={{ marginBottom: 'var(--space-xl)' }}>
+      <FilterBar
+        search={{ value: query, onChange: setQuery, placeholder: 'Search notes and categories' }}
+        filters={financeFilters}
+        onReset={
+          financeFiltersActive
+            ? () => {
+                setKind('any');
+                setCategoryFilter(null);
+                setQuery('');
+              }
+            : undefined
+        }
+      />
+
+      <div className="row-between" style={{ marginBottom: 'var(--space-lg)' }}>
         <div className="row" style={{ gap: 'var(--space-sm)' }}>
           <button className="icon-btn" onClick={() => shiftMonth(-1)} aria-label="Previous month">
             <Icon name="chevronLeft" />
@@ -213,12 +276,6 @@ export function FinancePage() {
           </button>
         </div>
 
-        {categoryFilter ? (
-          <button className="chip selected" onClick={() => setCategoryFilter(null)}>
-            {categoryDef(categoryFilter).label}
-            <Icon name="close" size={12} />
-          </button>
-        ) : null}
       </div>
 
       <div className="split">

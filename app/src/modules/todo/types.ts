@@ -26,6 +26,14 @@ export type Todo = {
   frequency: Frequency;
   /** When true, completing this task creates the next occurrence. */
   is_repeat: boolean;
+  /**
+   * Manual order within its frequency column, lowest first.
+   *
+   * Set by dragging on the web board and by nothing else. The phone does not
+   * offer reordering, but it reads the column so both clients show the same
+   * order - which is the point of storing it rather than keeping it local.
+   */
+  position: number;
   created_at: string;
   updated_at: string;
 };

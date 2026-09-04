@@ -95,6 +95,16 @@
   --accent-cyan: #0e7490;
   --accent-rose: #be123c;
 
+  /*
+   * Priority scale: red high, blue normal, green low.
+   *
+   * Stated as rgb() because they are a fixed, meaningful scale rather than part
+   * of the neutral system - these three never re-tune when the surfaces do.
+   */
+  --priority-high: rgb(225, 29, 72);
+  --priority-normal: rgb(37, 99, 235);
+  --priority-low: rgb(22, 163, 74);
+
   /* Elevation. Tight and low-opacity: a shadow you notice is too big. */
   --shadow-sm: 0 1px 2px rgba(16, 16, 22, 0.05);
   --shadow-md: 0 4px 12px -2px rgba(16, 16, 22, 0.08), 0 2px 4px -2px rgba(16, 16, 22, 0.04);
@@ -144,6 +154,12 @@
     --accent-cyan: #38bdf8;
     --accent-rose: #fb7185;
 
+    /* Lifted for the dark canvas: the light versions read as muddy on
+       charcoal, and a scale you cannot tell apart is not one. */
+    --priority-high: rgb(251, 113, 133);
+    --priority-normal: rgb(96, 165, 250);
+    --priority-low: rgb(74, 222, 128);
+
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
     --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.5);
     --shadow-lg: 0 16px 40px -8px rgba(0, 0, 0, 0.65);
@@ -184,6 +200,12 @@
   --accent-emerald: #4ade80;
   --accent-cyan: #38bdf8;
   --accent-rose: #fb7185;
+
+  /* Lifted for the dark canvas: the light versions read as muddy on
+     charcoal, and a scale you cannot tell apart is not one. */
+  --priority-high: rgb(251, 113, 133);
+  --priority-normal: rgb(96, 165, 250);
+  --priority-low: rgb(74, 222, 128);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.5);

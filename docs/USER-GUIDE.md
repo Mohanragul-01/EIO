@@ -85,19 +85,39 @@ that tile shows a dash and the rest are unaffected.
 Tasks are organised by **how often you do them**, not by project: Daily, Weekly,
 Monthly, Yearly.
 
-**On the phone** these are four tabs. **On the website they are four columns side
-by side**, which is the single biggest difference between the clients. Tab
-switching hides the shape of your workload — you cannot tell that Weekly has
-quietly grown to fifteen items while Daily sits empty. Four columns tell you
-instantly.
+**On the phone** these are four tabs. **On the website they are a kanban board**,
+which is the single biggest difference between the clients. Tab switching hides
+the shape of your workload — you cannot tell that Weekly has quietly grown to
+fifteen items while Daily sits empty. Four columns tell you instantly.
+
+### Dragging
+
+Pick a card up and move it.
+
+- **Across columns** changes the task's frequency. That is what the columns
+  *are* — a weekly task dragged to Monthly now recurs monthly. Its due date is
+  untouched: when it is due has not changed, only how often it comes back.
+- **Within a column** sets the order by hand, and that order is **stored, not
+  local**. A board arranged in this browser that disagreed with the phone, or
+  with this same board on another machine, would be worse than no ordering at
+  all.
+
+A card only starts moving after a few pixels of travel, so a click still opens
+the editor. Keyboard works too: tab to a card, press space to lift it, arrow
+keys to move, space again to drop.
+
+If a move fails to save, the board snaps back to what the server has. A card
+that stayed where you dropped it after the write failed would be a lie you would
+only find on the next refresh.
 
 ### Creating a task
 
 A task has a title, a frequency, an optional due date, and a priority.
 
-**Priority is mostly visual restraint.** Only *high* gets a colour and a dot. If
-all three levels were coloured, none of them would read as urgent, so *normal*
-and *low* are deliberately quiet.
+**Priority is a colour on every card** — **red** for high, **blue** for normal,
+**green** for low. All three are shown, because they are a scale and a scale you
+can only read one third of is not a scale. It also means a card with no dot is
+unambiguously wrong rather than "probably normal".
 
 **A due date is optional.** A task with no due date is not overdue and never
 nags — it is a thing to do, not a thing to do *by* a date.
@@ -181,11 +201,15 @@ There is an **Uncheck all** button, and it is manual on purpose. A recurring
 list — a packing list, a weekly shop — gets reused, and deciding when it starts
 again is your call, not something that should happen on a timer.
 
-### Searching
+### Searching and filtering
 
-The website's search covers titles, bodies, tags **and checklist items**, so
-searching "milk" finds the shopping list containing it, not just notes that
-mention it in prose.
+Search covers titles, bodies, tags **and checklist items**, so searching "milk"
+finds the shopping list containing it, not just notes that mention it in prose.
+
+Alongside it: filter by **tag** — the list is built from the tags actually in
+use, with counts, so a tag you stop using disappears on its own — and by when a
+note was last **updated**, which is what you are reaching for when you cannot
+remember a note's name but know you touched it last week.
 
 ---
 
@@ -473,6 +497,11 @@ Things the website does that the phone cannot:
 
 - **Everything at once.** Four task columns, charts beside the ledger, a session
   beside its history.
+- **Filters** on Tasks, Notes, Finance and Subscriptions. Every one is the same
+  row of controls in the same place, an applied filter is tinted so you can see
+  why a list is short, and **Clear** appears only when something is actually on.
+  The page subtitle switches to "12 of 40 shown" while filtering, so a short
+  list is never mistaken for an empty one.
 - **Sortable tables** in Finance and your own modules — click any column
   header. In a custom module this overrides the saved sort order for that visit
   only; the order you chose in the builder is a property of the module and a

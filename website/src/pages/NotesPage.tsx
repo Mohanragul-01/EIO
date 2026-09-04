@@ -10,7 +10,7 @@
  * inbox is a filter too - a note is "in the inbox" when it has no title and no
  * tags, which is a property of the note, not a place it lives.
  */
-import { useCallback, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useMemo, useState, type FormEvent } from 'react';
 
 import { formatEventDate, todayISO } from '@app/core/date';
 import * as api from '@app/modules/notes/api';
@@ -28,6 +28,7 @@ import {
 } from '@app/modules/notes/types';
 
 import { Icon } from '../components/Icon';
+import { FilterBar, type FilterSpec } from '../components/FilterBar';
 import { Shell } from '../components/Shell';
 import {
   Empty,
@@ -43,21 +44,21 @@ import { useAsync } from '../lib/useAsync';
 import { useHotkeys } from '../lib/useHotkeys';
 
 type View = 'all' | 'inbox' | 'note' | 'checklist' | 'journal';
+type AgeFilter = 'any' | 'week' | 'month' | 'year';
 
 export function NotesPage() {
   const [view, setView] = useState<View>('all');
   const [query, setQuery] = useState('');
+  const [tag, setTag] = useState('any');
+  const [age, setAge] = useState<AgeFilter>('any');
   const [editing, setEditing] = useState<Note | 'new' | null>(null);
   const [capture, setCapture] = useState('');
   const [capturing, setCapturing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const { confirm, dialog } = useConfirm();
 
-  const searchRef = useRef<HTMLInputElement>(null);
-  useHotkeys({
-    onSearch: () => searchRef.current?.focus(),
-    onNew: () => setEditing('new'),
-  });
+  // '/' finds the FilterBar's search box on its own.
+  useHotkeys({ onNew: () => setEditing('new') });
 
   // listNotes deliberately excludes journals, so the journal list is fetched
   // separately and the two are combined here.
@@ -80,6 +81,21 @@ export function NotesPage() {
     [notes],
   );
 
+  /**
+   * Every tag actually in use, most-used first.
+   *
+   * Derived rather than stored: tags are free text on the note, so the only
+   * honest list of them is the one the notes themselves produce. A tag that
+   * stops being used disappears from the filter on its own.
+   */
+  const tags = useMemo(() => {
+    const counts = new Map<string, number>();
+    notes.forEach((note) => note.tags.forEach((t) => counts.set(t, (counts.get(t) ?? 0) + 1)));
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([name, count]) => ({ name, count }));
+  }, [notes]);
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
 
@@ -88,6 +104,16 @@ export function NotesPage() {
         if (view === 'inbox') return note.is_inbox;
         if (view !== 'all') return note.note_type === view;
         return true;
+      })
+      .filter((note) => tag === 'any' || note.tags.includes(tag))
+      .filter((note) => {
+        if (age === 'any') return true;
+        // Measured against updated_at, not created_at: "touched recently" is
+        // what you are looking for when you cannot remember a note's name.
+        const days = (Date.now() - new Date(note.updated_at).getTime()) / 86400000;
+        if (age === 'week') return days <= 7;
+        if (age === 'month') return days <= 31;
+        return days <= 365;
       })
       .filter((note) => {
         if (!needle) return true;
@@ -113,7 +139,7 @@ export function NotesPage() {
         }
         return b.updated_at.localeCompare(a.updated_at);
       });
-  }, [notes, view, query]);
+  }, [notes, view, query, tag, age]);
 
   const quickCapture = async (event: FormEvent) => {
     event.preventDefault();
@@ -168,6 +194,33 @@ export function NotesPage() {
       setActionError(e instanceof Error ? e.message : 'Could not update that list');
     }
   };
+
+  const filtersActive = query.trim() !== '' || tag !== 'any' || age !== 'any';
+
+  const filters: FilterSpec[] = [
+    {
+      key: 'tag',
+      label: 'Tag',
+      value: tag,
+      onChange: setTag,
+      options: [
+        { value: 'any', label: tags.length > 0 ? 'Any tag' : 'No tags yet' },
+        ...tags.map((t) => ({ value: t.name, label: `#${t.name} (${t.count})` })),
+      ],
+    },
+    {
+      key: 'age',
+      label: 'Updated',
+      value: age,
+      onChange: (v) => setAge(v as AgeFilter),
+      options: [
+        { value: 'any', label: 'Any time' },
+        { value: 'week', label: 'Past week' },
+        { value: 'month', label: 'Past month' },
+        { value: 'year', label: 'Past year' },
+      ],
+    },
+  ];
 
   return (
     <Shell
@@ -241,13 +294,22 @@ export function NotesPage() {
 
         {/* LIST ---------------------------------------------------------- */}
         <div className="col" style={{ gap: 'var(--space-lg)' }}>
-          <input
-            ref={searchRef}
-            className="input"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search titles, bodies, tags and list items    /"
-            type="search"
+          <FilterBar
+            search={{
+              value: query,
+              onChange: setQuery,
+              placeholder: 'Search titles, bodies, tags and items',
+            }}
+            filters={filters}
+            onReset={
+              filtersActive
+                ? () => {
+                    setQuery('');
+                    setTag('any');
+                    setAge('any');
+                  }
+                : undefined
+            }
           />
 
           {loading && !data ? (

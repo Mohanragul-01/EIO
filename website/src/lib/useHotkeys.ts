@@ -24,7 +24,7 @@ function isTyping(target: EventTarget | null): boolean {
   );
 }
 
-export function useHotkeys(handlers: { onSearch?: () => void; onNew?: () => void }) {
+export function useHotkeys(handlers: { onSearch?: () => void; onNew?: () => void } = {}) {
   const { onSearch, onNew } = handlers;
 
   useEffect(() => {
@@ -37,10 +37,17 @@ export function useHotkeys(handlers: { onSearch?: () => void; onNew?: () => void
       // and opening a second dialog on top of it would be nonsense.
       if (document.querySelector('dialog[open]')) return;
 
-      if (event.key === '/' && onSearch) {
+      if (event.key === '/') {
+        // Falls back to the FilterBar's own search box, so any page that has
+        // one gets '/' without wiring it up. Pages with a search input of
+        // their own pass onSearch and win.
+        const focus =
+          onSearch ??
+          (() => document.querySelector<HTMLInputElement>('.filter-search input')?.focus());
+
         // Without this the '/' also lands in the field we just focused.
         event.preventDefault();
-        onSearch();
+        focus();
         return;
       }
 
