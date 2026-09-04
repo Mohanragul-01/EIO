@@ -23,12 +23,29 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
 
   return {
+    /*
+     * Relative asset URLs.
+     *
+     * GitHub Pages serves a project site from a subpath - /EIO/ - so absolute
+     * '/assets/...' would 404 there. Relative paths work under any subpath AND
+     * when you open dist/index.html straight off disk, which the absolute form
+     * does not. The hash router means routing never depends on the base either,
+     * so there is nothing else to configure.
+     */
+    base: './',
+
     plugins: [react()],
 
     resolve: {
       alias: {
         // The shared domain layer, imported as '@app/...'.
         '@app': resolvePath('../app/src'),
+
+        // Pinned to THIS project's copy. Module resolution walks up from the
+        // importing file, so the shared supabase.ts would otherwise look in
+        // app/node_modules and the repo root and find nothing - the site built
+        // here only because the app happened to be installed beside it.
+        '@supabase/supabase-js': resolvePath('./node_modules/@supabase/supabase-js'),
 
         // Hermes ships an incomplete URL implementation; browsers do not.
         // Aliased to an empty module so the import is a no-op here.
@@ -58,6 +75,26 @@ export default defineConfig(({ mode }) => {
       // Left true so a missing .env shows the app's own "not configured"
       // message instead of throwing before anything renders.
       __DEV__: JSON.stringify(true),
+    },
+
+    /*
+     * esbuild is told its TypeScript options rather than left to find them.
+     *
+     * When transforming a file under ../app/src it discovers app/tsconfig.json,
+     * which extends "expo/tsconfig.base" - so the build only worked where Expo
+     * happened to be installed, and died in a clean checkout complaining about
+     * a tsconfig nobody was trying to use.
+     *
+     * A STRING, not an object. Vite only skips the tsconfig lookup when this is
+     * a string (`typeof tsconfigRaw !== 'string'` guards the loader); an object
+     * is merged with whatever it finds, so discovery - and the failure - still
+     * happens. These are the only options esbuild reads, and they match this
+     * project's tsconfig; type CHECKING still runs from tsconfig.json through
+     * `tsc --noEmit` in the build script.
+     */
+    esbuild: {
+      tsconfigRaw:
+        '{"compilerOptions":{"target":"es2022","useDefineForClassFields":true,"jsx":"react-jsx"}}',
     },
 
     server: {

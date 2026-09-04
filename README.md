@@ -188,11 +188,27 @@ cp .env.example .env      # same project, VITE_ names
 npm run dev               # opens http://localhost:5173
 ```
 
-The website needs `app/node_modules` to exist as well, because it type-checks
-against the shared modules there. Install the app first.
-
 `npm run build` produces a static `dist/` you can open directly - the router is
-hash-based precisely so that works with no server.
+hash-based and asset paths are relative, precisely so that works with no server
+and under any subpath.
+
+The website builds on its own: it does NOT need the app installed. That used to
+be untrue by accident - module resolution walks up from the importing file, so
+`app/src/core/supabase.ts` found supabase-js in `app/node_modules` and the build
+only worked next to an installed app. Both the TypeScript path and the Vite
+alias now pin it here.
+
+### Deploying the website
+
+[`.github/workflows/deploy-website.yml`](.github/workflows/deploy-website.yml)
+builds and publishes to GitHub Pages on every push that touches `website/` or
+`app/src/`. The shared directory is included deliberately: a fix in an `api.ts`
+is a website change whether or not any file under `website/` moved.
+
+Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as repository secrets, and
+set Pages to build from GitHub Actions. The workflow fails rather than
+publishing if those are missing - otherwise you get a valid-looking page whose
+only symptom is that login never works.
 
 The anon key is public by design and ships inside both clients. What protects
 the data is row level security, not hiding the key. Never put a `service_role`

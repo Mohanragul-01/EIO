@@ -22,6 +22,13 @@
     "baseUrl": ".",
     "paths": {
       "@app/*": ["../app/src/*"],
+
+      // Node resolution walks UP from the importing file, so
+      // ../app/src/core/supabase.ts looks in app/node_modules and the repo
+      // root - never in website/node_modules. Without this mapping the build
+      // only works when the app happens to be installed too, which is a real
+      // dependency that nothing declares and which CI does not have.
+      "@supabase/supabase-js": ["./node_modules/@supabase/supabase-js"],
       "react-native-url-polyfill/auto": ["./src/lib/shims/urlPolyfill.ts"],
       "@react-native-async-storage/async-storage": ["./src/lib/shims/asyncStorage.ts"],
       "@expo/vector-icons": ["./src/lib/types/expo-vector-icons.d.ts"],
@@ -29,7 +36,7 @@
       "expo": ["./src/lib/shims/expo.ts"],
       "expo-notifications": ["./src/lib/types/expo-notifications.d.ts"]
     },
-    "types": ["vite/client"]
+    "types": ["vite/client", "node"]
   },
   // Only `src`. Shared modules under ../app/src are checked transitively, as
   // dependencies of what this site actually imports - listing them here instead

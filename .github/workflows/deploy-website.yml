@@ -1,0 +1,103 @@
+name: Deploy website
+
+# Runs when the website (or the shared code it imports) changes on main, and
+# whenever you press the button in the Actions tab.
+#
+# The path filter matters in a two-client repo: an APK-only change should not
+# spend a minute rebuilding a site that did not change. `app/src` IS included,
+# because the website imports its api.ts, types.ts and analytics directly - a
+# fix there is a website change whether or not any file under website/ moved.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - 'app/src/**'
+      - '.github/workflows/deploy-website.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Both are required by the deploy step. `id-token` is what lets the runner
+  # prove to Pages that it is this workflow, so no long-lived token is stored.
+  pages: write
+  id-token: write
+
+# One deploy at a time. `cancel-in-progress: false` so a queued deploy finishes
+# rather than being killed by a newer push - a half-published site is worse
+# than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      # Only the website. The app's dependencies are not needed: its shared
+      # modules are plain TypeScript, and vite.config.ts pins both the module
+      # resolution and the esbuild tsconfig so nothing reaches for Expo.
+      - name: Install
+        working-directory: website
+        run: npm ci
+
+      # Vite only exposes variables prefixed with VITE_, and inlines them at
+      # build time - which is why they are needed here rather than at runtime.
+      #
+      # These are repository SECRETS by convention, but be clear-eyed: the anon
+      # key ends up readable in the published bundle, exactly as it does in the
+      # Android APK. That is fine and intended. What protects the data is Row
+      # Level Security on the database, not the key being hidden. A
+      # service_role key must NEVER be used here.
+      - name: Build
+        working-directory: website
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run build
+
+      # Fails the build rather than publishing a site that cannot sign in.
+      #
+      # Without the secrets the build SUCCEEDS and produces a perfectly valid
+      # page - core/supabase.ts falls back to a dummy host so the app can boot
+      # before .env exists - whose only symptom is that login never works. The
+      # string below is that fallback, verified by building with no environment
+      # at all and reading what came out; the placeholder in .env.example is a
+      # different string and never reaches a bundle.
+      - name: Check the build is configured
+        working-directory: website
+        run: |
+          if grep -rq "placeholder.supabase.co" dist/assets/*.js; then
+            echo "::error::Supabase is not configured, so this build cannot sign in."
+            echo "Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY as repository secrets."
+            exit 1
+          fi
+          if [ ! -s dist/index.html ]; then
+            echo "::error::dist/index.html is missing or empty."
+            exit 1
+          fi
+          echo "Build is configured."
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
