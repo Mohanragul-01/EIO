@@ -201,14 +201,23 @@ alias now pin it here.
 ### Deploying the website
 
 [`.github/workflows/deploy-website.yml`](.github/workflows/deploy-website.yml)
-builds and publishes to GitHub Pages on every push that touches `website/` or
-`app/src/`. The shared directory is included deliberately: a fix in an `api.ts`
-is a website change whether or not any file under `website/` moved.
+builds and publishes the site to GitHub Pages. **It is manual-only for now** -
+deploying is not set up yet, and an automatic trigger would fail on every push.
 
-Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as repository secrets, and
-set Pages to build from GitHub Actions. The workflow fails rather than
-publishing if those are missing - otherwise you get a valid-looking page whose
-only symptom is that login never works.
+To turn it on:
+
+1. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as repository secrets.
+2. Settings > Pages > Source: **GitHub Actions**.
+3. Uncomment the `push:` block at the top of the workflow.
+
+After that, every push touching `website/` or `app/src/` deploys. The shared
+directory is in the filter deliberately: a fix in an `api.ts` is a website
+change whether or not any file under `website/` moved.
+
+The workflow refuses to publish an unconfigured build. Without the secrets the
+build SUCCEEDS - the client falls back to a dummy host so it can boot before
+`.env` exists - and you would get a valid-looking page whose only symptom is
+that login never works.
 
 The anon key is public by design and ships inside both clients. What protects
 the data is row level security, not hiding the key. Never put a `service_role`

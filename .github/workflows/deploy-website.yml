@@ -1,19 +1,28 @@
 name: Deploy website
 
-# Runs when the website (or the shared code it imports) changes on main, and
-# whenever you press the button in the Actions tab.
+# ─────────────────────────────────────────────────────────────────────────────
+# MANUAL ONLY, until Pages is set up.
 #
-# The path filter matters in a two-client repo: an APK-only change should not
-# spend a minute rebuilding a site that did not change. `app/src` IS included,
-# because the website imports its api.ts, types.ts and analytics directly - a
-# fix there is a website change whether or not any file under website/ moved.
+# Deploying needs two things done in the GitHub UI first: the repository
+# secrets VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, and Settings > Pages
+# with its source set to GitHub Actions. Until then this workflow can only
+# fail, and an automatic trigger would fail on every push and email about it.
+#
+# TO GO LIVE: do those two things, then uncomment the `push:` block below. From
+# that point every push touching the website deploys it.
+#
+# The path filter is deliberate in a two-client repo - an APK-only change
+# should not rebuild a site that did not change - and `app/src` is included
+# because the website imports its api.ts, types.ts and analytics directly, so a
+# fix there IS a website change whether or not anything under website/ moved.
+# ─────────────────────────────────────────────────────────────────────────────
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'website/**'
-      - 'app/src/**'
-      - '.github/workflows/deploy-website.yml'
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'website/**'
+  #     - 'app/src/**'
+  #     - '.github/workflows/deploy-website.yml'
   workflow_dispatch:
 
 permissions:
