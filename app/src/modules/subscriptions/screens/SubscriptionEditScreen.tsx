@@ -13,10 +13,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   View,
@@ -32,6 +29,7 @@ import {
   Screen,
   SegmentedControl,
   TextField,
+  FormScroll,
 } from '../../../core/components';
 import { addDaysISO } from '../../../core/date';
 import { formatMoney, minorToAmountString, parseAmountToMinor } from '../../../core/money';
@@ -194,15 +192,7 @@ export function SubscriptionEditScreen() {
 
   return (
     <Screen padded={false}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        <FormScroll contentContainerStyle={styles.scroll}>
           <FadeInView>
             <GlassCard style={styles.amountCard}>
               <Text style={styles.amountLabel}>Amount</Text>
@@ -323,8 +313,7 @@ export function SubscriptionEditScreen() {
               />
             ) : null}
           </FadeInView>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </FormScroll>
     </Screen>
   );
 }

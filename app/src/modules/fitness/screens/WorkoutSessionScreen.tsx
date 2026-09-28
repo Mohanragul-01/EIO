@@ -16,16 +16,15 @@ import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   View,
 } from 'react-native';
 
-import { Button, FadeInView, GlassCard, Screen } from '../../../core/components';
+import { Button, FadeInView, GlassCard, Screen,
+  FormScroll,
+} from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { formatEventDate } from '../../../core/date';
 import { fonts, radius, spacing } from '../../../core/theme';
@@ -150,15 +149,7 @@ export function WorkoutSessionScreen() {
 
   return (
     <Screen padded={false}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        <FormScroll contentContainerStyle={styles.scroll}>
           <FadeInView>
             <GlassCard style={styles.timerCard}>
               <View style={styles.timerRow}>
@@ -221,8 +212,7 @@ export function WorkoutSessionScreen() {
           </FadeInView>
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </FormScroll>
 
       {/*
         Blocks already in the session are shown disabled rather than hidden, so

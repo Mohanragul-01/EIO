@@ -10,8 +10,9 @@
  * then visibly reflow once Inter arrives. Holding the splash until they are
  * ready avoids that flash.
  *
- * Provider order matters. SafeAreaProvider and ThemeProvider both sit outside
- * the navigator, because screens inside read insets and colours from them.
+ * Provider order matters. SafeAreaProvider, KeyboardProvider and ThemeProvider
+ * all sit outside the navigator, because screens inside read insets, keyboard
+ * frames and colours from them.
  */
 import {
   Inter_400Regular,
@@ -24,6 +25,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback } from 'react';
 import { View } from 'react-native';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider } from './src/core/auth';
@@ -52,11 +54,17 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <ThemeProvider>
-        <AuthProvider>
-          <Root ready={fontsLoaded || !!fontError} />
-        </AuthProvider>
-      </ThemeProvider>
+      {/*
+        KeyboardProvider tracks the real keyboard frame from the OS. It has to
+        sit above the navigator, because the screens that need it are inside.
+      */}
+      <KeyboardProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <Root ready={fontsLoaded || !!fontError} />
+          </AuthProvider>
+        </ThemeProvider>
+      </KeyboardProvider>
     </SafeAreaProvider>
   );
 }

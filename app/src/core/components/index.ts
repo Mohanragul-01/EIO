@@ -4,6 +4,7 @@
  * instead of one import line per component.
  */
 export { Screen } from './Screen';
+export { FormScroll } from './FormScroll';
 export { GlassCard } from './GlassCard';
 export { Button } from './Button';
 export { EmptyState } from './EmptyState';

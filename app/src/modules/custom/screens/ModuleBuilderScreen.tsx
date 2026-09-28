@@ -22,15 +22,14 @@ import React, { useEffect, useLayoutEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   Text,
   View,
 } from 'react-native';
 
-import { Button, FadeInView, GlassCard, Screen, TextField } from '../../../core/components';
+import { Button, FadeInView, GlassCard, Screen, TextField,
+  FormScroll,
+} from '../../../core/components';
 import { radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
@@ -260,15 +259,7 @@ export function ModuleBuilderScreen() {
 
   return (
     <Screen padded={false}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        <FormScroll contentContainerStyle={styles.scroll}>
           {/*  Identity  */}
           <FadeInView>
             <GlassCard>
@@ -465,8 +456,7 @@ export function ModuleBuilderScreen() {
               />
             ) : null}
           </FadeInView>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </FormScroll>
     </Screen>
   );
 }

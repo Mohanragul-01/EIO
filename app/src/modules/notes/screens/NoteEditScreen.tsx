@@ -23,9 +23,6 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   Text,
   View,
 } from 'react-native';
@@ -38,6 +35,7 @@ import {
   Screen,
   SegmentedControl,
   TextField,
+  FormScroll,
 } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { todayISO } from '../../../core/date';
@@ -261,15 +259,7 @@ export function NoteEditScreen() {
 
   return (
     <Screen padded={false}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        <FormScroll contentContainerStyle={styles.scroll}>
           <FadeInView>
             <GlassCard>
               {showTypePicker ? (
@@ -376,8 +366,7 @@ export function NoteEditScreen() {
               />
             ) : null}
           </FadeInView>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </FormScroll>
     </Screen>
   );
 }

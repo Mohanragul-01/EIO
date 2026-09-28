@@ -16,9 +16,6 @@ import React, { useEffect, useLayoutEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   Text,
   TextInput,
   View,
@@ -33,6 +30,7 @@ import {
   Screen,
   SegmentedControl,
   TextField,
+  FormScroll,
 } from '../../../core/components';
 import { todayISO } from '../../../core/date';
 import { minorToAmountString, parseAmountToMinor } from '../../../core/money';
@@ -189,15 +187,7 @@ export function TransactionEditScreen() {
 
   return (
     <Screen padded={false}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        <FormScroll contentContainerStyle={styles.scroll}>
           {/*  Amount: the hero field  */}
           <FadeInView>
             <GlassCard style={styles.amountCard}>
@@ -286,8 +276,7 @@ export function TransactionEditScreen() {
               />
             ) : null}
           </FadeInView>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </FormScroll>
     </Screen>
   );
 }

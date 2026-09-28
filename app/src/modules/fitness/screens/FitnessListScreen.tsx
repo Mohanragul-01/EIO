@@ -22,7 +22,9 @@ import {
   View,
 } from 'react-native';
 
-import { Button, EmptyState, FadeInView, GlassCard, Screen, Tabs } from '../../../core/components';
+import { Button, EmptyState, FadeInView, GlassCard, Screen, Tabs,
+  FormScroll,
+} from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { formatEventDate, todayISO } from '../../../core/date';
 import { fonts, motion, radius, spacing } from '../../../core/theme';
@@ -302,7 +304,7 @@ function PlanTab() {
 
   return (
     <>
-      <ScrollView
+      <FormScroll
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -456,7 +458,7 @@ function PlanTab() {
             </GlassCard>
           ))}
         </FadeInView>
-      </ScrollView>
+      </FormScroll>
 
       {error ? <ErrorBanner message={error} /> : null}
     </>
@@ -516,7 +518,7 @@ function BodyTab() {
 
   return (
     <>
-      <ScrollView
+      <FormScroll
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -606,7 +608,7 @@ function BodyTab() {
             ))}
           </FadeInView>
         ) : null}
-      </ScrollView>
+      </FormScroll>
 
       {error ? <ErrorBanner message={error} /> : null}
     </>

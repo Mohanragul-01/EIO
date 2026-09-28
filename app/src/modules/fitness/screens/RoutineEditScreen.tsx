@@ -13,16 +13,15 @@ import React, { useEffect, useLayoutEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   View,
 } from 'react-native';
 
-import { Button, FadeInView, GlassCard, Screen, TextField } from '../../../core/components';
+import { Button, FadeInView, GlassCard, Screen, TextField,
+  FormScroll,
+} from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { fonts, radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -192,15 +191,7 @@ export function RoutineEditScreen() {
 
   return (
     <Screen padded={false}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        <FormScroll contentContainerStyle={styles.scroll}>
           <FadeInView>
             <GlassCard>
               <TextField
@@ -296,8 +287,7 @@ export function RoutineEditScreen() {
               style={styles.save}
             />
           </FadeInView>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </FormScroll>
 
       {/*
         Multi-select here, unlike mid-session: building a routine means picking

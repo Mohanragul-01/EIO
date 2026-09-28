@@ -41,6 +41,16 @@ export type ThemeColors = {
   warning: string;
   danger: string;
 
+  /**
+   * Task priority, as a three-step scale: red, blue, green.
+   *
+   * Its own tokens rather than reusing the accents, because these mean one
+   * specific thing and must not drift when an accent is re-tuned for a tile.
+   */
+  priorityHigh: string;
+  priorityNormal: string;
+  priorityLow: string;
+
   text: string;
   textSecondary: string;
   textMuted: string;
@@ -87,6 +97,10 @@ export const darkColors: ThemeColors = {
   warning: '#FCC53D',
   danger: '#FF8497',
 
+  priorityHigh: 'rgb(251, 113, 133)',
+  priorityNormal: 'rgb(96, 165, 250)',
+  priorityLow: 'rgb(74, 222, 128)',
+
   text: '#F7F8FA',
   textSecondary: '#BFC5D2',
   textMuted: '#8B93A5',
@@ -131,6 +145,10 @@ export const lightColors: ThemeColors = {
   success: '#047857',
   warning: '#B45309',
   danger: '#BE123C',
+
+  priorityHigh: 'rgb(225, 29, 72)',
+  priorityNormal: 'rgb(37, 99, 235)',
+  priorityLow: 'rgb(22, 163, 74)',
 
   text: '#111827',
   textSecondary: '#3F4757',

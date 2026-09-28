@@ -63,25 +63,28 @@ export const PRIORITY_LABEL: Record<Priority, string> = {
 };
 
 /**
- * Priority to accent colour, resolved against the active palette.
+ * Priority to colour: red for high, blue for normal, green for low.
  *
  * A function rather than a constant map, because the palette changes with the
  * theme and a module-scope map would freeze whichever one was loaded first.
  *
- * Only "high" gets a loud colour. If every priority were coloured, none of
- * them would read as urgent.
+ * ALL THREE ARE COLOURED. An earlier version coloured only "high", reasoning
+ * that colouring everything makes nothing stand out - true of decorative
+ * colour, but priority is a SCALE, and a scale you can read one third of is
+ * not a scale. It also makes an uncoloured row mean something is wrong rather
+ * than "probably normal". The web client uses the same three.
  */
 export function priorityColor(
   priority: Priority,
-  colors: { textMuted: string; accentIndigo: string; accentRose: string },
+  colors: { priorityHigh: string; priorityNormal: string; priorityLow: string },
 ): string {
   switch (priority) {
     case 'high':
-      return colors.accentRose;
+      return colors.priorityHigh;
     case 'low':
-      return colors.textMuted;
+      return colors.priorityLow;
     default:
-      return colors.accentIndigo;
+      return colors.priorityNormal;
   }
 }
 

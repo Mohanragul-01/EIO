@@ -22,10 +22,7 @@ import React, { useEffect, useLayoutEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   Text,
   View,
 } from 'react-native';
@@ -38,6 +35,7 @@ import {
   Screen,
   SegmentedControl,
   TextField,
+  FormScroll,
 } from '../../../core/components';
 import { radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
@@ -183,18 +181,11 @@ export function TodoEditScreen() {
 
   return (
     <Screen padded={false}>
-      {/* Without this the keyboard covers the lower fields and the save button
-          on iOS. Android mostly handles it via windowSoftInputMode, hence the
-          platform-specific behavior. */}
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled" // taps work while the keyboard is up
-          showsVerticalScrollIndicator={false}
-        >
+      {/* FormScroll, not KeyboardAvoidingView. The claim this comment used to
+          make - that Android handles it via windowSoftInputMode - is what let
+          the bug sit: KAV with no behavior does nothing, so on Android the
+          keyboard covered the lower fields and the save button. */}
+      <FormScroll contentContainerStyle={styles.scroll}>
           <FadeInView>
             <GlassCard>
               <TextField
@@ -287,8 +278,7 @@ export function TodoEditScreen() {
               />
             ) : null}
           </FadeInView>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </FormScroll>
     </Screen>
   );
 }

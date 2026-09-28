@@ -13,14 +13,13 @@ import React, { useEffect, useLayoutEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   Text,
   View,
 } from 'react-native';
 
-import { Button, FadeInView, GlassCard, Screen } from '../../../core/components';
+import { Button, FadeInView, GlassCard, Screen,
+  FormScroll,
+} from '../../../core/components';
 import { spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
@@ -182,15 +181,7 @@ export function CustomRecordEditScreen() {
 
   return (
     <Screen padded={false}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        <FormScroll contentContainerStyle={styles.scroll}>
           <FadeInView>
             <GlassCard>
               {fields.map((field, index) => (
@@ -225,8 +216,7 @@ export function CustomRecordEditScreen() {
               />
             ) : null}
           </FadeInView>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </FormScroll>
     </Screen>
   );
 }

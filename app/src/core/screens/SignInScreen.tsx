@@ -11,16 +11,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   Text,
   View,
 } from 'react-native';
 
 import { useAuth } from '../auth';
-import { Button, FadeInView, GlassCard, Screen, TextField } from '../components';
+import { Button, FadeInView, GlassCard, Screen, TextField,
+  FormScroll,
+} from '../components';
 import { radius, spacing } from '../theme';
 import { makeStyles, useTheme } from '../ThemeContext';
 
@@ -76,15 +75,7 @@ export function SignInScreen() {
 
   return (
     <Screen padded={false}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        <FormScroll contentContainerStyle={styles.scroll}>
           <FadeInView>
             <View style={styles.brand}>
               <View style={styles.logo}>
@@ -161,8 +152,7 @@ export function SignInScreen() {
               </Text>
             </Pressable>
           </FadeInView>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </FormScroll>
     </Screen>
   );
 }

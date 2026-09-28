@@ -13,7 +13,9 @@ import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { GlassCard } from '../../../core/components';
 import { formatDueDate, isOverdue } from '../../../core/date';
 import { motion, radius, spacing } from '../../../core/theme';
-import { priorityColor, type Todo } from '../types';
+import { priorityColor, type Todo,
+  PRIORITY_LABEL,
+} from '../types';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 
 type TaskRowProps = {
@@ -68,9 +70,9 @@ export function TaskRow({ todo, onToggle, onPress }: TaskRowProps) {
             {todo.title}
           </Text>
 
-          {/* Meta line only renders when there's something to say - an empty
-              row of nothing is worse than no row. */}
-          {(todo.due_date || todo.priority !== 'normal' || todo.is_repeat) && !todo.is_done ? (
+          {/* The meta line now always renders for an open task, because the
+              priority dot always has something to say. */}
+          {!todo.is_done ? (
             <View style={styles.meta}>
               {todo.due_date ? (
                 <View style={styles.metaItem}>
@@ -92,16 +94,22 @@ export function TaskRow({ todo, onToggle, onPress }: TaskRowProps) {
                 </View>
               ) : null}
 
-              {todo.priority !== 'normal' ? (
-                <View style={styles.metaItem}>
-                  <View
-                    style={[styles.priorityDot, { backgroundColor: priorityColor(todo.priority, colors) }]}
-                  />
-                  <Text style={[styles.metaText, { color: priorityColor(todo.priority, colors) }]}>
-                    {todo.priority === 'high' ? 'High priority' : 'Low priority'}
-                  </Text>
-                </View>
-              ) : null}
+              {/*
+                Every priority, including normal. The label reads "Normal"
+                rather than "Normal priority" so the three sit at similar
+                widths and the row does not jump as priority changes.
+              */}
+              <View style={styles.metaItem}>
+                <View
+                  style={[
+                    styles.priorityDot,
+                    { backgroundColor: priorityColor(todo.priority, colors) },
+                  ]}
+                />
+                <Text style={[styles.metaText, { color: priorityColor(todo.priority, colors) }]}>
+                  {PRIORITY_LABEL[todo.priority]}
+                </Text>
+              </View>
             </View>
           ) : null}
         </View>
