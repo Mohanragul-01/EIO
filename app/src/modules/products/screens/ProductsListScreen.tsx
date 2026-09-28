@@ -204,6 +204,14 @@ export function ProductsListScreen() {
                     ? `to reorder within three weeks`
                     : 'stocked up for now'}
                 </Text>
+                {/*
+                  Marking something finished used to live only on a long press
+                  of Log use, with nothing on screen to suggest it existed. A
+                  gesture nobody can see is a feature nobody has.
+                */}
+                <Text style={styles.summaryHint}>
+                  Tap a card to edit · hold Log use when one runs out
+                </Text>
               </GlassCard>
             </FadeInView>
 
@@ -329,6 +337,12 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   summary: { marginBottom: spacing.lg, alignItems: 'flex-start' },
   summaryBig: { ...typography.display, fontSize: 32 },
   summaryLabel: { ...typography.caption },
+  summaryHint: {
+    ...typography.caption,
+    fontSize: 11,
+    color: colors.textFaint,
+    marginTop: spacing.md,
+  },
 
   card: { marginBottom: spacing.md },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect } from 'react';
 import {
   Animated,
+  Pressable,
   Text,
   useAnimatedValue,
   View,
@@ -26,6 +27,15 @@ type WeekStripProps = {
   weekVolume: number;
   weekMax: number;
   streak: number;
+  /**
+   * Tap a day to open or log it.
+   *
+   * Backdating used to live only on a long press of the + button, which is
+   * invisible - and forgetting to log is the entire reason it exists, so it
+   * cannot be the one thing you have to already know about. Seven days are
+   * already on screen; the day you missed is the obvious thing to point at.
+   */
+  onPickDay?: (date: string) => void;
 };
 
 export function WeekStrip({
@@ -34,6 +44,7 @@ export function WeekStrip({
   weekVolume,
   weekMax,
   streak,
+  onPickDay,
 }: WeekStripProps) {
   const styles = useStyles();
   const { colors } = useTheme();
@@ -67,14 +78,24 @@ export function WeekStrip({
 
       <View style={styles.strip}>
         {week.map((day) => (
-          <DayBar key={day.date} day={day} max={weekMax} />
+          <DayBar key={day.date} day={day} max={weekMax} onPress={onPickDay} />
         ))}
       </View>
+
+      {onPickDay ? <Text style={styles.hint}>Tap a day to log or open it</Text> : null}
     </GlassCard>
   );
 }
 
-function DayBar({ day, max }: { day: DayCell; max: number }) {
+function DayBar({
+  day,
+  max,
+  onPress,
+}: {
+  day: DayCell;
+  max: number;
+  onPress?: (date: string) => void;
+}) {
   const styles = useStyles();
   const height = useAnimatedValue(0);
 
@@ -93,7 +114,20 @@ function DayBar({ day, max }: { day: DayCell; max: number }) {
   }, [target, height]);
 
   return (
-    <View style={styles.dayColumn}>
+    <Pressable
+      onPress={onPress ? () => onPress(day.date) : undefined}
+      disabled={!onPress}
+      style={({ pressed }) => [styles.dayColumn, pressed && styles.dayPressed]}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={
+        onPress
+          ? day.count > 0
+            ? `${day.date}, ${day.count} ${day.count === 1 ? 'session' : 'sessions'}`
+            : `${day.date}, nothing logged`
+          : undefined
+      }
+      accessibilityHint={onPress ? (day.count > 0 ? 'Opens it' : 'Logs a workout on this day') : undefined}
+    >
       <View style={styles.barTrack}>
         {day.count > 0 ? (
           <Animated.View
@@ -112,7 +146,7 @@ function DayBar({ day, max }: { day: DayCell; max: number }) {
         ) : null}
       </View>
       <Text style={[styles.dayLabel, day.isToday && styles.dayLabelToday]}>{day.label}</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -154,6 +188,14 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     justifyContent: 'space-between',
     marginTop: spacing.xl,
   },
+  hint: {
+    ...typography.caption,
+    fontSize: 11,
+    color: colors.textFaint,
+    marginTop: spacing.md,
+    textAlign: 'center',
+  },
+  dayPressed: { opacity: 0.55 },
   dayColumn: {
     flex: 1,
     alignItems: 'center',

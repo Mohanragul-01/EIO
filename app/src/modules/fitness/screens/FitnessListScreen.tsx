@@ -110,6 +110,8 @@ function LogTab() {
   const { sessions, summary, loading, refreshing, error, refresh, reload } = useFitnessHome();
   const [starting, setStarting] = useState(false);
   const [routineChoices, setRoutineChoices] = useState<Routine[] | null>(null);
+  /** The day a pending 'choose a routine' will be logged against. */
+  const [pendingDate, setPendingDate] = useState(todayISO());
 
   useFocusEffect(
     useCallback(() => {
@@ -149,7 +151,8 @@ function LogTab() {
    *
    * Three taps deep would be wrong for something you reach for whenever you
    * forget to log, so yesterday gets its own entry rather than hiding behind a
-   * date picker. Anything older is set from inside the session.
+   * date picker. Anything older is set from inside the session, or by tapping
+   * the day in the week strip.
    */
   const startBackdated = useCallback(() => {
     Alert.alert('Log a past workout', 'Which day?', [
@@ -159,24 +162,57 @@ function LogTab() {
     ]);
   }, [startSession]);
 
-  const chooseStart = useCallback(async () => {
-    try {
-      const routines = await api.listRoutines();
-      if (routines.length === 0) {
-        void startSession(null);
+  /**
+   * Offer the routines, then start on `date`.
+   *
+   * The date is held in state rather than passed through the sheet, because the
+   * sheet's callback fires long after this returns and only knows which routine
+   * you picked.
+   */
+  const chooseStart = useCallback(
+    async (date: string) => {
+      setPendingDate(date);
+      try {
+        const routines = await api.listRoutines();
+        if (routines.length === 0) {
+          void startSession(null, date);
+          return;
+        }
+
+        // A sheet, not an Alert. Android gives an alert three button slots, and
+        // Cancel plus Freestyle already used two, so the third routine onwards
+        // overwrote an earlier button instead of adding one. The slice(0, 2)
+        // that used to be here was hiding the problem, not fixing it: with more
+        // than two routines the rest were simply unreachable from this screen.
+        setRoutineChoices(routines);
+      } catch {
+        void startSession(null, date);
+      }
+    },
+    [startSession],
+  );
+
+  /**
+   * Tapping a day in the week strip.
+   *
+   * Already trained that day, so there is something to look at - open it rather
+   * than starting a second session beside it. Nothing logged, so the obvious
+   * intent is to log it, on that day.
+   */
+  const pickDay = useCallback(
+    (date: string) => {
+      const existing = sessions.find((s) => s.date === date);
+      if (existing) {
+        navigation.navigate('WorkoutSession', {
+          sessionId: existing.id,
+          routineId: existing.routine_id,
+        });
         return;
       }
-
-      // A sheet, not an Alert. Android gives an alert three button slots, and
-      // Cancel plus Freestyle already used two, so the third routine onwards
-      // overwrote an earlier button instead of adding one. The slice(0, 2) that
-      // used to be here was hiding the problem, not fixing it: with more than
-      // two routines the rest were simply unreachable from this screen.
-      setRoutineChoices(routines);
-    } catch {
-      void startSession(null);
-    }
-  }, [startSession]);
+      void chooseStart(date);
+    },
+    [sessions, navigation, chooseStart],
+  );
 
   /** 'freestyle' is a sentinel id: a session belonging to no routine. */
   const FREESTYLE = 'freestyle';
@@ -213,6 +249,7 @@ function LogTab() {
               weekVolume={summary.weekVolume}
               weekMax={summary.weekMax}
               streak={summary.streak}
+              onPickDay={pickDay}
             />
             {sessions.length > 0 ? (
               <Text style={styles.sectionLabel}>
@@ -228,7 +265,7 @@ function LogTab() {
             accent={colors.accentRose}
             title="No workouts yet"
             message="Start a session and log sets as you go. Personal records are worked out from what you log."
-            action={<Button label="Start a workout" icon="add" onPress={chooseStart} />}
+            action={<Button label="Start a workout" icon="add" onPress={() => void chooseStart(todayISO())} />}
           />
         }
         renderItem={({ item, index }) => (
@@ -258,14 +295,14 @@ function LogTab() {
             label: routine.name,
           })),
         ]}
-        onSelect={([id]) => void startSession(id === FREESTYLE ? null : id)}
+        onSelect={([id]) => void startSession(id === FREESTYLE ? null : id, pendingDate)}
         onClose={() => setRoutineChoices(null)}
       />
 
       {sessions.length > 0 ? (
         <FadeInView style={styles.fabWrap} delay={120}>
           <Pressable
-            onPress={chooseStart}
+            onPress={() => void chooseStart(todayISO())}
             // Long-press for a past day. Backdating is the uncommon case, so
             // it does not get its own button, but it must not be unreachable
             // either - forgetting to log is the whole reason it exists.
@@ -909,15 +946,6 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     marginTop: spacing.xxl,
     marginBottom: spacing.lg,
   },
-  sectionLabelTight: {
-    ...typography.overline,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
   link: {
     ...typography.caption,
     color: colors.primary,
@@ -961,11 +989,6 @@ const useStyles = makeStyles(({ colors, typography }) => ({
 
   addCard: {
     marginBottom: spacing.md,
-  },
-  addRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
   },
   addInput: {
     flex: 1,

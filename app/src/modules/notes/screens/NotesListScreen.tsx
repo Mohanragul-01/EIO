@@ -465,10 +465,6 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     // padding, so this is only the gap above it.
     height: 96,
   },
-  tabsWrapUnused: {
-    paddingHorizontal: spacing.xl,
-    paddingTop: 96, // clears the transparent nav header
-  },
   centered: {
     flex: 1,
     alignItems: 'center',

@@ -30,7 +30,7 @@ import {
   View,
 } from 'react-native';
 
-import { EmptyState, FadeInView, GlassCard, Screen } from '../../../core/components';
+import { Button, EmptyState, FadeInView, GlassCard, Screen } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { radius, spacing } from '../../../core/theme';
 import * as api from '../api';
@@ -372,8 +372,18 @@ export function BucketListScreen() {
             title={items.length === 0 ? 'Nothing on the list' : 'Nothing matches'}
             message={
               items.length === 0
-                ? 'Add something with the + button, or run migrations 0015, then 0015a to 0015e, to import the full list.'
+                ? 'Add something yourself, or run migrations 0015, then 0015a to 0015e, to import the full list.'
                 : 'Try a different filter, or clear the search.'
+            }
+            // An empty screen should offer the thing that fills it. Which
+            // thing that is depends on WHY it is empty: nothing on the list at
+            // all means add one, nothing matching means the filters are wrong.
+            action={
+              items.length === 0 ? (
+                <Button label="Add something" icon="add" onPress={openAdd} />
+              ) : (
+                <Button label="Clear the filters" icon="close" onPress={clearAll} />
+              )
             }
           />
         }

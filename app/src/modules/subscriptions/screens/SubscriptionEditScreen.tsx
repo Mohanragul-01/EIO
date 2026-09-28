@@ -319,7 +319,6 @@ export function SubscriptionEditScreen() {
 }
 
 const useStyles = makeStyles(({ colors, typography }) => ({
-  flex: { flex: 1 },
   scroll: {
     paddingHorizontal: spacing.xl,
     paddingTop: 104,

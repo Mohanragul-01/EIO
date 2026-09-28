@@ -284,9 +284,6 @@ export function TodoEditScreen() {
 }
 
 const useStyles = makeStyles(({ colors, typography }) => ({
-  flex: {
-    flex: 1,
-  },
   scroll: {
     paddingHorizontal: spacing.xl,
     paddingTop: 104, // clears the transparent nav header

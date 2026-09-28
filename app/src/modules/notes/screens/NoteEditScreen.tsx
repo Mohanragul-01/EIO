@@ -606,7 +606,6 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     color: colors.danger,
     flex: 1,
   },
-  flex: { flex: 1 },
   scroll: {
     paddingHorizontal: spacing.xl,
     paddingTop: 104, // clears the transparent nav header

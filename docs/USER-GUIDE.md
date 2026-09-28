@@ -380,16 +380,29 @@ things and one list of both was hard to scan.
 The **exercise library** is yours. A starter set is created the first time you
 open Fitness, and you can add, rename or delete freely.
 
-Exercises are tagged by **specific muscle**, not by region: Upper chest, Lats,
-Rear delts, Hamstrings, Calves, Forearms and so on, grouped under the region
-they belong to. Browse by tapping a region chip rather than scrolling one long
-alphabetical list.
+Exercises carry a muscle tag, and the list is deliberately **short — eleven
+tags**:
 
-Migration `0014` retagged the starter library when this landed. It matches on
-name where the name says something — *incline* anything becomes Upper chest,
-*skullcrushers* become Triceps — and **falls back to a guess where the name says
-nothing**. If something is filed under the wrong muscle, rename or edit it;
-re-running the migration will not undo your correction.
+| Region | Tags |
+| --- | --- |
+| Chest, Back, Shoulders, Legs | one each |
+| Arms | Biceps, Triceps, Forearms |
+| Core | Abs, Lower back |
+| Other | Cardio, Full body |
+
+It briefly had **twenty-two** — upper/mid/lower chest, quads, hamstrings,
+glutes, calves, adductors, three separate delts. That is a coaching textbook's
+vocabulary rather than one you use while picking an exercise, and it made the
+library harder to use, not easier: **a list you have to think about before
+tagging is a list you will tag wrong.** Arms and core still split, because those
+are genuinely different sessions.
+
+Browse by tapping a region chip rather than scrolling one alphabetical list.
+
+Migration `0018` folds the old finer tags into these. You do not have to run it
+for the library to look right — both clients translate the old names when they
+read an exercise — but until you do, the stored value is still the old one, and
+saving an exercise would write the new one anyway. Run it and the two agree.
 
 ### Exercises measured in time, not reps
 
@@ -429,9 +442,17 @@ rather than making you retype it.
 Forgetting to log on the day is the normal case, not the exception, so it is not
 treated as one.
 
-- **Long-press the + button** to start a session dated *yesterday*.
+- **Tap the day in the seven-day strip.** If you logged that day it opens; if you
+  did not, it starts a session dated that day. This is the one to use — the day
+  you missed is already on screen, so pointing at it is the whole gesture.
+- **Long-press the + button** for yesterday, as a shortcut.
 - Inside any session, the **date is editable**, so you can put it on whatever day
   it actually happened.
+
+The strip used to be decorative, and backdating lived only on that long press —
+invisible unless you already knew. A gesture nobody can see is a feature nobody
+has, which rather defeated the point of a feature that exists *because* you
+forgot something.
 
 Sets belong to the session, so changing the session's date moves the whole
 workout with it.
@@ -521,9 +542,29 @@ Default view is **To do**, any cost. Opening a bucket list to a wall of things
 you have already done is not what you came for.
 
 - **Tap** to tick. It saves immediately, and you can tick in bursts.
-- **Long-press** for the note, or to remove an item.
-- Filter by status, cost and category, or search — search covers the **category
-  name too**, so "water" finds the whole Water Adventures section.
+- **Long-press** to edit or remove an item.
+- **+** adds one. Category there is a text field with suggestions rather than a
+  picker: typing narrows the 61 that exist, and ignoring them makes the 62nd. A
+  picker could not have done the second thing.
+- Search covers the **category name too**, so "water" finds the whole Water
+  Adventures section.
+
+### Filtering
+
+The filters live behind the **Filter** button, which carries a count when any
+are on. Only the ones actually narrowing something stay on screen, as chips you
+can tap to remove.
+
+They used to all be on screen at once — including every one of the **61
+categories** as a horizontal chip row. Reaching Winter & Snow Sports meant
+swiping past sixty others with nothing to search and no idea what was coming,
+and the controls took about half the screen before a single item appeared. In
+the sheet the category list is vertical, searchable, and shows each category's
+own progress, which is the thing you actually wanted to know.
+
+The cost breakdown on the progress card is **also the cost filter** — tap "412
+low" to see just those. "What can I do for nothing" is the question this screen
+exists to answer, so it should not take a second control to ask it.
 - Ticking records **the day you did it**, taken from your device, so the date is
   the day you pressed it rather than whatever day the server was having.
 

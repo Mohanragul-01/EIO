@@ -158,7 +158,6 @@ export function SignInScreen() {
 }
 
 const useStyles = makeStyles(({ colors, typography }) => ({
-  flex: { flex: 1 },
   scroll: {
     flexGrow: 1,
     justifyContent: 'center',
