@@ -5,8 +5,6 @@
  * BMI are both things a user will trust without checking, so they are kept free
  * of the database and tested directly.
  */
-import type { Ionicons } from '@expo/vector-icons';
-
 export type Profile = {
   user_id: string;
   height_cm: number | null;

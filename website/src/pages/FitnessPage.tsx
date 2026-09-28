@@ -37,6 +37,11 @@ import {
   type Routine,
   type SessionSet,
   type WorkoutSession,
+  MUSCLE_REGIONS,
+  TRACKING_LABEL,
+  regionOf,
+  type MuscleRegion,
+  type TrackingType,
 } from '@app/modules/fitness/types';
 
 import { Icon } from '../components/Icon';
@@ -145,13 +150,19 @@ function LogView() {
     <>
       <ErrorBanner message={error ?? actionError} />
 
-      <div className="row-between" style={{ marginBottom: 'var(--space-xl)' }}>
-        <div className="row" style={{ gap: 'var(--space-2xl)' }}>
+      {/*
+        `wrap` on both rows. `.row` and `.row-between` default to nowrap and
+        `.btn` is white-space:nowrap, so each routine button's min-content width
+        is its full label - they refused to shrink, the strip grew past its
+        share, and the whole page gained a horizontal scrollbar.
+      */}
+      <div className="row-between wrap" style={{ marginBottom: 'var(--space-xl)' }}>
+        <div className="row wrap" style={{ gap: 'var(--space-2xl)' }}>
           <Stat label="This week" value={weekCount} sub="sessions" />
           <Stat label="All time" value={sessions.length} sub="sessions" />
         </div>
 
-        <div className="row" style={{ gap: 'var(--space-sm)' }}>
+        <div className="row wrap" style={{ gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
           {(data?.routines ?? []).map((routine) => (
             <button
               key={routine.id}
@@ -159,7 +170,10 @@ function LogView() {
               onClick={() => void start(routine.id)}
               disabled={starting}
             >
-              <Icon name="play" size={11} /> {routine.name}
+              <Icon name="play" size={11} />
+              <span className="truncate" style={{ maxWidth: 160 }}>
+                {routine.name}
+              </span>
             </button>
           ))}
           <button className="btn" onClick={() => void start(null)} disabled={starting}>
@@ -327,18 +341,30 @@ function SessionDialog({
 
   const volume = totalVolume(sets);
 
-  const logSet = async (exerciseId: string, reps: number, weightKg: number) => {
+  /** `value` is reps for a counted exercise and seconds for a held one. */
+  const logSet = async (exerciseId: string, value: number, weightKg: number) => {
     setError(null);
+
+    const timed = exercises.find((e) => e.id === exerciseId)?.tracking_type === 'time';
+    const reps = timed ? null : value;
+    const duration = timed ? value : null;
+
     try {
       // History EXCLUDES this session, so a set is never compared against
       // itself or against its own warm-ups.
       const history = await api.listExerciseHistory(exerciseId, session.id);
-      const isPr = isPersonalRecord(history, { exercise_id: exerciseId, reps, weight_kg: weightKg });
+      const isPr = isPersonalRecord(history, {
+        exercise_id: exerciseId,
+        reps,
+        weight_kg: weightKg,
+        duration_seconds: duration,
+      });
 
       const mine = sets.filter((s) => s.exercise_id === exerciseId);
       const saved = await api.addSet(session.id, {
         exercise_id: exerciseId,
         reps,
+        duration_seconds: duration,
         weight_kg: weightKg,
         rpe: null,
         set_number: nextSetNumber(mine),
@@ -347,7 +373,14 @@ function SessionDialog({
       setSets((current) => [...current, saved]);
 
       if (isPr) {
-        const previous = Math.max(...history.filter((h) => h.reps === reps).map((h) => h.weight_kg));
+        // What it beat, in whichever unit it was measured.
+        const previous = timed
+          ? Math.max(
+              ...history
+                .filter((h) => h.duration_seconds != null)
+                .map((h) => h.duration_seconds as number),
+            )
+          : Math.max(...history.filter((h) => h.reps === reps).map((h) => h.weight_kg));
         setPrIds((current) => ({ ...current, [saved.id]: previous }));
       }
     } catch (e) {
@@ -566,17 +599,29 @@ function ExerciseBlock({
   onRemove: (id: string) => void;
   onDismiss: () => void;
 }) {
+  const timed = exercise?.tracking_type === 'time';
   const last = sets[sets.length - 1];
+
   const [weight, setWeight] = useState(last ? String(last.weight_kg) : '');
-  const [reps, setReps] = useState(last ? String(last.reps) : '');
+  const [value, setValue] = useState(
+    last ? String((timed ? last.duration_seconds : last.reps) ?? '') : '',
+  );
 
   const submit = () => {
     const w = Number(weight.trim());
-    const r = Number(reps.trim());
-    // Weight of 0 is valid (bodyweight); reps of 0 is not a set.
+    const v = Number(value.trim());
+    // Weight of 0 is valid (bodyweight); a set of nothing is not.
     if (!Number.isFinite(w) || w < 0) return;
-    if (!Number.isInteger(r) || r <= 0) return;
-    onLog(r, w);
+    if (!Number.isInteger(v) || v <= 0) return;
+    onLog(v, w);
+  };
+
+  /** Another set exactly like the last, which is the ordinary case. */
+  const repeatLast = () => {
+    if (!last) return;
+    const lastValue = timed ? last.duration_seconds : last.reps;
+    if (lastValue == null) return;
+    onLog(lastValue, last.weight_kg);
   };
 
   return (
@@ -609,7 +654,7 @@ function ExerciseBlock({
             {index + 1}
           </span>
           <span className="numeric grow" style={{ fontSize: 13 }}>
-            {formatSet(set.weight_kg, set.reps)}
+            {formatSet(set.weight_kg, set.reps, set.duration_seconds)}
           </span>
           {prIds[set.id] !== undefined ? (
             <span
@@ -641,9 +686,9 @@ function ExerciseBlock({
         <input
           className="input"
           style={{ width: 80 }}
-          value={reps}
-          onChange={(e) => setReps(e.target.value)}
-          placeholder="reps"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={timed ? 'sec' : 'reps'}
           inputMode="numeric"
           onKeyDown={(e) => {
             if (e.key === 'Enter') submit();
@@ -652,6 +697,12 @@ function ExerciseBlock({
         <button className="btn btn-sm" onClick={submit}>
           Log set
         </button>
+
+        {last ? (
+          <button className="btn btn-ghost btn-sm" onClick={repeatLast} title="Repeat the last set">
+            <Icon name="repeat" size={13} /> Repeat
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -727,6 +778,9 @@ function RestTimer() {
 function PlanView() {
   const [error, setError] = useState<string | null>(null);
   const [newExercise, setNewExercise] = useState('');
+  const [tracking, setTracking] = useState<TrackingType>('reps');
+  /** Which region's exercises are showing. 'All' is its own first chip. */
+  const [region, setRegion] = useState<MuscleRegion | 'All'>('All');
   const [group, setGroup] = useState<string>(MUSCLE_GROUPS[0]);
   const [progressFor, setProgressFor] = useState<Exercise | null>(null);
   const [renaming, setRenaming] = useState<Exercise | null>(null);
@@ -748,7 +802,7 @@ function PlanView() {
     if (!name) return;
     setError(null);
     try {
-      await api.createExercise({ name, muscle_group: group });
+      await api.createExercise({ name, muscle_group: group, tracking_type: tracking });
       setNewExercise('');
       await reload();
     } catch (e) {
@@ -788,15 +842,35 @@ function PlanView() {
     }
   };
 
+  /**
+   * The library, grouped by specific muscle within the chosen region.
+   *
+   * Filtering by REGION rather than by muscle keeps the chip row to eight while
+   * the headings still name the exact muscle - the granularity without
+   * twenty-two filters to read past.
+   */
   const byGroup = useMemo(() => {
+    const all = data?.exercises ?? [];
+    const visible = region === 'All' ? all : all.filter((e) => regionOf(e.muscle_group) === region);
+
     const groups = new Map<string, Exercise[]>();
-    (data?.exercises ?? []).forEach((exercise) => {
-      const key = exercise.muscle_group?.trim() || 'Other';
+    visible.forEach((exercise) => {
+      const key = exercise.muscle_group?.trim() || 'Unsorted';
       (groups.get(key) ?? groups.set(key, []).get(key)!).push(exercise);
     });
     return [...groups.entries()].sort(([a], [b]) =>
-      a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b),
+      a === 'Unsorted' ? 1 : b === 'Unsorted' ? -1 : a.localeCompare(b),
     );
+  }, [data, region]);
+
+  /** How many exercises sit under each region, for the chip labels. */
+  const regionCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    (data?.exercises ?? []).forEach((e) => {
+      const r = regionOf(e.muscle_group);
+      counts.set(r, (counts.get(r) ?? 0) + 1);
+    });
+    return counts;
   }, [data]);
 
   if (loading && !data) return <Spinner center />;
@@ -807,6 +881,71 @@ function PlanView() {
 
       <div className="split">
         <div className="col" style={{ gap: 'var(--space-lg)' }}>
+          {/* The add form sits at the TOP. Buried under the library it meant
+              scrolling past everything you already have to add one more. */}
+          <div className="card card-pad">
+            <div className="overline" style={{ marginBottom: 'var(--space-md)' }}>
+              Add an exercise
+            </div>
+
+            <div className="row" style={{ gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
+              <input
+                className="input grow"
+                value={newExercise}
+                onChange={(e) => setNewExercise(e.target.value)}
+                placeholder="Name"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void add();
+                }}
+              />
+              <button className="btn" onClick={() => void add()} disabled={!newExercise.trim()}>
+                Add
+              </button>
+            </div>
+
+            <div className="field" style={{ marginBottom: 'var(--space-md)' }}>
+              <span className="label">Measured in</span>
+              <Segmented
+                value={tracking}
+                onChange={setTracking}
+                options={[
+                  { value: 'reps', label: TRACKING_LABEL.reps },
+                  { value: 'time', label: TRACKING_LABEL.time },
+                ]}
+              />
+              <span className="faint" style={{ fontSize: 12 }}>
+                {tracking === 'time'
+                  ? 'Sets are logged as seconds held — planks, dead hangs, wall sits.'
+                  : 'Sets are logged as weight and reps.'}
+              </span>
+            </div>
+
+            <ChipPicker
+              label="Muscle"
+              value={group}
+              onChange={setGroup}
+              options={MUSCLE_GROUPS.map((g) => ({ value: g, label: g }))}
+            />
+          </div>
+
+          {/* Region filter for the library below. */}
+          <div className="chip-row">
+            {(['All', ...MUSCLE_REGIONS] as const).map((option) => {
+              const count =
+                option === 'All' ? (data?.exercises.length ?? 0) : (regionCounts.get(option) ?? 0);
+              return (
+                <button
+                  key={option}
+                  className={`chip${region === option ? ' selected' : ''}`}
+                  onClick={() => setRegion(option)}
+                >
+                  {option}
+                  {count > 0 ? <span className="faint"> {count}</span> : null}
+                </button>
+              );
+            })}
+          </div>
+
           <div className="row-between">
             <span className="column-title">Exercise library</span>
             <span className="column-count">{data?.exercises.length ?? 0}</span>
@@ -826,6 +965,11 @@ function PlanView() {
                       onClick={() => setProgressFor(exercise)}
                     >
                       <span style={{ fontSize: 13 }}>{exercise.name}</span>
+                      {exercise.tracking_type === 'time' ? (
+                        <span className="pill" style={{ marginLeft: 6 }}>
+                          timed
+                        </span>
+                      ) : null}
                     </button>
                     <div className="row-actions">
                       <button
@@ -859,30 +1003,6 @@ function PlanView() {
             </div>
           ))}
 
-          <div className="card card-pad">
-            <div className="overline" style={{ marginBottom: 'var(--space-md)' }}>
-              Add an exercise
-            </div>
-            <div className="row" style={{ gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
-              <input
-                className="input grow"
-                value={newExercise}
-                onChange={(e) => setNewExercise(e.target.value)}
-                placeholder="Name"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void add();
-                }}
-              />
-              <button className="btn" onClick={() => void add()} disabled={!newExercise.trim()}>
-                Add
-              </button>
-            </div>
-            <ChipPicker
-              value={group}
-              onChange={setGroup}
-              options={MUSCLE_GROUPS.map((g) => ({ value: g, label: g }))}
-            />
-          </div>
         </div>
 
         <div className="col" style={{ gap: 'var(--space-lg)' }}>

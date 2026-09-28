@@ -522,6 +522,21 @@ function NoteDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  /**
+   * Read or edit.
+   *
+   * An EXISTING note opens in read mode; a new one opens in edit, because
+   * there is nothing to read yet. The split exists because of checklists: in
+   * read mode a tick is the only thing you can change and it writes
+   * immediately, which is what a checklist is for.
+   *
+   * Before this, the same checkbox behaved differently in two places - ticking
+   * from the card saved at once, ticking inside the dialog buffered, and
+   * Cancel silently threw it away. One gesture, two outcomes, no way to tell
+   * which you were getting.
+   */
+  const [mode, setMode] = useState<'read' | 'edit'>(note ? 'read' : 'edit');
+  const [tickError, setTickError] = useState<string | null>(null);
   const [noteType, setNoteType] = useState<NoteType>(note?.note_type ?? 'note');
   const [title, setTitle] = useState(note?.title ?? '');
   const [body, setBody] = useState(note?.body ?? '');
@@ -532,6 +547,30 @@ function NoteDialog({
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Tick an item in read mode and write it straight away.
+   *
+   * Optimistic, because a checklist gets used while you are doing something
+   * else and a round trip per tick feels broken. A failure puts the tick back
+   * rather than leaving the screen claiming something the database does not
+   * agree with.
+   */
+  const tick = async (index: number) => {
+    if (!note) return;
+
+    const next = items.map((item, i) => (i === index ? { ...item, done: !item.done } : item));
+    const previous = items;
+    setItems(next);
+    setTickError(null);
+
+    try {
+      await api.setChecklistItems(note.id, next);
+    } catch (e) {
+      setItems(previous);
+      setTickError(e instanceof Error ? e.message : 'Could not save that tick');
+    }
+  };
 
   const addItem = () => {
     const text = newItem.trim();
@@ -576,20 +615,77 @@ function NoteDialog({
   return (
     <Modal
       open
-      title={note ? 'Edit note' : 'New note'}
+      title={note ? (mode === 'read' ? (note.title || 'Note') : 'Edit note') : 'New note'}
       onClose={onClose}
       width={620}
       footer={
-        <>
-          <button className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn" onClick={() => void save()} disabled={saving}>
-            {saving ? <span className="spinner" /> : note ? 'Save' : 'Create'}
-          </button>
-        </>
+        mode === 'read' ? (
+          <>
+            <button className="btn btn-secondary" onClick={onClose}>
+              Close
+            </button>
+            <button className="btn" onClick={() => setMode('edit')}>
+              <Icon name="edit" size={14} /> Edit
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="btn btn-secondary" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn" onClick={() => void save()} disabled={saving}>
+              {saving ? <span className="spinner" /> : note ? 'Save' : 'Create'}
+            </button>
+          </>
+        )
       }
     >
+      {mode === 'read' ? (
+        <>
+          {noteType === 'journal' && entryDate ? (
+            <div className="overline">{formatEventDate(entryDate)}</div>
+          ) : null}
+
+          {noteType === 'checklist' ? (
+            items.length === 0 ? (
+              <p className="faint">This list has no items yet. Press Edit to add some.</p>
+            ) : (
+              <>
+                <div className="col" style={{ gap: 2 }}>
+                  {items.map((item, index) => (
+                    <button
+                      key={index}
+                      className="list-row"
+                      style={{ width: '100%', textAlign: 'left', padding: '9px 10px' }}
+                      onClick={() => void tick(index)}
+                      aria-pressed={item.done}
+                    >
+                      <span className={`check${item.done ? ' on' : ''}`}>
+                        {item.done ? <Icon name="check" size={11} strokeWidth={2.5} /> : null}
+                      </span>
+                      <span className={`grow${item.done ? ' strike' : ''}`} style={{ fontSize: 13 }}>
+                        {item.text}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <p className="faint" style={{ fontSize: 12 }}>
+                  {items.filter((i) => i.done).length} of {items.length} done · saved as you tick
+                </p>
+              </>
+            )
+          ) : body ? (
+            <p style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{body}</p>
+          ) : (
+            <p className="faint">This note is empty. Press Edit to write something.</p>
+          )}
+
+          {tagText.trim() ? <p className="faint" style={{ fontSize: 12.5 }}>{tagText}</p> : null}
+
+          <ErrorBanner message={tickError} />
+        </>
+      ) : (
+        <>
       <Segmented
         value={noteType}
         onChange={setNoteType}
@@ -710,7 +806,9 @@ function NoteDialog({
         hint="A note with a title or a tag leaves the inbox."
       />
 
-      <ErrorBanner message={error} />
+          <ErrorBanner message={error} />
+        </>
+      )}
     </Modal>
   );
 }
