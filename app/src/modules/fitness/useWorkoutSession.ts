@@ -114,6 +114,7 @@ export function useWorkoutSession(sessionId: string) {
           exercise_id: input.exercise_id,
           reps: input.reps,
           weight_kg: input.weight_kg,
+          duration_seconds: input.duration_seconds,
         });
 
         const saved = await api.addSet(sessionId, { ...input, set_number: setNumber });
@@ -124,11 +125,17 @@ export function useWorkoutSession(sessionId: string) {
 
         if (!beatsPrevious) return null;
 
-        const previousBest = Math.max(
-          ...history
-            .filter((h) => h.reps === input.reps)
-            .map((h) => h.weight_kg),
-        );
+        // What the set beat, in whichever unit it was measured.
+        const previousBest =
+          input.duration_seconds != null
+            ? Math.max(
+                ...history
+                  .filter((h) => h.duration_seconds != null)
+                  .map((h) => h.duration_seconds as number),
+              )
+            : Math.max(
+                ...history.filter((h) => h.reps === input.reps).map((h) => h.weight_kg),
+              );
         const flag: PrFlag = { setId: saved.id, previousBest };
         setPrs((current) => ({ ...current, [saved.id]: flag }));
         return flag;
@@ -153,6 +160,25 @@ export function useWorkoutSession(sessionId: string) {
       setError(e instanceof Error ? e.message : 'Could not delete that set');
     }
   }, [sets]);
+
+  /**
+   * Change the day a session belongs to.
+   *
+   * Editable after the fact because the common failure is forgetting to log at
+   * all: you notice on Tuesday that Monday is missing. Without this the only
+   * way to record it was to lie about the date or lose the session.
+   */
+  const setDate = useCallback(
+    async (date: string) => {
+      setSession((current) => (current ? { ...current, date } : current));
+      try {
+        await api.updateSession(sessionId, { date });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not change the date');
+      }
+    },
+    [sessionId],
+  );
 
   const saveNotes = useCallback(
     async (notes: string) => {
@@ -191,6 +217,7 @@ export function useWorkoutSession(sessionId: string) {
     error,
     clearError: () => setError(null),
     reload: load,
+    setDate,
     setExerciseOrder,
     addExerciseToSession,
     logSet,

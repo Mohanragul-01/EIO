@@ -17,12 +17,22 @@ import {
   isPersonalRecord,
   totalVolume,
   nextSetNumber,
+  bestHold,
 } from '../types';
 
 const set = (exercise_id: string, reps: number, weight_kg: number) => ({
   exercise_id,
   reps,
   weight_kg,
+  duration_seconds: null,
+});
+
+/** A held set: seconds instead of reps, which is the other half of the rule. */
+const hold = (exercise_id: string, duration_seconds: number, weight_kg = 0) => ({
+  exercise_id,
+  reps: null,
+  weight_kg,
+  duration_seconds,
 });
 
 describe('bestWeightAtReps', () => {
@@ -113,7 +123,7 @@ describe('bmi', () => {
 
 describe('totalVolume', () => {
   it('sums reps times weight', () => {
-    expect(totalVolume([{ reps: 10, weight_kg: 60 }, { reps: 8, weight_kg: 70 }])).toBe(1160);
+    expect(totalVolume([{ reps: 10, weight_kg: 60, duration_seconds: null }, { reps: 8, weight_kg: 70, duration_seconds: null }])).toBe(1160);
   });
 
   it('is zero for no sets, not NaN', () => {
@@ -123,7 +133,7 @@ describe('totalVolume', () => {
   it('rounds away floating point noise', () => {
     // 0.1-style drift is far below a kilogram and volume is a trend figure, not
     // one anyone reconciles - unlike money, where this would be unacceptable.
-    expect(totalVolume([{ reps: 3, weight_kg: 20.1 }])).toBe(60.3);
+    expect(totalVolume([{ reps: 3, weight_kg: 20.1, duration_seconds: null }])).toBe(60.3);
   });
 });
 
@@ -196,5 +206,57 @@ describe('nextSetNumber', () => {
 
   it('is unaffected by the order it receives them in', () => {
     expect(nextSetNumber([s(3), s(1), s(2)])).toBe(4);
+  });
+});
+
+describe('timed sets', () => {
+  it('formats a bodyweight hold without a weight', () => {
+    // "0 kg x 60s" reads like a mistake; a plank is just a duration.
+    expect(formatSet(0, null, 60)).toBe('1:00');
+  });
+
+  it('keeps the weight when a hold is loaded', () => {
+    expect(formatSet(10, null, 45)).toBe('10 kg x 0:45');
+  });
+
+  it('excludes held sets from volume rather than counting them as one rep', () => {
+    // THE DECISION THIS PINS. Volume is reps x weight. Calling a 60-second
+    // plank "one rep" would make the longest hold of the session look like its
+    // smallest set; calling it sixty would swamp everything else. It has no
+    // honest value in this unit, so it is left out.
+    const sets = [
+      { reps: 10, weight_kg: 50, duration_seconds: null },
+      { reps: null, weight_kg: 0, duration_seconds: 60 },
+    ];
+    expect(totalVolume(sets)).toBe(500);
+  });
+
+  it('finds the longest hold, ignoring rep-counted sets', () => {
+    const history = [hold('plank', 45), set('plank', 10, 20), hold('plank', 70)];
+    expect(bestHold(history, 'plank')).toBe(70);
+  });
+
+  it('has no best hold with no history', () => {
+    expect(bestHold([], 'plank')).toBeNull();
+  });
+
+  it('judges a held set on duration, never on weight', () => {
+    const history = [hold('plank', 60)];
+    expect(isPersonalRecord(history, hold('plank', 75))).toBe(true);
+    expect(isPersonalRecord(history, hold('plank', 60))).toBe(false);
+    // Heavier but shorter is not a record: the comparison is time.
+    expect(isPersonalRecord(history, hold('plank', 50, 20))).toBe(false);
+  });
+
+  it('does not treat your first hold as a record', () => {
+    // Same rule as weights: a record means you beat something.
+    expect(isPersonalRecord([], hold('plank', 90))).toBe(false);
+  });
+
+  it('keeps the two kinds of history apart', () => {
+    // A weighted set must not become the thing a hold is measured against.
+    const weighted = [set('plank', 10, 40)];
+    expect(bestHold(weighted, 'plank')).toBeNull();
+    expect(isPersonalRecord(weighted, hold('plank', 30))).toBe(false);
   });
 });

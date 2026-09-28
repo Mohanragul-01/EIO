@@ -9,7 +9,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -30,22 +30,43 @@ import {
   GlassCard,
   Screen,
   SwipeTabs,
+  SegmentedControl,
 } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
-import { formatEventDate, todayISO } from '../../../core/date';
+import { formatEventDate, todayISO, addDaysISO} from '../../../core/date';
 import { fonts, motion, radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
 import { PickerSheet } from '../components/PickerSheet';
 import { WeekStrip } from '../components/WeekStrip';
-import { bmiLabel, MUSCLE_GROUPS, type Routine, type WorkoutSession } from '../types';
+import { bmiLabel, MUSCLE_GROUPS, type Routine, type WorkoutSession,
+  MUSCLE_REGIONS,
+  TRACKING_LABEL,
+  regionOf,
+  type MuscleRegion,
+  type TrackingType,
+} from '../types';
 import { useBody, useFitnessHome, usePlan } from '../useFitness';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'FitnessList'>;
 
-type FitnessView = 'log' | 'plan' | 'body';
-const VIEWS: FitnessView[] = ['log', 'plan', 'body'];
-const VIEW_LABEL: Record<FitnessView, string> = { log: 'Log', plan: 'Plan', body: 'Body' };
+/**
+ * Four tabs, not three.
+ *
+ * Routines and exercises were stacked in one "Plan" screen, separated by a
+ * heading - so adding an exercise meant scrolling past every routine, and the
+ * two things you do here were competing for the same scroll position. They are
+ * different jobs: a routine is a template you write occasionally, the library
+ * is a list you browse constantly.
+ */
+type FitnessView = 'log' | 'routines' | 'exercises' | 'body';
+const VIEWS: FitnessView[] = ['log', 'routines', 'exercises', 'body'];
+const VIEW_LABEL: Record<FitnessView, string> = {
+  log: 'Log',
+  routines: 'Routines',
+  exercises: 'Exercises',
+  body: 'Body',
+};
 
 export function FitnessListScreen() {
   const styles = useStyles();
@@ -64,7 +85,17 @@ export function FitnessListScreen() {
         // Each tab already owns its data, which is what makes them pageable:
         // a pager mounts every page, so a tab that only loaded when selected
         // would swipe onto a blank screen.
-        renderPage={(v) => (v === 'log' ? <LogTab /> : v === 'plan' ? <PlanTab /> : <BodyTab />)}
+        renderPage={(v) =>
+          v === 'log' ? (
+            <LogTab />
+          ) : v === 'routines' ? (
+            <RoutinesTab />
+          ) : v === 'exercises' ? (
+            <ExercisesTab />
+          ) : (
+            <BodyTab />
+          )
+        }
       />
     </Screen>
   );
@@ -95,11 +126,11 @@ function LogTab() {
    * mid-session, which on a phone in a gym is not a remote possibility.
    */
   const startSession = useCallback(
-    async (routineId: string | null) => {
+    async (routineId: string | null, date: string = todayISO()) => {
       setStarting(true);
       try {
         const session = await api.createSession({
-          date: todayISO(),
+          date,
           routine_id: routineId,
           notes: '',
         });
@@ -112,6 +143,21 @@ function LogTab() {
     },
     [navigation],
   );
+
+  /**
+   * Start a session on a day other than today.
+   *
+   * Three taps deep would be wrong for something you reach for whenever you
+   * forget to log, so yesterday gets its own entry rather than hiding behind a
+   * date picker. Anything older is set from inside the session.
+   */
+  const startBackdated = useCallback(() => {
+    Alert.alert('Log a past workout', 'Which day?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Yesterday', onPress: () => void startSession(null, addDaysISO(-1)) },
+      { text: 'Today', onPress: () => void startSession(null) },
+    ]);
+  }, [startSession]);
 
   const chooseStart = useCallback(async () => {
     try {
@@ -220,10 +266,16 @@ function LogTab() {
         <FadeInView style={styles.fabWrap} delay={120}>
           <Pressable
             onPress={chooseStart}
+            // Long-press for a past day. Backdating is the uncommon case, so
+            // it does not get its own button, but it must not be unreachable
+            // either - forgetting to log is the whole reason it exists.
+            onLongPress={startBackdated}
+            delayLongPress={350}
             disabled={starting}
             style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
             accessibilityRole="button"
             accessibilityLabel="Start a workout"
+            accessibilityHint="Long press to log a workout for a past day"
           >
             {starting ? (
               <ActivityIndicator color={colors.onPrimary} />
@@ -269,26 +321,11 @@ function SessionRow({
 
 // PLAN --------------------------------------------------------------------------
 
-function PlanTab() {
+function RoutinesTab() {
   const styles = useStyles();
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
-  const {
-    exercises,
-    routines,
-    loading,
-    refreshing,
-    error,
-    clearError,
-    refresh,
-    reload,
-    addExercise,
-    removeExercise,
-    removeRoutine,
-  } = usePlan();
-
-  const [name, setName] = useState('');
-  const [group, setGroup] = useState<string>('Chest');
+  const { routines, loading, refreshing, error, refresh, reload, removeRoutine } = usePlan();
 
   useFocusEffect(
     useCallback(() => {
@@ -304,10 +341,167 @@ function PlanTab() {
     );
   }
 
+  return (
+    <>
+      <FlatList
+        data={routines}
+        keyExtractor={(item) => item.id}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.list, routines.length === 0 && styles.listEmpty]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+            progressBackgroundColor={colors.backgroundElevated}
+          />
+        }
+        ListEmptyComponent={
+          <EmptyState
+            icon="list-outline"
+            accent={colors.accentIndigo}
+            title="No routines yet"
+            message="A routine is a template: a named list of exercises with target sets and reps. It logs nothing itself, it pre-fills a session."
+            action={
+              <Button
+                label="New routine"
+                icon="add"
+                onPress={() => navigation.navigate('RoutineEdit', {})}
+              />
+            }
+          />
+        }
+        renderItem={({ item, index }) => (
+          <FadeInView delay={Math.min(index, 6) * motion.stagger}>
+            <GlassCard
+              style={styles.row}
+              onPress={() => navigation.navigate('RoutineEdit', { routineId: item.id })}
+            >
+              <View style={styles.rowInner}>
+                <View style={[styles.rowIcon, { backgroundColor: colors.accentIndigo + '1F' }]}>
+                  <Ionicons name="list-outline" size={17} color={colors.accentIndigo} />
+                </View>
+                <Text style={[styles.rowTitle, styles.rowBody]}>{item.name}</Text>
+                <Pressable
+                  onPress={() =>
+                    Alert.alert('Delete routine', 'Sessions you already logged from it are kept.', [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () => void removeRoutine(item.id),
+                      },
+                    ])
+                  }
+                  hitSlop={10}
+                >
+                  <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
+                </Pressable>
+              </View>
+            </GlassCard>
+          </FadeInView>
+        )}
+      />
+
+      {error ? <ErrorBanner message={error} /> : null}
+
+      {routines.length > 0 ? (
+        <FadeInView style={styles.fabWrap} delay={120}>
+          <Pressable
+            onPress={() => navigation.navigate('RoutineEdit', {})}
+            style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="New routine"
+          >
+            <Ionicons name="add" size={26} color={colors.onPrimary} />
+          </Pressable>
+        </FadeInView>
+      ) : null}
+    </>
+  );
+}
+
+// EXERCISES ---------------------------------------------------------------------
+
+function ExercisesTab() {
+  const styles = useStyles();
+  const { colors } = useTheme();
+  const navigation = useNavigation<Nav>();
+  const {
+    exercises,
+    loading,
+    refreshing,
+    error,
+    clearError,
+    refresh,
+    reload,
+    addExercise,
+    removeExercise,
+  } = usePlan();
+
+  const [name, setName] = useState('');
+  const [muscle, setMuscle] = useState<string>('Mid chest');
+  const [tracking, setTracking] = useState<TrackingType>('reps');
+  const [adding, setAdding] = useState(false);
+
+  /** Which region's exercises are showing. 'All' is its own first tab. */
+  const [region, setRegion] = useState<MuscleRegion | 'All'>('All');
+
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload]),
+  );
+
+  /**
+   * The library, grouped by muscle within the chosen region.
+   *
+   * Filtering by REGION rather than by muscle keeps the tab row to seven, while
+   * the headings inside still say which specific muscle each exercise trains -
+   * so you get the granularity without twenty-two tabs to scroll past.
+   */
+  const grouped = useMemo(() => {
+    const visible =
+      region === 'All' ? exercises : exercises.filter((e) => regionOf(e.muscle_group) === region);
+
+    const byMuscle = new Map<string, typeof exercises>();
+    visible.forEach((exercise) => {
+      const key = exercise.muscle_group?.trim() || 'Unsorted';
+      const bucket = byMuscle.get(key);
+      if (bucket) bucket.push(exercise);
+      else byMuscle.set(key, [exercise]);
+    });
+
+    return [...byMuscle.entries()]
+      .sort(([a], [b]) => (a === 'Unsorted' ? 1 : b === 'Unsorted' ? -1 : a.localeCompare(b)))
+      .map(([title, items]) => ({ title, items }));
+  }, [exercises, region]);
+
+  const counts = useMemo(() => {
+    const map = new Map<string, number>();
+    exercises.forEach((e) => {
+      const r = regionOf(e.muscle_group);
+      map.set(r, (map.get(r) ?? 0) + 1);
+    });
+    return map;
+  }, [exercises]);
+
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
   const handleAdd = async () => {
     if (!name.trim()) return;
-    const ok = await addExercise(name, group);
-    if (ok) setName('');
+    const ok = await addExercise(name, muscle, tracking);
+    if (ok) {
+      setName('');
+      setAdding(false);
+    }
   };
 
   return (
@@ -315,7 +509,6 @@ function PlanTab() {
       <FormScroll
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -326,146 +519,168 @@ function PlanTab() {
           />
         }
       >
+        {/* The add form sits at the TOP. Buried under the library it meant
+            scrolling past everything you already have to add one more. */}
         <FadeInView>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionLabelTight}>Routines</Text>
-            <Pressable
-              onPress={() => navigation.navigate('RoutineEdit', {})}
-              hitSlop={8}
-              accessibilityLabel="New routine"
-            >
-              <Text style={styles.link}>New</Text>
-            </Pressable>
-          </View>
-
-          {routines.length === 0 ? (
-            <GlassCard>
-              <Text style={styles.hint}>
-                A routine is a template: a named list of exercises with target sets and reps. It
-                logs nothing itself, it pre-fills a session.
-              </Text>
-            </GlassCard>
-          ) : (
-            routines.map((routine) => (
-              <GlassCard
-                key={routine.id}
-                style={styles.row}
-                onPress={() => navigation.navigate('RoutineEdit', { routineId: routine.id })}
-              >
-                <View style={styles.rowInner}>
-                  <View style={[styles.rowIcon, { backgroundColor: colors.accentIndigo + '1F' }]}>
-                    <Ionicons name="list-outline" size={17} color={colors.accentIndigo} />
-                  </View>
-                  <Text style={[styles.rowTitle, styles.rowBody]}>{routine.name}</Text>
-                  <Pressable
-                    onPress={() =>
-                      Alert.alert('Delete routine', 'Sessions you already logged from it are kept.', [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Delete',
-                          style: 'destructive',
-                          onPress: () => void removeRoutine(routine.id),
-                        },
-                      ])
-                    }
-                    hitSlop={10}
-                  >
-                    <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
-                  </Pressable>
-                </View>
-              </GlassCard>
-            ))
-          )}
-        </FadeInView>
-
-        <FadeInView delay={60}>
-          <Text style={styles.sectionLabel}>Exercises</Text>
-
-          <GlassCard style={styles.addCard}>
-            <View style={styles.addRow}>
+          {adding ? (
+            <GlassCard style={styles.addCard}>
               <TextInput
                 value={name}
                 onChangeText={(text) => {
                   setName(text);
                   if (error) clearError();
                 }}
-                placeholder="Add an exercise"
+                placeholder="Exercise name"
                 placeholderTextColor={colors.textFaint}
                 selectionColor={colors.primary}
                 style={styles.addInput}
-                onSubmitEditing={handleAdd}
+                autoFocus
                 returnKeyType="done"
+                onSubmitEditing={handleAdd}
               />
-              {name.trim() ? (
-                <Pressable onPress={handleAdd} hitSlop={8}>
-                  <Text style={styles.link}>Add</Text>
+
+              <Text style={[styles.label, styles.addLabel]}>Measured in</Text>
+              <SegmentedControl
+                options={['reps', 'time'] as const}
+                value={tracking}
+                onChange={setTracking}
+                renderLabel={(t) => TRACKING_LABEL[t]}
+              />
+              <Text style={styles.hint}>
+                {tracking === 'time'
+                  ? 'Sets are logged as seconds held — planks, dead hangs, wall sits.'
+                  : 'Sets are logged as weight and reps.'}
+              </Text>
+
+              <Text style={[styles.label, styles.addLabel]}>Muscle</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.groupRow}
+              >
+                {MUSCLE_GROUPS.map((option) => {
+                  const selected = option === muscle;
+                  return (
+                    <Pressable
+                      key={option}
+                      onPress={() => setMuscle(option)}
+                      style={({ pressed }) => [
+                        styles.groupChip,
+                        selected && styles.groupChipActive,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text style={[styles.groupText, selected && styles.groupTextActive]}>
+                        {option}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              <View style={styles.addActions}>
+                <Pressable onPress={() => setAdding(false)} hitSlop={8}>
+                  <Text style={styles.linkMuted}>Cancel</Text>
                 </Pressable>
-              ) : null}
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.groupRow}
-            >
-              {MUSCLE_GROUPS.map((option) => {
-                const selected = option === group;
-                return (
-                  <Pressable
-                    key={option}
-                    onPress={() => setGroup(option)}
-                    style={({ pressed }) => [
-                      styles.groupChip,
-                      selected && styles.groupChipActive,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={[styles.groupText, selected && styles.groupTextActive]}>
-                      {option}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </GlassCard>
-
-          {exercises.map((exercise) => (
-            <GlassCard
-              key={exercise.id}
-              style={styles.row}
-              onPress={() =>
-                navigation.navigate('ExerciseProgress', {
-                  exerciseId: exercise.id,
-                  name: exercise.name,
-                })
-              }
-            >
-              <View style={styles.rowInner}>
-                <View style={styles.rowBody}>
-                  <Text style={styles.rowTitle}>{exercise.name}</Text>
-                  {exercise.muscle_group ? (
-                    <Text style={styles.rowSub}>{exercise.muscle_group}</Text>
-                  ) : null}
-                </View>
-                <Pressable
-                  onPress={() =>
-                    Alert.alert('Delete exercise', `Remove ${exercise.name}?`, [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Delete',
-                        style: 'destructive',
-                        onPress: () => void removeExercise(exercise.id),
-                      },
-                    ])
-                  }
-                  hitSlop={10}
-                >
-                  <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
+                <Pressable onPress={handleAdd} hitSlop={8} disabled={!name.trim()}>
+                  <Text style={[styles.link, !name.trim() && styles.linkDisabled]}>Add</Text>
                 </Pressable>
               </View>
             </GlassCard>
-          ))}
+          ) : (
+            <Button
+              label="Add an exercise"
+              icon="add"
+              variant="glass"
+              onPress={() => setAdding(true)}
+              style={styles.addCard}
+            />
+          )}
         </FadeInView>
+
+        {/* Region filter. */}
+        <FadeInView delay={40}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.groupRow}
+          >
+            {(['All', ...MUSCLE_REGIONS] as const).map((option) => {
+              const selected = option === region;
+              const count = option === 'All' ? exercises.length : (counts.get(option) ?? 0);
+              return (
+                <Pressable
+                  key={option}
+                  onPress={() => setRegion(option)}
+                  style={({ pressed }) => [
+                    styles.groupChip,
+                    selected && styles.groupChipActive,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={[styles.groupText, selected && styles.groupTextActive]}>
+                    {option} {count > 0 ? count : ''}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </FadeInView>
+
+        {grouped.length === 0 ? (
+          <FadeInView delay={80}>
+            <GlassCard style={styles.addCard}>
+              <Text style={styles.hint}>
+                {region === 'All'
+                  ? 'No exercises yet.'
+                  : `Nothing tagged under ${region} yet.`}
+              </Text>
+            </GlassCard>
+          </FadeInView>
+        ) : (
+          grouped.map((section, index) => (
+            <FadeInView key={section.title} delay={Math.min(index, 6) * 40}>
+              <Text style={styles.sectionLabel}>{section.title}</Text>
+              {section.items.map((exercise) => (
+                <GlassCard
+                  key={exercise.id}
+                  style={styles.row}
+                  onPress={() =>
+                    navigation.navigate('ExerciseProgress', {
+                      exerciseId: exercise.id,
+                      name: exercise.name,
+                    })
+                  }
+                >
+                  <View style={styles.rowInner}>
+                    <View style={styles.rowBody}>
+                      <Text style={styles.rowTitle}>{exercise.name}</Text>
+                      <Text style={styles.rowSub}>
+                        {exercise.muscle_group ?? 'Unsorted'}
+                        {exercise.tracking_type === 'time' ? ' · timed' : ''}
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={() =>
+                        Alert.alert('Delete exercise', `Remove ${exercise.name}?`, [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Delete',
+                            style: 'destructive',
+                            onPress: () => void removeExercise(exercise.id),
+                          },
+                        ])
+                      }
+                      hitSlop={10}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
+                    </Pressable>
+                  </View>
+                </GlassCard>
+              ))}
+            </FadeInView>
+          ))
+        )}
       </FormScroll>
 
       {error ? <ErrorBanner message={error} /> : null}
@@ -642,6 +857,23 @@ function ErrorBanner({ message }: { message: string }) {
 }
 
 const useStyles = makeStyles(({ colors, typography }) => ({
+  addLabel: {
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  addActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.xl,
+    marginTop: spacing.lg,
+  },
+  linkMuted: {
+    ...typography.caption,
+    color: colors.textMuted,
+  },
+  linkDisabled: {
+    opacity: 0.4,
+  },
   tabsTopSpacer: {
     // Clears the transparent nav header. SwipeTabs owns the tab row's own
     // horizontal padding, so this is only the gap above it.

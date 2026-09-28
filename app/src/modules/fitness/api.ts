@@ -17,6 +17,7 @@ import {
   type SessionSet,
   type SetInput,
   type WorkoutSession,
+  type TrackingType,
 } from './types';
 
 // PROFILE ---------------------------------------------------------------------
@@ -133,6 +134,7 @@ export async function seedDefaultExercisesIfEmpty(): Promise<Exercise[]> {
 export async function createExercise(input: {
   name: string;
   muscle_group: string | null;
+  tracking_type?: TrackingType;
 }): Promise<Exercise> {
   const ownerId = await getOwnerId();
   const { data, error } = await supabase
@@ -147,7 +149,7 @@ export async function createExercise(input: {
 
 export async function updateExercise(
   id: string,
-  input: { name: string; muscle_group: string | null },
+  input: { name: string; muscle_group: string | null; tracking_type?: TrackingType },
 ): Promise<void> {
   const { error } = await supabase.from('exercises').update(input).eq('id', id);
   if (error) throw new Error(error.message);
@@ -359,12 +361,14 @@ export async function deleteSet(id: string): Promise<void> {
 export async function listExerciseHistory(
   exerciseId: string,
   excludeSessionId?: string,
-): Promise<Pick<SessionSet, 'exercise_id' | 'reps' | 'weight_kg' | 'session_id'>[]> {
+): Promise<
+  Pick<SessionSet, 'exercise_id' | 'reps' | 'weight_kg' | 'duration_seconds' | 'session_id'>[]
+> {
   const ownerId = await getOwnerId();
 
   let query = supabase
     .from('session_sets')
-    .select('exercise_id, reps, weight_kg, session_id')
+    .select('exercise_id, reps, weight_kg, duration_seconds, session_id')
     .eq('user_id', ownerId)
     .eq('exercise_id', exerciseId);
 

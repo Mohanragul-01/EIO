@@ -27,7 +27,10 @@ export type Exercise = {
   id: string;
   user_id: string;
   name: string;
+  /** One specific muscle, e.g. 'Biceps'. The region is derived, not stored. */
   muscle_group: string | null;
+  /** Whether a set of this exercise counts reps or seconds held. */
+  tracking_type: TrackingType;
   created_at: string;
 };
 
@@ -66,7 +69,10 @@ export type SessionSet = {
   exercise_id: string;
   user_id: string;
   set_number: number;
-  reps: number;
+  /** Null for a timed exercise; exactly one of reps and duration is set. */
+  reps: number | null;
+  /** Seconds held. Null for a rep-counted exercise. */
+  duration_seconds: number | null;
   weight_kg: number;
   /** Rate of perceived exertion, 1 to 10. Optional: not everyone tracks it. */
   rpe: number | null;
@@ -77,49 +83,100 @@ export type SessionSet = {
 export type SetInput = {
   exercise_id: string;
   set_number: number;
-  reps: number;
+  /** Exactly one of these, matching the exercise's tracking_type. */
+  reps: number | null;
+  duration_seconds: number | null;
   weight_kg: number;
   rpe: number | null;
 };
 
-export const MUSCLE_GROUPS = [
+/**
+ * The seven regions you browse by, and the muscles inside them.
+ *
+ * TWO LEVELS, because one level fails in both directions. Eight broad groups
+ * meant "Arms" covered a curl, a skullcrusher and a wrist curl - three muscles
+ * you would never train interchangeably. Twenty-two flat tags would mean
+ * twenty-two tabs to scroll past to reach the one you want. So a tag is
+ * specific and browsing is by region.
+ *
+ * A region is DERIVED from the muscle rather than stored beside it. Storing
+ * both would let them disagree, and there is no answer to "the tag says Biceps
+ * but the region says Legs" that is better than not being able to say it.
+ */
+export const MUSCLE_REGIONS = [
   'Chest',
   'Back',
-  'Legs',
   'Shoulders',
   'Arms',
+  'Legs',
   'Core',
-  'Cardio',
   'Other',
 ] as const;
 
-export type MuscleGroup = (typeof MUSCLE_GROUPS)[number];
+export type MuscleRegion = (typeof MUSCLE_REGIONS)[number];
 
-export const MUSCLE_GROUP_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
-  Chest: 'body-outline',
-  Back: 'accessibility-outline',
-  Legs: 'walk-outline',
-  Shoulders: 'barbell-outline',
-  Arms: 'fitness-outline',
-  Core: 'ellipse-outline',
-  Cardio: 'heart-outline',
-  Other: 'ellipsis-horizontal-outline',
+export const MUSCLES_BY_REGION: Record<MuscleRegion, readonly string[]> = {
+  Chest: ['Upper chest', 'Mid chest', 'Lower chest'],
+  Back: ['Lats', 'Traps', 'Rhomboids', 'Lower back'],
+  Shoulders: ['Front delts', 'Side delts', 'Rear delts'],
+  Arms: ['Biceps', 'Triceps', 'Forearms'],
+  Legs: ['Quads', 'Hamstrings', 'Glutes', 'Calves', 'Adductors'],
+  Core: ['Abs', 'Obliques', 'Lower abs'],
+  Other: ['Cardio', 'Full body', 'Neck'],
 };
 
+/** Every muscle, flat, in region order. */
+export const MUSCLE_GROUPS: readonly string[] = MUSCLE_REGIONS.flatMap(
+  (region) => MUSCLES_BY_REGION[region],
+);
+
 /**
- * Seeded once per user, the first time the module is opened with no exercises.
+ * Which region a muscle belongs to.
  *
- * A starting point, not a fixed list: they are ordinary rows and can be
- * renamed or deleted like any other. Six, not sixty - a library you have to
- * scroll past is worse than one you add to.
+ * Built once from the table above rather than written out again, so the two
+ * cannot drift. Anything unrecognised - an exercise tagged before this
+ * vocabulary existed, or one you typed yourself - lands in Other rather than
+ * disappearing from every tab.
  */
-export const DEFAULT_EXERCISES: { name: string; muscle_group: MuscleGroup }[] = [
-  { name: 'Bench Press', muscle_group: 'Chest' },
-  { name: 'Squat', muscle_group: 'Legs' },
-  { name: 'Deadlift', muscle_group: 'Back' },
-  { name: 'Overhead Press', muscle_group: 'Shoulders' },
-  { name: 'Bicep Curl', muscle_group: 'Arms' },
-  { name: 'Pull-up', muscle_group: 'Back' },
+const REGION_OF: Record<string, MuscleRegion> = Object.fromEntries(
+  MUSCLE_REGIONS.flatMap((region) =>
+    MUSCLES_BY_REGION[region].map((muscle) => [muscle, region]),
+  ),
+);
+
+export function regionOf(muscle: string | null): MuscleRegion {
+  if (!muscle) return 'Other';
+  return REGION_OF[muscle] ?? 'Other';
+}
+
+/**
+ * How an exercise is measured.
+ *
+ * On the exercise, not the set, because it is a property of the movement: a
+ * plank is always held and a curl is always repeated. The logging screen reads
+ * it to decide whether to ask for reps or for seconds.
+ */
+export type TrackingType = 'reps' | 'time';
+
+export const TRACKING_LABEL: Record<TrackingType, string> = {
+  reps: 'Reps',
+  time: 'Time',
+};
+
+export const DEFAULT_EXERCISES: {
+  name: string;
+  muscle_group: string;
+  tracking_type: TrackingType;
+}[] = [
+  { name: 'Bench Press', muscle_group: 'Mid chest', tracking_type: 'reps' },
+  { name: 'Squat', muscle_group: 'Quads', tracking_type: 'reps' },
+  { name: 'Deadlift', muscle_group: 'Lower back', tracking_type: 'reps' },
+  { name: 'Overhead Press', muscle_group: 'Front delts', tracking_type: 'reps' },
+  { name: 'Bicep Curl', muscle_group: 'Biceps', tracking_type: 'reps' },
+  { name: 'Pull-up', muscle_group: 'Lats', tracking_type: 'reps' },
+  // One timed movement in the starter set, so the mode is discoverable
+  // without having to create an exercise to find out it exists.
+  { name: 'Plank', muscle_group: 'Abs', tracking_type: 'time' },
 ];
 
 /**
@@ -168,6 +225,25 @@ export function bestWeightAtReps(
 }
 
 /**
+ * The longest hold recorded for a timed exercise.
+ *
+ * A timed PR is a different comparison from a weighted one: there is no rep
+ * count to hold constant, so the record is simply the longest you have held it.
+ * Returns null with no history, for the same reason bestWeightAtReps does -
+ * your first hold is not a record, because it beat nothing.
+ */
+export function bestHold(
+  history: Pick<SessionSet, 'exercise_id' | 'duration_seconds'>[],
+  exerciseId: string,
+): number | null {
+  const held = history
+    .filter((set) => set.exercise_id === exerciseId && set.duration_seconds !== null)
+    .map((set) => set.duration_seconds as number);
+
+  return held.length === 0 ? null : Math.max(...held);
+}
+
+/**
  * Is this set a personal record?
  *
  * THE FIRST SET IS NOT A PR. With no history at that rep count, every first
@@ -177,9 +253,23 @@ export function bestWeightAtReps(
  * Strictly greater, so repeating your best is not a new record either.
  */
 export function isPersonalRecord(
-  history: Pick<SessionSet, 'exercise_id' | 'reps' | 'weight_kg'>[],
-  candidate: { exercise_id: string; reps: number; weight_kg: number },
+  history: Pick<SessionSet, 'exercise_id' | 'reps' | 'weight_kg' | 'duration_seconds'>[],
+  candidate: {
+    exercise_id: string;
+    reps: number | null;
+    weight_kg: number;
+    duration_seconds?: number | null;
+  },
 ): boolean {
+  // A held set is judged on how long, not how heavy.
+  if (candidate.duration_seconds != null) {
+    const best = bestHold(history, candidate.exercise_id);
+    if (best === null) return false;
+    return candidate.duration_seconds > best;
+  }
+
+  if (candidate.reps === null) return false;
+
   const best = bestWeightAtReps(history, candidate.exercise_id, candidate.reps);
   if (best === null) return false;
   return candidate.weight_kg > best;
@@ -209,8 +299,19 @@ export function nextSetNumber(existing: Pick<SessionSet, 'set_number'>[]): numbe
  * kilogram and volume is a trend indicator, not a figure anyone reconciles -
  * unlike money, where the same drift would be unacceptable.
  */
-export function totalVolume(sets: Pick<SessionSet, 'reps' | 'weight_kg'>[]): number {
-  const raw = sets.reduce((total, set) => total + set.reps * set.weight_kg, 0);
+export function totalVolume(
+  sets: Pick<SessionSet, 'reps' | 'weight_kg' | 'duration_seconds'>[],
+): number {
+  // Timed sets are EXCLUDED rather than counted as one rep.
+  //
+  // Volume is reps x weight, and a 60-second plank has no honest value in that
+  // unit: calling it one rep would make a long hold look like the smallest set
+  // of the session, and calling it sixty would swamp everything else. Leaving
+  // it out keeps the number meaning exactly what it says.
+  const raw = sets.reduce(
+    (total, set) => (set.reps === null ? total : total + set.reps * set.weight_kg),
+    0,
+  );
   return Math.round(raw * 10) / 10;
 }
 
@@ -222,9 +323,21 @@ export function estimatedOneRepMax(weightKg: number, reps: number): number {
 }
 
 /** "60 kg x 8" for a row, with the decimal dropped when it is a whole number. */
-export function formatSet(weightKg: number, reps: number): string {
+export function formatSet(
+  weightKg: number,
+  reps: number | null,
+  durationSeconds: number | null = null,
+): string {
   const weight = Number.isInteger(weightKg) ? String(weightKg) : weightKg.toFixed(1);
-  return `${weight} kg x ${reps}`;
+
+  // Bodyweight holds are the common case for timed work, and "0 kg x 60s"
+  // reads like a mistake. The weight is only shown when there is one.
+  if (durationSeconds !== null) {
+    const held = formatDuration(durationSeconds);
+    return weightKg > 0 ? `${weight} kg x ${held}` : held;
+  }
+
+  return `${weight} kg x ${reps ?? 0}`;
 }
 
 /** Seconds to "1:30", for the rest timer. */

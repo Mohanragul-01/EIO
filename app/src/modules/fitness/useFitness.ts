@@ -20,6 +20,7 @@ import {
   type Routine,
   type SessionSet,
   type WorkoutSession,
+  type TrackingType,
 } from './types';
 
 /** One column of the seven-day strip. */
@@ -203,9 +204,17 @@ export function usePlan() {
   const reload = useStableCallback(() => load(false));
 
   const addExercise = useCallback(
-    async (name: string, muscleGroup: string | null) => {
+    async (
+      name: string,
+      muscleGroup: string | null,
+      trackingType: TrackingType = 'reps',
+    ) => {
       try {
-        await api.createExercise({ name: name.trim(), muscle_group: muscleGroup });
+        await api.createExercise({
+          name: name.trim(),
+          muscle_group: muscleGroup,
+          tracking_type: trackingType,
+        });
         await load(false);
         return true;
       } catch (e) {

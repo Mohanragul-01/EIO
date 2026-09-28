@@ -24,6 +24,7 @@ import {
 
 import { Button, FadeInView, GlassCard, Screen,
   FormScroll,
+  DateField,
 } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { formatEventDate } from '../../../core/date';
@@ -32,7 +33,9 @@ import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
 import { PickerSheet } from '../components/PickerSheet';
 import { RestTimer } from '../components/RestTimer';
-import { formatSet, type SessionSet } from '../types';
+import { formatSet, type SessionSet,
+  type TrackingType,
+} from '../types';
 import { useWorkoutSession } from '../useWorkoutSession';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'WorkoutSession'>;
@@ -54,6 +57,7 @@ export function WorkoutSessionScreen() {
     loading,
     error,
     reload,
+    setDate,
     setExerciseOrder,
     addExerciseToSession,
     logSet,
@@ -164,20 +168,42 @@ export function WorkoutSessionScreen() {
                 <RestTimer />
               </View>
             </GlassCard>
+
+            {session ? (
+              <GlassCard style={styles.dateCard}>
+                <DateField
+                  label="Workout date"
+                  value={session.date}
+                  onChange={(next) => {
+                    if (next) void setDate(next);
+                  }}
+                  // 'event': a workout happened on a day, so the quick picks
+                  // offer today and yesterday rather than future deadlines.
+                  mode="event"
+                  allowClear={false}
+                />
+              </GlassCard>
+            ) : null}
           </FadeInView>
 
           {blocks.map((block, index) => (
             <FadeInView key={block.exerciseId} delay={Math.min(index, 6) * 50}>
               <ExerciseBlock
                 name={block.exercise?.name ?? 'Exercise'}
+                trackingType={block.exercise?.tracking_type ?? 'reps'}
                 sets={block.sets}
                 prSetIds={prs}
-                onLog={(reps, weight, rpe) =>
+                onLog={(value, weight) =>
                   logSet({
                     exercise_id: block.exerciseId,
-                    reps,
+                    // Exactly one of the two, decided by the exercise. The
+                    // database enforces the same rule, so a mismatch here is
+                    // rejected rather than silently stored.
+                    reps: block.exercise?.tracking_type === 'time' ? null : value,
+                    duration_seconds:
+                      block.exercise?.tracking_type === 'time' ? value : null,
                     weight_kg: weight,
-                    rpe,
+                    rpe: null,
                   })
                 }
                 onRemoveSet={removeSet}
@@ -249,52 +275,94 @@ export function WorkoutSessionScreen() {
  */
 function ExerciseBlock({
   name,
+  trackingType,
   sets,
   prSetIds,
   onLog,
   onRemoveSet,
 }: {
   name: string;
+  trackingType: TrackingType;
   sets: SessionSet[];
   prSetIds: Record<string, { previousBest: number | null }>;
-  onLog: (reps: number, weight: number, rpe: number | null) => Promise<unknown>;
+  /** `value` is reps for a counted exercise and seconds for a held one. */
+  onLog: (value: number, weight: number) => Promise<unknown>;
   onRemoveSet: (id: string) => void;
 }) {
   const styles = useStyles();
   const { colors } = useTheme();
 
+  const timed = trackingType === 'time';
   const last = sets[sets.length - 1];
+
+  // Seeded from the previous set, because the next one is usually the same.
   const [weight, setWeight] = useState(last ? String(last.weight_kg) : '');
-  const [reps, setReps] = useState(last ? String(last.reps) : '');
+  const [value, setValue] = useState(
+    last ? String(timed ? (last.duration_seconds ?? '') : (last.reps ?? '')) : '',
+  );
   const [saving, setSaving] = useState(false);
 
-  const handleLog = async () => {
+  const parse = () => {
     const parsedWeight = Number(weight.trim());
-    const parsedReps = Number(reps.trim());
-    // Weight of 0 is valid (bodyweight); reps of 0 is not a set.
-    if (!Number.isFinite(parsedWeight) || parsedWeight < 0) return;
-    if (!Number.isInteger(parsedReps) || parsedReps <= 0) return;
+    const parsedValue = Number(value.trim());
+
+    // Weight of 0 is valid - bodyweight - but a set of nothing is not.
+    if (!Number.isFinite(parsedWeight) || parsedWeight < 0) return null;
+    if (!Number.isInteger(parsedValue) || parsedValue <= 0) return null;
+
+    return { parsedWeight, parsedValue };
+  };
+
+  const handleLog = async () => {
+    const parsed = parse();
+    if (!parsed) return;
 
     setSaving(true);
-    await onLog(parsedReps, parsedWeight, null);
+    await onLog(parsed.parsedValue, parsed.parsedWeight);
+    setSaving(false);
+  };
+
+  /**
+   * Log another set identical to the last one.
+   *
+   * Three sets of the same thing is the ordinary case, and retyping the same
+   * two numbers three times is the part that made per-set logging feel like
+   * paperwork. This keeps every set its own row - which is what makes personal
+   * records honest - while costing one tap instead of two fields.
+   */
+  const repeatLast = async () => {
+    if (!last) return;
+    const lastValue = timed ? last.duration_seconds : last.reps;
+    if (lastValue == null) return;
+
+    setSaving(true);
+    await onLog(lastValue, last.weight_kg);
     setSaving(false);
   };
 
   return (
     <GlassCard style={styles.block}>
-      <Text style={styles.blockTitle}>{name}</Text>
+      <View style={styles.blockHead}>
+        <Text style={styles.blockTitle}>{name}</Text>
+        {timed ? (
+          <View style={styles.timedTag}>
+            <Ionicons name="timer-outline" size={11} color={colors.accentCyan} />
+            <Text style={styles.timedTagText}>Timed</Text>
+          </View>
+        ) : null}
+      </View>
 
       {sets.map((set, index) => {
         const pr = prSetIds[set.id];
         return (
           <View key={set.id} style={styles.setRow}>
-            {/*
-              Position in the list, not set.set_number. The stored number only
-              has to order the sets and never be reused; deleting a middle set
-              leaves a gap in it, and showing "1, 3, 4" would read as a bug.
-            */}
+            {/* Position in the list, not set.set_number. The stored number only
+                has to order the sets and never be reused; deleting a middle set
+                leaves a gap in it, and showing "1, 3, 4" would read as a bug. */}
             <Text style={styles.setNumber}>{index + 1}</Text>
-            <Text style={styles.setText}>{formatSet(set.weight_kg, set.reps)}</Text>
+            <Text style={styles.setText}>
+              {formatSet(set.weight_kg, set.reps, set.duration_seconds)}
+            </Text>
 
             {pr ? (
               <View style={styles.prBadge}>
@@ -319,39 +387,87 @@ function ExerciseBlock({
           placeholder="kg"
           placeholderTextColor={colors.textFaint}
           keyboardType="decimal-pad"
-          selectionColor={colors.primary}
           style={styles.entryInput}
-          maxLength={6}
         />
-        <Text style={styles.times}>x</Text>
+        <Text style={styles.times}>×</Text>
         <TextInput
-          value={reps}
-          onChangeText={setReps}
-          placeholder="reps"
+          value={value}
+          onChangeText={setValue}
+          placeholder={timed ? 'sec' : 'reps'}
           placeholderTextColor={colors.textFaint}
           keyboardType="number-pad"
-          selectionColor={colors.primary}
           style={styles.entryInput}
-          onSubmitEditing={handleLog}
-          maxLength={3}
         />
+
         <Pressable
           onPress={handleLog}
           disabled={saving}
           style={({ pressed }) => [styles.logButton, pressed && styles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Log this set"
         >
-          {saving ? (
-            <ActivityIndicator size="small" color={colors.onPrimary} />
-          ) : (
-            <Ionicons name="checkmark" size={17} color={colors.onPrimary} />
-          )}
+          <Ionicons name="checkmark" size={18} color={colors.onPrimary} />
         </Pressable>
       </View>
+
+      {last ? (
+        <Pressable
+          onPress={repeatLast}
+          disabled={saving}
+          style={({ pressed }) => [styles.repeatRow, pressed && styles.repeatRowPressed]}
+          accessibilityRole="button"
+        >
+          <Ionicons name="repeat" size={13} color={colors.primary} />
+          <Text style={styles.repeatText}>
+            Repeat {formatSet(last.weight_kg, last.reps, last.duration_seconds)}
+          </Text>
+        </Pressable>
+      ) : null}
     </GlassCard>
   );
 }
 
 const useStyles = makeStyles(({ colors, typography }) => ({
+  dateCard: {
+    marginTop: spacing.md,
+  },
+  blockHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  timedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    backgroundColor: colors.accentCyan + '1F',
+  },
+  timedTagText: {
+    ...typography.caption,
+    fontSize: 10.5,
+    color: colors.accentCyan,
+  },
+  repeatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: spacing.sm,
+    paddingVertical: 7,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primary + '14',
+  },
+  repeatRowPressed: {
+    opacity: 0.6,
+  },
+  repeatText: {
+    ...typography.caption,
+    color: colors.primary,
+  },
   flex: { flex: 1 },
   scroll: {
     paddingHorizontal: spacing.xl,
