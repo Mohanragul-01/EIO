@@ -22,8 +22,14 @@ import {
   View,
 } from 'react-native';
 
-import { Button, EmptyState, FadeInView, GlassCard, Screen, Tabs,
+import {
+  Button,
+  EmptyState,
+  FadeInView,
   FormScroll,
+  GlassCard,
+  Screen,
+  SwipeTabs,
 } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { formatEventDate, todayISO } from '../../../core/date';
@@ -48,16 +54,18 @@ export function FitnessListScreen() {
 
   return (
     <Screen padded={false}>
-      <View style={styles.tabsWrap}>
-        <Tabs
-          options={VIEWS}
-          value={view}
-          onChange={setView}
-          renderLabel={(v) => VIEW_LABEL[v]}
-        />
-      </View>
+      <View style={styles.tabsTopSpacer} />
 
-      {view === 'log' ? <LogTab /> : view === 'plan' ? <PlanTab /> : <BodyTab />}
+      <SwipeTabs
+        options={VIEWS}
+        value={view}
+        onChange={setView}
+        renderLabel={(v) => VIEW_LABEL[v]}
+        // Each tab already owns its data, which is what makes them pageable:
+        // a pager mounts every page, so a tab that only loaded when selected
+        // would swipe onto a blank screen.
+        renderPage={(v) => (v === 'log' ? <LogTab /> : v === 'plan' ? <PlanTab /> : <BodyTab />)}
+      />
     </Screen>
   );
 }
@@ -634,9 +642,10 @@ function ErrorBanner({ message }: { message: string }) {
 }
 
 const useStyles = makeStyles(({ colors, typography }) => ({
-  tabsWrap: {
-    paddingHorizontal: spacing.xl,
-    paddingTop: 96, // clears the transparent nav header
+  tabsTopSpacer: {
+    // Clears the transparent nav header. SwipeTabs owns the tab row's own
+    // horizontal padding, so this is only the gap above it.
+    height: 96,
   },
   centered: {
     flex: 1,

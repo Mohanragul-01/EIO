@@ -228,7 +228,9 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     // Clears the transparent nav header, which the list used to do itself.
     paddingTop: 96,
     paddingBottom: spacing.md,
-    alignItems: 'flex-start',
+    // NOT alignItems:'flex-start'. SegmentedControl's segments are flex:1, so
+    // the track has no intrinsic width - shrink-to-fit collapsed it to zero
+    // and the control rendered perfectly, invisibly.
   },
   centered: {
     flex: 1,
