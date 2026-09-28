@@ -19,8 +19,14 @@ export type Async<T> = {
   error: string | null;
   /** Re-run the loader. Safe to call from an event handler or an effect. */
   reload: () => Promise<void>;
-  /** Replace the data locally, for optimistic updates. */
-  set: (next: T) => void;
+  /**
+   * Replace the data locally, for optimistic updates.
+   *
+   * Prefer the updater form when the new value depends on the old one: the
+   * value form uses whatever the caller captured at render time, which two
+   * writes in quick succession will have in common.
+   */
+  set: (next: T | ((current: T) => T)) => void;
 };
 
 /**
@@ -88,8 +94,24 @@ export function useAsync<T>(loader: () => Promise<T>, key: string = ''): Async<T
     void run();
   }, [key, run]);
 
-  const set = useCallback((next: T) => {
-    if (mounted.current) setData(next);
+  /**
+   * Replace the loaded data, or update it from what is currently there.
+   *
+   * The updater form exists because the value form reads whatever the caller
+   * captured at render time. Two optimistic writes in quick succession - the
+   * B-List is ticked in bursts - both saw the same pre-first-tick list, so the
+   * second silently threw away the first.
+   *
+   * An update before anything has loaded is dropped rather than inventing a
+   * value to update from.
+   */
+  const set = useCallback((next: T | ((current: T) => T)) => {
+    if (!mounted.current) return;
+    if (typeof next !== 'function') {
+      setData(next);
+      return;
+    }
+    setData((current) => (current === null ? current : (next as (c: T) => T)(current)));
   }, []);
 
   return { data, loading, error, reload: run, set };

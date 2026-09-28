@@ -8,7 +8,7 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 
-import { formatEventDate } from '@app/core/date';
+import { formatEventDate, todayISO } from '@app/core/date';
 import * as api from '@app/modules/bucket/api';
 import {
   COSTS,
@@ -97,10 +97,13 @@ export function BucketPage() {
     setBusyId(item.id);
     setActionError(null);
 
-    set(
-      items.map((row) =>
+    // Updater form, not set(items.map(...)): `items` is whatever this render
+    // captured, so ticking two things quickly had the second write overwrite
+    // the first with a list that predated it.
+    set((current) =>
+      current.map((row) =>
         row.id === item.id
-          ? { ...row, is_done: next, done_on: next ? new Date().toISOString().slice(0, 10) : null }
+          ? { ...row, is_done: next, done_on: next ? todayISO() : null }
           : row,
       ),
     );
@@ -108,7 +111,13 @@ export function BucketPage() {
     try {
       await api.setDone(item.id, next);
     } catch (e) {
-      set(items);
+      // This row only. Restoring the whole captured list would also undo every
+      // other tick made while this one was in flight.
+      set((current) =>
+        current.map((row) =>
+          row.id === item.id ? { ...row, is_done: item.is_done, done_on: item.done_on } : row,
+        ),
+      );
       setActionError(e instanceof Error ? e.message : 'Could not save that');
     } finally {
       setBusyId(null);

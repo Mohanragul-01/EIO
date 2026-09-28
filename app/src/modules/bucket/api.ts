@@ -79,26 +79,39 @@ export async function deleteItem(id: string): Promise<void> {
 }
 
 /**
- * Counts for the home tile, in one round trip.
+ * Counts for the home tile.
  *
- * Two columns and no titles: the tile needs to know how many are done and how
- * many cheap ones are left, not what any of them say. Fetching the whole list
- * to count it would download 818 rows to render one line.
+ * COUNTED IN POSTGRES, not here. The previous version selected two columns for
+ * all 818 rows and counted them in JavaScript, while its own comment claimed it
+ * avoided exactly that - it fetched no titles, but it still pulled 818 rows
+ * over mobile data every time the home screen loaded, to render one line.
+ *
+ * Three head requests instead: `head: true` sends no rows at all, only the
+ * count in a header, and they run in parallel so it is still one round trip's
+ * worth of waiting.
  */
 export async function overview(): Promise<{ total: number; done: number; freeLeft: number }> {
   const ownerId = await getOwnerId();
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select('is_done, cost')
-    .eq('user_id', ownerId);
-
-  if (error) throw new Error(error.message);
-
-  const rows = (data ?? []) as { is_done: boolean; cost: Cost }[];
-  return {
-    total: rows.length,
-    done: rows.filter((row) => row.is_done).length,
-    freeLeft: rows.filter((row) => !row.is_done && row.cost === 'low').length,
+  const count = async (refine: (q: ReturnType<typeof baseQuery>) => typeof q = (q) => q) => {
+    const { count: n, error } = await refine(baseQuery(ownerId));
+    if (error) throw new Error(error.message);
+    return n ?? 0;
   };
+
+  const [total, done, freeLeft] = await Promise.all([
+    count(),
+    count((q) => q.eq('is_done', true)),
+    count((q) => q.eq('is_done', false).eq('cost', 'low' satisfies Cost)),
+  ]);
+
+  return { total, done, freeLeft };
+}
+
+/** A count-only query for this owner: no rows come back, just the number. */
+function baseQuery(ownerId: string) {
+  return supabase
+    .from(TABLE)
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', ownerId);
 }

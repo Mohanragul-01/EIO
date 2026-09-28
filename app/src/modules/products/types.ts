@@ -190,9 +190,14 @@ export function formatDaysLeft(days: number | null): string {
   return `about ${months} month${months === 1 ? '' : 's'}`;
 }
 
-/** Trims trailing zeroes: 30.00 reads as 30, 30.50 as 30.5. */
+/**
+ * Trims trailing zeroes: 30.00 reads as 30, 30.50 as 30.5.
+ *
+ * String() already does this - 30 prints as "30", 30.5 as "30.5" - so rounding
+ * to two places is the whole job. This used to branch on Number.isInteger with
+ * the same expression on both sides, which did nothing either way.
+ */
 export function formatQuantity(value: number, unit: string): string {
   const rounded = Math.round(value * 100) / 100;
-  const text = Number.isInteger(rounded) ? String(rounded) : String(rounded);
-  return `${text} ${unit}`;
+  return `${rounded} ${unit}`;
 }

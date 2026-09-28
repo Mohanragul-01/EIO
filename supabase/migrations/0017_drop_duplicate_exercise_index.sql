@@ -1,0 +1,33 @@
+-- ============================================================================
+-- Drop a duplicate index on exercises
+-- ============================================================================
+-- 0011 created:
+--   exercises_user_idx    on public.exercises (user_id, muscle_group, name)
+-- and 0014, adding the muscle taxonomy, created:
+--   exercises_muscle_idx  on public.exercises (user_id, muscle_group, name)
+--
+-- Identical columns in an identical order. Postgres will happily keep both and
+-- use exactly one of them, so the second is pure cost: every insert, update and
+-- delete on exercises maintains two B-trees instead of one, and it occupies
+-- space to answer a question the first index already answers.
+--
+-- The 0014 one goes rather than the 0011 one, because 0011 is the migration
+-- that introduced the table's shape and its name is not tied to a taxonomy that
+-- has since changed. Dropping an index is instant and fully reversible - the
+-- create statement is right there in 0014 - and nothing breaks in between,
+-- since the surviving index serves the same queries.
+--
+-- if exists, so this is safe to run on a database that never got 0014.
+-- ============================================================================
+
+drop index if exists public.exercises_muscle_idx;
+
+-- Left deliberately alone, for the record:
+--
+-- routine_exercises.exercise_id, session_sets.exercise_id, product_uses.
+-- product_id and transactions.account_id are foreign keys with no index whose
+-- leading column is that key, so deleting a parent row scans the child table.
+-- On a single-user database where the largest of these tables holds a few
+-- thousand rows, that scan costs less than the writes an extra index would add
+-- to every set you log. Worth revisiting only if deleting an exercise ever
+-- becomes noticeably slow.

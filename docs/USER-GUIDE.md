@@ -12,6 +12,8 @@ EIO are deliberately not what you would first expect.
 - [Finance](#finance)
 - [Subscriptions](#subscriptions)
 - [Fitness](#fitness)
+- [B-List](#b-list)
+- [Products](#products)
 - [Your own modules](#your-own-modules)
 - [Desktop-only conveniences](#desktop-only-conveniences)
 - [Your data](#your-data)
@@ -85,10 +87,21 @@ that tile shows a dash and the rest are unaffected.
 Tasks are organised by **how often you do them**, not by project: Daily, Weekly,
 Monthly, Yearly.
 
-**On the phone** these are four tabs. **On the website they are a kanban board**,
-which is the single biggest difference between the clients. Tab switching hides
-the shape of your workload — you cannot tell that Weekly has quietly grown to
-fifteen items while Daily sits empty. Four columns tell you instantly.
+**On the phone** these are four tabs, and you can **swipe sideways** between
+them as well as tapping. **On the website they are a kanban board**, which is
+the single biggest difference between the clients. Tab switching hides the shape
+of your workload — you cannot tell that Weekly has quietly grown to fifteen
+items while Daily sits empty. Four columns tell you instantly.
+
+### Open and Completed
+
+Above the tabs on the phone is an **Open / Completed** switch. Completed tasks
+are never deleted, so Completed is the record of what you actually got done —
+and ticking something in Completed puts it back on the Open list.
+
+These are two separate queries rather than one list with a filter. Finished work
+piles up for years and outnumbers open tasks many times over; downloading all of
+it every time you glance at today's list would be a strange thing to do.
 
 ### Dragging
 
@@ -161,6 +174,10 @@ action as completing something.
 
 Three kinds of note, one place.
 
+Both clients have four tabs — **Notes, Inbox, Lists, Journal**. On the phone you
+can **swipe between them**. Lists shows only your checklists, which is the tab
+you want when you are standing in a shop.
+
 ### Quick capture
 
 The fastest path from a thought to it being saved. Type, save, move on — no
@@ -194,6 +211,22 @@ time you opened it.
 
 Journals and checklists never enter the Inbox. You reached for them
 deliberately, so choosing one is itself an act of filing.
+
+### Reading and editing
+
+Opening an existing note puts it in **read mode**. There is one thing you can do
+there: **tick items**, and a tick **saves immediately**.
+
+Everything else — renaming an item, adding one, changing the title — is behind
+the **pencil** in the top right, where Save and Discard mean something.
+
+The split exists because of checklists. With a single mode everything was
+buffered, so ticking an item and pressing back offered to *discard the tick* —
+the wrong answer for the one gesture you perform most. Now a tick is not a
+pending edit at all; it is already written before you leave.
+
+In edit mode, backing out with unsaved changes still asks. That includes
+changing a note's **type** or a journal's **date**, not just its text.
 
 ### Unchecking a checklist
 
@@ -338,20 +371,44 @@ on it.
 
 A real training log, built to answer one question: **is this going up?**
 
-Three views: **Log**, **Plan**, **Body**.
+Four views: **Log**, **Routines**, **Exercises**, **Body** — swipeable on the
+phone. Routines and exercises used to share one Plan tab; they are different
+things and one list of both was hard to scan.
 
-### Plan — exercises and routines
+### Exercises — the library
 
 The **exercise library** is yours. A starter set is created the first time you
 open Fitness, and you can add, rename or delete freely.
 
-You cannot delete an exercise you have logged sets against. That history is what
-every personal record is measured from, and silently erasing it to tidy up a list
-would be a bad trade. EIO says so plainly rather than showing a database error.
+Exercises are tagged by **specific muscle**, not by region: Upper chest, Lats,
+Rear delts, Hamstrings, Calves, Forearms and so on, grouped under the region
+they belong to. Browse by tapping a region chip rather than scrolling one long
+alphabetical list.
+
+Migration `0014` retagged the starter library when this landed. It matches on
+name where the name says something — *incline* anything becomes Upper chest,
+*skullcrushers* become Triceps — and **falls back to a guess where the name says
+nothing**. If something is filed under the wrong muscle, rename or edit it;
+re-running the migration will not undo your correction.
+
+### Exercises measured in time, not reps
+
+A plank has no reps. Exercises like planks, dead hangs and L-sits are marked
+**Timed**, and the logging screen asks for **seconds** instead.
+
+Timed sets are deliberately left out of the session's volume figure. Volume is
+weight × reps summed; seconds are not that, and folding them in would produce a
+number that means nothing. Held exercises are tracked by **best hold** instead.
+
+### Routines
 
 A **routine** is a *template*. It logs nothing itself — it pre-fills a session so
 you are not picking the same six exercises every week. Deleting a routine never
 deletes the training you did from it.
+
+You cannot delete an exercise you have logged sets against. That history is what
+every personal record is measured from, and silently erasing it to tidy up a list
+would be a bad trade. EIO says so plainly rather than showing a database error.
 
 ### Log — a session
 
@@ -363,7 +420,21 @@ have logged so far is already saved. Nothing is held in memory waiting for a
 "finish" button, which is why there isn't one: nothing is pending, so there is
 nothing to commit. You leave when you are done.
 
-Log sets as `weight × reps`. Weight of 0 is valid, for bodyweight work.
+Log sets as `weight × reps`, or `weight × seconds` for a timed exercise. Weight
+of 0 is valid, for bodyweight work. **Repeat last set** copies the previous one
+rather than making you retype it.
+
+### Logging yesterday
+
+Forgetting to log on the day is the normal case, not the exception, so it is not
+treated as one.
+
+- **Long-press the + button** to start a session dated *yesterday*.
+- Inside any session, the **date is editable**, so you can put it on whatever day
+  it actually happened.
+
+Sets belong to the session, so changing the session's date moves the whole
+workout with it.
 
 **On the website, the session sits beside that exercise's own history**, so you
 can see what you lifted last time while deciding what to lift now. That is the
@@ -423,13 +494,95 @@ Weight, height and BMI.
 
 ---
 
+## B-List
+
+Your bucket list — 818 things across 61 categories, imported from the standalone
+page that used to hold them in browser storage. A list kept in one browser is a
+list you cannot tick off from your phone, and clearing that browser's site data
+loses years of it.
+
+### Sorted by cost, not by importance
+
+The three tiers answer *what it takes to do the thing*, not how much you want it:
+
+| Tier | Means |
+| --- | --- |
+| **No/low cost** | Doable this weekend for nothing |
+| **Moderate** | Needs a bit of money or planning |
+| **Big investment** | Needs saving for |
+
+That is the question the list is organised around, so it is the question the
+filters answer. The headline counts show **how many are left** at each tier, not
+how many there were — a total that never moves is not progress.
+
+### Using it
+
+Default view is **To do**, any cost. Opening a bucket list to a wall of things
+you have already done is not what you came for.
+
+- **Tap** to tick. It saves immediately, and you can tick in bursts.
+- **Long-press** for the note, or to remove an item.
+- Filter by status, cost and category, or search — search covers the **category
+  name too**, so "water" finds the whole Water Adventures section.
+- Ticking records **the day you did it**, taken from your device, so the date is
+  the day you pressed it rather than whatever day the server was having.
+
+The percentage never rounds up to 100 while anything is outstanding. 817 of 818
+is 99.88%, and showing "100%" next to an unticked item is the kind of small lie
+that makes you stop trusting the number.
+
+---
+
+## Products
+
+What you get through daily — whey, face wash, sunscreen, shampoo — and when to
+reorder. Sorted by urgency, because the only reason to open this is to find out
+what is about to run out.
+
+### The rate is measured, not assumed
+
+The obvious way to do this is `total ÷ per_use` and call that the number of uses
+left. That answers a different question: *how long if you never miss a day*. Days
+get missed.
+
+So it divides what you have **actually used** by the days the container has been
+open. The rate already accounts for the days you skipped, so the projection
+degrades gracefully instead of being permanently optimistic.
+
+**Per use** therefore does not drive the projection at all. It exists to pre-fill
+the amount when you log a use, so logging is one tap.
+
+### It will not guess from one day
+
+Nothing is projected until a container has been open **two days** and has
+something logged against it. One use on day one implies one-per-day, which for
+something you use twice a week would call the bottle empty three times too soon —
+and a confident wrong number is worse than "not enough data yet".
+
+Until then the row reads **Not enough data**.
+
+### Using it
+
+- **Log use** on the row. That is the thing you do every day, so it is a button
+  on the row rather than something behind a tap into a detail screen.
+- **Long-press Log use** to mark a container finished.
+- A finished product is **kept, not deleted** — it becomes the record of how long
+  that one actually lasted.
+- Give it a price and it works out what it costs you **per day**.
+
+Colour is urgency: reorder now (a week or less), running low (three weeks), or
+plenty left.
+
+---
+
 ## Your own modules
 
 The module builder is the part that makes EIO yours. It creates a working module
 with no code and no database migration.
 
-Good candidates: a bucket list, skills you are learning, books, films, a sleep
-log, places to visit, plants to water. The rule of thumb:
+Good candidates: skills you are learning, books, films, a sleep log, places to
+visit, plants to water. (A bucket list used to be the first suggestion here —
+it is now the **B-List**, built in.) The rule of thumb:
 
 > **Build by hand when a module needs to think. Use the builder when it just
 > needs to remember.**
@@ -561,6 +714,20 @@ never uploaded to a cloud build. Register them with `eas env:create` and rebuild
 A migration has not been applied. Run the files in `supabase/migrations/` in
 order through the Supabase SQL Editor. `0008_finance_v2.sql` is the exception —
 it belongs to a different, still-planned change and should **not** be run.
+
+**The B-List is empty, or a migration fails with a parse error**
+The 818 items are split across `0015a` to `0015e`, run after `0015` itself,
+because one 78 KB statement is a bad thing to paste into a browser editor: a
+paste that arrives short fails with an error pointing somewhere in the middle of
+the list, which tells you nothing. Two things to watch for in the SQL Editor:
+
+- It runs **only the highlighted text** when anything is selected. Click once in
+  the editor to deselect before running.
+- Scroll to the bottom and check the last line is really the last line of the
+  file before you run it.
+
+Each part is safe to re-run — it will not duplicate a row or overwrite something
+you have already ticked — so if you are unsure about one, just run it again.
 
 **Renewal reminders never fire**
 Expected in Expo Go — it cannot schedule them. You need the dev or production
