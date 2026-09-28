@@ -113,15 +113,67 @@ export const MUSCLE_REGIONS = [
 
 export type MuscleRegion = (typeof MUSCLE_REGIONS)[number];
 
+/**
+ * SPLIT ONLY WHERE IT CHANGES WHAT YOU DO.
+ *
+ * This was once 22 muscles - upper/mid/lower chest, quads, hamstrings, glutes,
+ * calves, adductors, three separate delts. That is the vocabulary of a coaching
+ * textbook, not of someone picking an exercise, and it made the library harder
+ * to use rather than easier: a list you have to think about before tagging is a
+ * list you will tag wrong.
+ *
+ * So most regions are a single tag. Arms splits, because biceps and triceps are
+ * genuinely different training days. Core splits into abs and lower back,
+ * because those are different exercises entirely. Nothing else earns a split.
+ */
 export const MUSCLES_BY_REGION: Record<MuscleRegion, readonly string[]> = {
-  Chest: ['Upper chest', 'Mid chest', 'Lower chest'],
-  Back: ['Lats', 'Traps', 'Rhomboids', 'Lower back'],
-  Shoulders: ['Front delts', 'Side delts', 'Rear delts'],
+  Chest: ['Chest'],
+  Back: ['Back'],
+  Shoulders: ['Shoulders'],
   Arms: ['Biceps', 'Triceps', 'Forearms'],
-  Legs: ['Quads', 'Hamstrings', 'Glutes', 'Calves', 'Adductors'],
-  Core: ['Abs', 'Obliques', 'Lower abs'],
-  Other: ['Cardio', 'Full body', 'Neck'],
+  Legs: ['Legs'],
+  Core: ['Abs', 'Lower back'],
+  Other: ['Cardio', 'Full body'],
 };
+
+/**
+ * The finer vocabulary that used to exist, folded into the one above.
+ *
+ * Applied when READING an exercise, so the library looks right whether or not
+ * migration 0018 has been run - and so an exercise tagged before this change
+ * does not strand itself under "Other". 0018 does the same thing to the stored
+ * rows; this is what keeps the screen honest in the meantime.
+ */
+const LEGACY_MUSCLES: Record<string, string> = {
+  'Upper chest': 'Chest',
+  'Mid chest': 'Chest',
+  'Lower chest': 'Chest',
+  Lats: 'Back',
+  Traps: 'Back',
+  Rhomboids: 'Back',
+  'Front delts': 'Shoulders',
+  'Side delts': 'Shoulders',
+  'Rear delts': 'Shoulders',
+  Neck: 'Shoulders',
+  Quads: 'Legs',
+  Hamstrings: 'Legs',
+  Glutes: 'Legs',
+  Calves: 'Legs',
+  Adductors: 'Legs',
+  Obliques: 'Abs',
+  'Lower abs': 'Abs',
+};
+
+/**
+ * The tag to display and group by, given whatever is stored.
+ *
+ * Returns the value unchanged when it is already current or entirely unknown -
+ * a name you typed yourself is yours to keep, not something to silently rewrite.
+ */
+export function normaliseMuscle(muscle: string | null): string | null {
+  if (!muscle) return null;
+  return LEGACY_MUSCLES[muscle] ?? muscle;
+}
 
 /** Every muscle, flat, in region order. */
 export const MUSCLE_GROUPS: readonly string[] = MUSCLE_REGIONS.flatMap(
@@ -143,8 +195,9 @@ const REGION_OF: Record<string, MuscleRegion> = Object.fromEntries(
 );
 
 export function regionOf(muscle: string | null): MuscleRegion {
-  if (!muscle) return 'Other';
-  return REGION_OF[muscle] ?? 'Other';
+  const current = normaliseMuscle(muscle);
+  if (!current) return 'Other';
+  return REGION_OF[current] ?? 'Other';
 }
 
 /**
@@ -166,12 +219,12 @@ export const DEFAULT_EXERCISES: {
   muscle_group: string;
   tracking_type: TrackingType;
 }[] = [
-  { name: 'Bench Press', muscle_group: 'Mid chest', tracking_type: 'reps' },
-  { name: 'Squat', muscle_group: 'Quads', tracking_type: 'reps' },
+  { name: 'Bench Press', muscle_group: 'Chest', tracking_type: 'reps' },
+  { name: 'Squat', muscle_group: 'Legs', tracking_type: 'reps' },
   { name: 'Deadlift', muscle_group: 'Lower back', tracking_type: 'reps' },
-  { name: 'Overhead Press', muscle_group: 'Front delts', tracking_type: 'reps' },
+  { name: 'Overhead Press', muscle_group: 'Shoulders', tracking_type: 'reps' },
   { name: 'Bicep Curl', muscle_group: 'Biceps', tracking_type: 'reps' },
-  { name: 'Pull-up', muscle_group: 'Lats', tracking_type: 'reps' },
+  { name: 'Pull-up', muscle_group: 'Back', tracking_type: 'reps' },
   // One timed movement in the starter set, so the mode is discoverable
   // without having to create an exercise to find out it exists.
   { name: 'Plank', muscle_group: 'Abs', tracking_type: 'time' },

@@ -20,15 +20,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
 import {
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '../../../core/components';
@@ -174,8 +173,16 @@ export function PickerSheet({
           accessibilityLabel="Close"
         />
 
+        {/*
+          From react-native-keyboard-controller, NOT react-native. The RN one
+          was here with behavior={Platform.OS === 'ios' ? 'padding' : undefined},
+          which renders a plain View on Android and adjusts nothing - so on the
+          platform this app ships to, the keyboard sat on top of the search box
+          you had just tapped. Same bug the forms had, hiding in a component
+          rather than a screen.
+        */}
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior="padding"
           style={styles.sheetWrap}
           pointerEvents="box-none"
         >

@@ -64,6 +64,11 @@ export function BucketPage() {
   const items = useMemo(() => data ?? [], [data]);
   const progress = useMemo(() => progressOf(items), [items]);
   const categories = useMemo(() => categorySummary(items), [items]);
+  /** Progress per category, so a section heading can carry its own count. */
+  const categoryProgress = useMemo(
+    () => new Map(categories.map((c) => [c.category, c])),
+    [categories],
+  );
 
   const visible = useMemo(
     () =>
@@ -225,7 +230,13 @@ export function BucketPage() {
           </div>
 
           <FilterBar
-            search={{ value: query, onChange: setQuery, placeholder: 'Search 818 things' }}
+            search={{
+              value: query,
+              onChange: setQuery,
+              // Counted, not the literal 818 it used to say - which stopped being
+              // true the first time you added something.
+              placeholder: `Search ${progress.total} things`,
+            }}
             filters={filters}
             onReset={
               filtersActive
@@ -257,7 +268,15 @@ export function BucketPage() {
                 <section key={name}>
                   <div className="row" style={{ gap: 'var(--space-sm)', marginBottom: 8 }}>
                     <span className="column-title">{name}</span>
-                    <span className="column-count">{rows.length}</span>
+                    {/*
+                      The category's own progress, not how many rows the filter
+                      left - "12" told you nothing you could not already see.
+                    */}
+                    <span className="column-count">
+                      {categoryProgress.get(name)
+                        ? `${categoryProgress.get(name)!.done}/${categoryProgress.get(name)!.total}`
+                        : rows.length}
+                    </span>
                   </div>
 
                   <div className="col" style={{ gap: 3 }}>

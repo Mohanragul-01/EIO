@@ -42,6 +42,7 @@ import { WeekStrip } from '../components/WeekStrip';
 import { bmiLabel, MUSCLE_GROUPS, type Routine, type WorkoutSession,
   MUSCLE_REGIONS,
   TRACKING_LABEL,
+  normaliseMuscle,
   regionOf,
   type MuscleRegion,
   type TrackingType,
@@ -468,7 +469,10 @@ function ExercisesTab() {
 
     const byMuscle = new Map<string, typeof exercises>();
     visible.forEach((exercise) => {
-      const key = exercise.muscle_group?.trim() || 'Unsorted';
+      // Normalised, so an exercise still carrying a pre-0018 tag groups under
+      // the tag it now belongs to rather than under a heading that no longer
+      // exists in the vocabulary.
+      const key = normaliseMuscle(exercise.muscle_group)?.trim() || 'Unsorted';
       const bucket = byMuscle.get(key);
       if (bucket) bucket.push(exercise);
       else byMuscle.set(key, [exercise]);
@@ -657,7 +661,7 @@ function ExercisesTab() {
                     <View style={styles.rowBody}>
                       <Text style={styles.rowTitle}>{exercise.name}</Text>
                       <Text style={styles.rowSub}>
-                        {exercise.muscle_group ?? 'Unsorted'}
+                        {normaliseMuscle(exercise.muscle_group) ?? 'Unsorted'}
                         {exercise.tracking_type === 'time' ? ' · timed' : ''}
                       </Text>
                     </View>

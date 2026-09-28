@@ -39,6 +39,7 @@ import {
   type WorkoutSession,
   MUSCLE_REGIONS,
   TRACKING_LABEL,
+  normaliseMuscle,
   regionOf,
   type MuscleRegion,
   type TrackingType,
@@ -532,7 +533,7 @@ function ExerciseChooser({
         exercises.map((exercise) => ({
           id: exercise.id,
           label: exercise.name,
-          group: exercise.muscle_group,
+          group: normaliseMuscle(exercise.muscle_group),
           disabled: chosen.includes(exercise.id),
         })),
         query,
@@ -871,7 +872,8 @@ function PlanView() {
 
     const groups = new Map<string, Exercise[]>();
     visible.forEach((exercise) => {
-      const key = exercise.muscle_group?.trim() || 'Unsorted';
+      // Normalised, so a pre-0018 tag groups under its current name.
+      const key = normaliseMuscle(exercise.muscle_group)?.trim() || 'Unsorted';
       (groups.get(key) ?? groups.set(key, []).get(key)!).push(exercise);
     });
     return [...groups.entries()].sort(([a], [b]) =>
@@ -1344,7 +1346,7 @@ function RoutineDialog({
         exercises.map((exercise) => ({
           id: exercise.id,
           label: exercise.name,
-          group: exercise.muscle_group,
+          group: normaliseMuscle(exercise.muscle_group),
         })),
         query,
       ),

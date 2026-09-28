@@ -33,7 +33,7 @@ import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
 import { PickerSheet } from '../components/PickerSheet';
 import { RestTimer } from '../components/RestTimer';
-import { formatSet, type SessionSet,
+import { formatSet, normaliseMuscle, type SessionSet,
   type TrackingType,
 } from '../types';
 import { useWorkoutSession } from '../useWorkoutSession';
@@ -260,7 +260,7 @@ export function WorkoutSessionScreen() {
         items={exercises.map((exercise) => ({
           id: exercise.id,
           label: exercise.name,
-          group: exercise.muscle_group,
+          group: normaliseMuscle(exercise.muscle_group),
           disabled: blocks.some((block) => block.exerciseId === exercise.id),
           note: blocks.some((block) => block.exerciseId === exercise.id)
             ? 'Already added'

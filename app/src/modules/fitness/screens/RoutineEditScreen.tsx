@@ -27,7 +27,7 @@ import { fonts, radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
 import { PickerSheet } from '../components/PickerSheet';
-import type { Exercise } from '../types';
+import { normaliseMuscle, type Exercise } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'RoutineEdit'>;
 type Route = RouteProp<RootStackParamList, 'RoutineEdit'>;
@@ -319,7 +319,7 @@ export function RoutineEditScreen() {
           return {
             id: exercise.id,
             label: exercise.name,
-            group: exercise.muscle_group,
+            group: normaliseMuscle(exercise.muscle_group),
             disabled: already,
             note: already ? 'Already added' : undefined,
           };
