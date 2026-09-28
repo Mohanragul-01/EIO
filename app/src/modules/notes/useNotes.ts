@@ -22,24 +22,41 @@ import { useStableCallback } from '../../core/useStableCallback';
 import * as api from './api';
 import { readChecklistItems, type Note } from './types';
 
-/** Which of the three views the list is showing. */
-export type NotesView = 'notes' | 'inbox' | 'journal';
+/** Which view the list is showing. */
+export type NotesView = 'notes' | 'inbox' | 'checklist' | 'journal';
 
 const LOADERS: Record<NotesView, () => Promise<Note[]>> = {
   notes: api.listNotes,
   inbox: api.listInbox,
+  checklist: api.listChecklists,
   journal: api.listJournal,
 };
 
-export function useNotes(view: NotesView = 'notes') {
+/**
+ * Search and tag filter can be OWNED BY THE CALLER.
+ *
+ * Each swipeable page has its own copy of this hook, so filter state kept in
+ * here would be per-page: type a search, swipe, and it would be gone - and the
+ * one search box in the header would only drive whichever page happened to be
+ * showing. Passing them in lets the screen hold one copy for all four.
+ *
+ * Left optional so callers that render a single list still get the old
+ * self-contained behaviour.
+ */
+type Filters = { query?: string; activeTag?: string | null };
+
+export function useNotes(view: NotesView = 'notes', filters?: Filters) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Filter state.
-  const [query, setQuery] = useState('');
-  const [activeTag, setActiveTag] = useState<string | null>(null);
+  // Filter state, used only when the caller does not supply its own.
+  const [ownQuery, setOwnQuery] = useState('');
+  const [ownTag, setOwnTag] = useState<string | null>(null);
+
+  const query = filters?.query ?? ownQuery;
+  const activeTag = filters !== undefined ? (filters.activeTag ?? null) : ownTag;
 
   const mounted = useRef(true);
   useEffect(() => {
@@ -137,9 +154,9 @@ export function useNotes(view: NotesView = 'notes') {
     totalCount: notes.length,
     allTags,
     query,
-    setQuery,
+    setQuery: setOwnQuery,
     activeTag,
-    setActiveTag,
+    setActiveTag: setOwnTag,
     loading,
     refreshing,
     error,

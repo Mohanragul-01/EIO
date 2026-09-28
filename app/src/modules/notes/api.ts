@@ -59,6 +59,28 @@ export async function listInbox(): Promise<Note[]> {
 }
 
 /**
+ * Checklists only.
+ *
+ * Filtered in SQL rather than by narrowing listNotes in the browser: a
+ * checklist tab that downloaded every prose note to throw most of them away
+ * would cost more the longer the notes list gets, and the database already has
+ * the index to answer this directly.
+ */
+export async function listChecklists(): Promise<Note[]> {
+  const ownerId = await getOwnerId();
+
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select('*')
+    .eq('user_id', ownerId)
+    .eq('note_type', 'checklist')
+    .order('updated_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+/**
  * The journal feed, newest day first.
  *
  * Sorted by entry_date, the day the entry is ABOUT, not by when it was

@@ -19,10 +19,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Pressable,
   Text,
   View,
 } from 'react-native';
@@ -38,7 +46,7 @@ import {
   FormScroll,
 } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
-import { todayISO } from '../../../core/date';
+import { formatEventDate, todayISO } from '../../../core/date';
 import { spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
@@ -77,6 +85,23 @@ export function NoteEditScreen() {
   // morning is the normal case, not the exception.
   const [entryDate, setEntryDate] = useState<string | null>(todayISO());
 
+  /**
+   * Read or edit.
+   *
+   * An EXISTING note opens in read mode; a new one opens straight into edit,
+   * because there is nothing to read yet. The distinction exists because of
+   * checklists: in read mode a tick is the only thing you can change and it
+   * writes immediately, which is what a checklist is for. Every other edit -
+   * renaming an item, adding one, changing the title - is a deliberate act and
+   * belongs behind Edit, where Save and Discard mean something.
+   *
+   * The old screen had one mode and buffered everything, so ticking an item
+   * and pressing back offered to DISCARD the tick. That is the wrong default
+   * for the one gesture you perform most.
+   */
+  const [mode, setMode] = useState<'read' | 'edit'>(route.params?.id ? 'read' : 'edit');
+  const [tickError, setTickError] = useState<string | null>(null);
+
   const [contentError, setContentError] = useState<string | null>(null);
   const [loading, setLoading] = useState(isEditing);
   const [saving, setSaving] = useState(false);
@@ -89,13 +114,61 @@ export function NoteEditScreen() {
   const original = useRef({ title: '', body: '', tagsText: '', items: '[]' });
   const justSaved = useRef(false);
 
+  /**
+   * Tick one item and write it, without leaving read mode.
+   *
+   * Optimistic: the box fills the instant you press it, because a checklist is
+   * used standing in a shop and a round trip per tick would feel broken. A
+   * failure puts the tick back and says so, rather than leaving the screen
+   * claiming something the database does not agree with.
+   *
+   * `original` is updated too, or the dirty check would think the note had
+   * unsaved changes and offer to discard work that is already saved.
+   */
+  const toggleItem = useCallback(
+    async (index: number) => {
+      if (!editingId) return;
+
+      const next = items.map((item, i) => (i === index ? { ...item, done: !item.done } : item));
+      setItems(next);
+      setTickError(null);
+
+      try {
+        await api.setChecklistItems(editingId, next);
+        original.current = { ...original.current, items: JSON.stringify(next) };
+      } catch (e) {
+        setItems(items);
+        setTickError(e instanceof Error ? e.message : 'Could not save that tick');
+      }
+    },
+    [editingId, items],
+  );
+
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: isEditing
-        ? `Edit ${NOTE_TYPE_LABEL[noteType].toLowerCase()}`
-        : NOTE_TYPE_LABEL[noteType],
+      title:
+        !isEditing || mode === 'edit'
+          ? isEditing
+            ? `Edit ${NOTE_TYPE_LABEL[noteType].toLowerCase()}`
+            : NOTE_TYPE_LABEL[noteType]
+          : NOTE_TYPE_LABEL[noteType],
+      // The Edit affordance only exists in read mode; in edit mode the footer
+      // already has Save, and two competing commit points is one too many.
+      headerRight:
+        isEditing && mode === 'read'
+          ? () => (
+              <Pressable
+                onPress={() => setMode('edit')}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Edit this note"
+              >
+                <Ionicons name="create-outline" size={20} color={colors.text} />
+              </Pressable>
+            )
+          : undefined,
     });
-  }, [navigation, isEditing, noteType]);
+  }, [navigation, isEditing, noteType, mode, colors.text]);
 
   useEffect(() => {
     if (!editingId) return;
@@ -137,6 +210,10 @@ export function NoteEditScreen() {
    * gesture in one place, which is why it beats overriding the header button.
    */
   useEffect(() => {
+    // Read mode has nothing buffered - ticks are already written - so the
+    // discard prompt would be asking about changes that do not exist.
+    if (mode === 'read') return;
+
     const unsubscribe = navigation.addListener('beforeRemove', (event) => {
       const dirty =
         title !== original.current.title ||
@@ -257,6 +334,75 @@ export function NoteEditScreen() {
   // strand a checklist's items.
   const showTypePicker = !isEditing && !isQuickCapture;
 
+  if (mode === 'read') {
+    return (
+      <Screen padded={false}>
+        <FormScroll contentContainerStyle={styles.scroll}>
+          <FadeInView>
+            <GlassCard>
+              {noteType === 'journal' && entryDate ? (
+                <Text style={styles.readDate}>{formatEventDate(entryDate)}</Text>
+              ) : null}
+
+              {title ? <Text style={styles.readTitle}>{title}</Text> : null}
+
+              {noteType === 'checklist' ? (
+                <View style={title ? styles.field : undefined}>
+                  {items.length === 0 ? (
+                    <Text style={styles.readEmpty}>
+                      This list has no items yet. Tap Edit to add some.
+                    </Text>
+                  ) : (
+                    items.map((item, index) => (
+                      <Pressable
+                        key={index}
+                        onPress={() => void toggleItem(index)}
+                        style={({ pressed }) => [styles.readItem, pressed && styles.readItemPressed]}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: item.done }}
+                        accessibilityLabel={item.text}
+                      >
+                        <View style={[styles.readBox, item.done && styles.readBoxOn]}>
+                          {item.done ? (
+                            <Ionicons name="checkmark" size={13} color={colors.onPrimary} />
+                          ) : null}
+                        </View>
+                        <Text style={[styles.readItemText, item.done && styles.readItemDone]}>
+                          {item.text}
+                        </Text>
+                      </Pressable>
+                    ))
+                  )}
+
+                  {items.length > 0 ? (
+                    <Text style={styles.readProgress}>
+                      {items.filter((i) => i.done).length} of {items.length} done · saved as you tick
+                    </Text>
+                  ) : null}
+                </View>
+              ) : body ? (
+                <Text style={[styles.readBody, title ? styles.field : undefined]}>{body}</Text>
+              ) : (
+                <Text style={styles.readEmpty}>This note is empty. Tap Edit to write something.</Text>
+              )}
+
+              {tagsText.trim() ? <Text style={styles.readTags}>{tagsText}</Text> : null}
+            </GlassCard>
+
+            {tickError ? (
+              <GlassCard style={[styles.field, styles.errorCard]}>
+                <View style={styles.errorRow}>
+                  <Ionicons name="warning-outline" size={17} color={colors.danger} />
+                  <Text style={styles.errorText}>{tickError}</Text>
+                </View>
+              </GlassCard>
+            ) : null}
+          </FadeInView>
+        </FormScroll>
+      </Screen>
+    );
+  }
+
   return (
     <Screen padded={false}>
         <FormScroll contentContainerStyle={styles.scroll}>
@@ -372,6 +518,78 @@ export function NoteEditScreen() {
 }
 
 const useStyles = makeStyles(({ colors, typography }) => ({
+  readTitle: {
+    ...typography.title,
+    marginBottom: spacing.sm,
+  },
+  readDate: {
+    ...typography.overline,
+    marginBottom: spacing.xs,
+  },
+  readBody: {
+    ...typography.body,
+    lineHeight: 22,
+  },
+  readEmpty: {
+    ...typography.body,
+    color: colors.textFaint,
+  },
+  readTags: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginTop: spacing.lg,
+  },
+  readItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    // Generous, because this is the one control on the screen and it is
+    // pressed standing up with one hand.
+    paddingVertical: 11,
+  },
+  readItemPressed: {
+    opacity: 0.6,
+  },
+  readBox: {
+    width: 21,
+    height: 21,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: colors.glassBorderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  readBoxOn: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  readItemText: {
+    ...typography.body,
+    flex: 1,
+  },
+  readItemDone: {
+    textDecorationLine: 'line-through',
+    color: colors.textFaint,
+  },
+  readProgress: {
+    ...typography.caption,
+    color: colors.textFaint,
+    marginTop: spacing.sm,
+  },
+  errorCard: {
+    borderColor: colors.danger,
+  },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.danger,
+    flex: 1,
+  },
   flex: { flex: 1 },
   scroll: {
     paddingHorizontal: spacing.xl,

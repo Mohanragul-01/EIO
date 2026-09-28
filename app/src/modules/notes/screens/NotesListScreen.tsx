@@ -26,7 +26,14 @@ import {
   View,
 } from 'react-native';
 
-import { Button, EmptyState, FadeInView, GlassCard, Screen, Tabs } from '../../../core/components';
+import {
+  Button,
+  EmptyState,
+  FadeInView,
+  GlassCard,
+  Screen,
+  SwipeTabs,
+} from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { formatEventDate } from '../../../core/date';
 import { fonts, motion, radius, spacing } from '../../../core/theme';
@@ -37,10 +44,11 @@ import { useNotes, type NotesView } from '../useNotes';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'NotesList'>;
 
-const VIEWS: NotesView[] = ['notes', 'inbox', 'journal'];
+const VIEWS: NotesView[] = ['notes', 'inbox', 'checklist', 'journal'];
 const VIEW_LABEL: Record<NotesView, string> = {
   notes: 'Notes',
   inbox: 'Inbox',
+  checklist: 'Lists',
   journal: 'Journal',
 };
 
@@ -50,20 +58,116 @@ export function NotesListScreen() {
   const navigation = useNavigation<Nav>();
 
   const [view, setView] = useState<NotesView>('notes');
-  const {
-    notes,
-    totalCount,
-    allTags,
-    query,
-    setQuery,
-    activeTag,
-    setActiveTag,
-    loading,
-    refreshing,
-    error,
-    refresh,
-    reload,
-  } = useNotes(view);
+
+  /**
+   * Search and tag live HERE, not in each page's hook.
+   *
+   * Every page of a pager is mounted, so a filter owned per page would be four
+   * separate filters, and typing in one then swiping would appear to lose it.
+   * One copy at the top drives whichever page you are looking at.
+   */
+  const [query, setQuery] = useState('');
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+
+  const clearFilters = useCallback(() => {
+    setQuery('');
+    setActiveTag(null);
+  }, []);
+
+  return (
+    <Screen padded={false}>
+      <View style={styles.tabsTopSpacer} />
+
+      <SwipeTabs
+        options={VIEWS}
+        value={view}
+        onChange={(next) => {
+          setView(next);
+          // Filters belong to the view you set them in. Carrying a tag filter
+          // into the Journal would silently hide entries.
+          clearFilters();
+        }}
+        renderLabel={(v) => VIEW_LABEL[v]}
+        renderPage={(v) => (
+          <NotesPage
+            view={v}
+            query={query}
+            activeTag={activeTag}
+            onQuery={setQuery}
+            onTag={setActiveTag}
+            onClearFilters={clearFilters}
+            onOpen={(id) => navigation.navigate('NoteEdit', { id })}
+            onCreate={(params) => navigation.navigate('NoteEdit', params)}
+          />
+        )}
+      />
+
+      {/* Two buttons, because they are two intentions. The small one captures a
+          thought immediately; the large one opens the full form. */}
+      <FadeInView style={styles.fabWrap} delay={120}>
+        {view !== 'journal' ? (
+          <Pressable
+            onPress={() => navigation.navigate('NoteEdit', { quick: true })}
+            style={({ pressed }) => [styles.quickFab, pressed && styles.fabPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Quick capture"
+          >
+            <Ionicons name="flash-outline" size={19} color={colors.primary} />
+          </Pressable>
+        ) : null}
+
+        <Pressable
+          onPress={() =>
+            navigation.navigate(
+              'NoteEdit',
+              view === 'journal'
+                ? { type: 'journal' }
+                : view === 'checklist'
+                  ? { type: 'checklist' }
+                  : {},
+            )
+          }
+          style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+          accessibilityRole="button"
+          accessibilityLabel={view === 'journal' ? 'Write an entry' : 'Write a note'}
+        >
+          <Ionicons name="add" size={26} color={colors.onPrimary} />
+        </Pressable>
+      </FadeInView>
+    </Screen>
+  );
+}
+
+/* ONE VIEW ----------------------------------------------------------------- */
+
+type CreateParams = { type?: 'note' | 'checklist' | 'journal' } | Record<string, never>;
+
+function NotesPage({
+  view,
+  query,
+  activeTag,
+  onQuery,
+  onTag,
+  onClearFilters,
+  onOpen,
+  onCreate,
+}: {
+  view: NotesView;
+  query: string;
+  activeTag: string | null;
+  onQuery: (value: string) => void;
+  onTag: (value: string | null) => void;
+  onClearFilters: () => void;
+  onOpen: (id: string) => void;
+  onCreate: (params: CreateParams) => void;
+}) {
+  const styles = useStyles();
+  const { colors } = useTheme();
+
+  const { notes, totalCount, allTags, loading, refreshing, error, refresh, reload } = useNotes(
+    view,
+    { query, activeTag },
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -98,42 +202,33 @@ export function NotesListScreen() {
   const isEmpty = totalCount === 0;
   const isFilteredEmpty = !isEmpty && notes.length === 0;
 
-  return (
-    <Screen padded={false}>
-      <View style={styles.tabsWrap}>
-        <Tabs
-          options={VIEWS}
-          value={view}
-          onChange={(next) => {
-            setView(next);
-            // Filters belong to the view you set them in. Carrying a tag filter
-            // into the Journal would silently hide entries.
-            setQuery('');
-            setActiveTag(null);
-          }}
-          renderLabel={(v) => VIEW_LABEL[v]}
-        />
-      </View>
+  const refreshControl = (
+    <RefreshControl
+      refreshing={refreshing}
+      onRefresh={refresh}
+      tintColor={colors.primary}
+      colors={[colors.primary]}
+      progressBackgroundColor={colors.backgroundElevated}
+    />
+  );
 
-      {loading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
-      ) : view === 'journal' ? (
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (view === 'journal') {
+    return (
+      <>
         <FlatList
           data={journalSections}
           keyExtractor={(section) => section.date}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.list, isEmpty && styles.listEmpty]}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={refresh}
-              tintColor={colors.primary}
-              colors={[colors.primary]}
-              progressBackgroundColor={colors.backgroundElevated}
-            />
-          }
+          refreshControl={refreshControl}
           ListEmptyComponent={
             <EmptyState
               icon="book-outline"
@@ -144,7 +239,7 @@ export function NotesListScreen() {
                 <Button
                   label="Write an entry"
                   icon="add"
-                  onPress={() => navigation.navigate('NoteEdit', { type: 'journal' })}
+                  onPress={() => onCreate({ type: 'journal' })}
                 />
               }
             />
@@ -153,148 +248,140 @@ export function NotesListScreen() {
             <FadeInView delay={Math.min(index, 6) * motion.stagger}>
               <Text style={styles.dayHeading}>{formatEventDate(section.date)}</Text>
               {section.entries.map((note) => (
-                <NoteCard
-                  key={note.id}
-                  note={note}
-                  onPress={() => navigation.navigate('NoteEdit', { id: note.id })}
-                />
+                <NoteCard key={note.id} note={note} onPress={() => onOpen(note.id)} />
               ))}
             </FadeInView>
           )}
         />
-      ) : (
-        <FlatList
-          data={notes}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.list, isEmpty && styles.listEmpty]}
-          keyboardDismissMode="on-drag"
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={refresh}
-              tintColor={colors.primary}
-              colors={[colors.primary]}
-              progressBackgroundColor={colors.backgroundElevated}
-            />
-          }
-          ListHeaderComponent={
-            isEmpty ? null : (
-              <FadeInView>
-                {/* The inbox is a short queue you work through, so it gets no
-                    search: filtering a handful of unfiled notes is busywork. */}
-                {view === 'notes' ? (
-                  <>
-                    <SearchBar value={query} onChange={setQuery} />
-                    {allTags.length > 0 ? (
-                      <TagFilter tags={allTags} active={activeTag} onChange={setActiveTag} />
-                    ) : null}
-                  </>
-                ) : (
-                  <Text style={styles.inboxHint}>
-                    Captured in a hurry. Add a title or a tag and it files itself out of here.
-                  </Text>
-                )}
+        <ErrorBanner error={error} />
+      </>
+    );
+  }
 
-                {isFilteredEmpty ? null : (
-                  <Text style={styles.summary}>
-                    {notes.length} {notes.length === 1 ? 'note' : 'notes'}
-                    {activeTag ? ` tagged ${activeTag}` : ''}
-                  </Text>
-                )}
-              </FadeInView>
-            )
-          }
-          ListEmptyComponent={
-            isEmpty ? (
-              <EmptyState
-                icon={view === 'inbox' ? 'file-tray-outline' : 'document-text-outline'}
-                accent={colors.accentAmber}
-                title={view === 'inbox' ? 'Inbox is clear' : 'Nothing written yet'}
-                message={
-                  view === 'inbox'
-                    ? 'Anything you capture without a title or tag waits here until you file it.'
-                    : 'Notes, checklists and anything you want to keep.'
-                }
-                action={
-                  view === 'inbox' ? undefined : (
-                    <Button
-                      label="Write a note"
-                      icon="add"
-                      onPress={() => navigation.navigate('NoteEdit', {})}
-                    />
-                  )
-                }
-              />
-            ) : (
-              <View style={styles.noMatches}>
-                <Ionicons name="search-outline" size={22} color={colors.textFaint} />
-                <Text style={styles.noMatchesText}>
-                  Nothing matches {activeTag ? activeTag : query.trim()}
+  return (
+    <>
+      <FlatList
+        data={notes}
+        keyExtractor={(item) => item.id}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.list, isEmpty && styles.listEmpty]}
+        keyboardDismissMode="on-drag"
+        // Without this the first tap on a note while the search keyboard is
+        // open only dismisses the keyboard, and you have to tap again.
+        keyboardShouldPersistTaps="handled"
+        refreshControl={refreshControl}
+        ListHeaderComponent={
+          isEmpty ? null : (
+            <FadeInView>
+              {/* The inbox is a short queue you work through, so it gets no
+                  search: filtering a handful of unfiled notes is busywork. */}
+              {view === 'inbox' ? (
+                <Text style={styles.inboxHint}>
+                  Captured in a hurry. Add a title or a tag and it files itself out of here.
                 </Text>
-                {isSearching ? (
-                  <Pressable
-                    onPress={() => {
-                      setQuery('');
-                      setActiveTag(null);
-                    }}
-                    hitSlop={8}
-                  >
-                    <Text style={styles.clearFilters}>Clear filters</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            )
-          }
-          renderItem={({ item, index }) => (
-            <FadeInView delay={Math.min(index, 6) * motion.stagger}>
-              <NoteCard note={item} onPress={() => navigation.navigate('NoteEdit', { id: item.id })} />
+              ) : (
+                <>
+                  <SearchBar value={query} onChange={onQuery} />
+                  {allTags.length > 0 ? (
+                    <TagFilter tags={allTags} active={activeTag} onChange={onTag} />
+                  ) : null}
+                </>
+              )}
+
+              {isFilteredEmpty ? null : (
+                <Text style={styles.summary}>
+                  {notes.length}{' '}
+                  {view === 'checklist'
+                    ? notes.length === 1
+                      ? 'list'
+                      : 'lists'
+                    : notes.length === 1
+                      ? 'note'
+                      : 'notes'}
+                  {activeTag ? ` tagged ${activeTag}` : ''}
+                </Text>
+              )}
             </FadeInView>
-          )}
-        />
-      )}
-
-      {error ? (
-        <FadeInView style={styles.errorWrap}>
-          <GlassCard style={styles.errorCard}>
-            <View style={styles.errorRow}>
-              <Ionicons name="warning-outline" size={17} color={colors.danger} />
-              <Text style={styles.errorText} numberOfLines={2}>
-                {error}
+          )
+        }
+        ListEmptyComponent={
+          isEmpty ? (
+            <EmptyState
+              icon={
+                view === 'inbox'
+                  ? 'file-tray-outline'
+                  : view === 'checklist'
+                    ? 'checkbox-outline'
+                    : 'document-text-outline'
+              }
+              accent={colors.accentAmber}
+              title={
+                view === 'inbox'
+                  ? 'Inbox is clear'
+                  : view === 'checklist'
+                    ? 'No checklists yet'
+                    : 'Nothing written yet'
+              }
+              message={
+                view === 'inbox'
+                  ? 'Anything you capture without a title or tag waits here until you file it.'
+                  : view === 'checklist'
+                    ? 'A checklist is reusable: tick it off, then uncheck it all when you need it again.'
+                    : 'Notes, checklists and anything you want to keep.'
+              }
+              action={
+                view === 'inbox' ? undefined : (
+                  <Button
+                    label={view === 'checklist' ? 'New checklist' : 'Write a note'}
+                    icon="add"
+                    onPress={() => onCreate(view === 'checklist' ? { type: 'checklist' } : {})}
+                  />
+                )
+              }
+            />
+          ) : (
+            <View style={styles.noMatches}>
+              <Ionicons name="search-outline" size={22} color={colors.textFaint} />
+              <Text style={styles.noMatchesText}>
+                Nothing matches {activeTag ? activeTag : query.trim()}
               </Text>
+              {isSearching ? (
+                <Pressable onPress={onClearFilters} hitSlop={8}>
+                  <Text style={styles.clearFilters}>Clear filters</Text>
+                </Pressable>
+              ) : null}
             </View>
-          </GlassCard>
-        </FadeInView>
-      ) : null}
+          )
+        }
+        renderItem={({ item, index }) => (
+          <FadeInView delay={Math.min(index, 6) * motion.stagger}>
+            <NoteCard note={item} onPress={() => onOpen(item.id)} />
+          </FadeInView>
+        )}
+      />
+      <ErrorBanner error={error} />
+    </>
+  );
+}
 
-      {/* Two buttons, because they are two intentions. The small one captures a
-          thought immediately; the large one opens the full form. */}
-      {!isEmpty ? (
-        <FadeInView style={styles.fabWrap} delay={120}>
-          {view !== 'journal' ? (
-            <Pressable
-              onPress={() => navigation.navigate('NoteEdit', { quick: true })}
-              style={({ pressed }) => [styles.quickFab, pressed && styles.fabPressed]}
-              accessibilityRole="button"
-              accessibilityLabel="Quick capture"
-            >
-              <Ionicons name="flash-outline" size={19} color={colors.primary} />
-            </Pressable>
-          ) : null}
+/** A failed background refresh should not interrupt what you are doing. */
+function ErrorBanner({ error }: { error: string | null }) {
+  const styles = useStyles();
+  const { colors } = useTheme();
 
-          <Pressable
-            onPress={() =>
-              navigation.navigate('NoteEdit', view === 'journal' ? { type: 'journal' } : {})
-            }
-            style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
-            accessibilityRole="button"
-            accessibilityLabel={view === 'journal' ? 'Write an entry' : 'Write a note'}
-          >
-            <Ionicons name="add" size={26} color={colors.onPrimary} />
-          </Pressable>
-        </FadeInView>
-      ) : null}
-    </Screen>
+  if (!error) return null;
+
+  return (
+    <FadeInView style={styles.errorWrap}>
+      <GlassCard style={styles.errorCard}>
+        <View style={styles.errorRow}>
+          <Ionicons name="warning-outline" size={17} color={colors.danger} />
+          <Text style={styles.errorText} numberOfLines={2}>
+            {error}
+          </Text>
+        </View>
+      </GlassCard>
+    </FadeInView>
   );
 }
 
@@ -368,7 +455,12 @@ function TagFilter({
 }
 
 const useStyles = makeStyles(({ colors, typography }) => ({
-  tabsWrap: {
+  tabsTopSpacer: {
+    // Clears the transparent nav header. SwipeTabs owns the tab row's own
+    // padding, so this is only the gap above it.
+    height: 96,
+  },
+  tabsWrapUnused: {
     paddingHorizontal: spacing.xl,
     paddingTop: 96, // clears the transparent nav header
   },
