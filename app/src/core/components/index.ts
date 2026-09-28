@@ -15,3 +15,4 @@ export { SegmentedControl } from './SegmentedControl';
 export { DateField } from './DateField';
 export { CategoryPicker } from './CategoryPicker';
 export { Tabs } from './Tabs';
+export { SwipeTabs } from './SwipeTabs';

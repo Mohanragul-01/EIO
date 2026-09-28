@@ -19,7 +19,17 @@ import { useStableCallback } from '../../core/useStableCallback';
 import * as api from './api';
 import type { Frequency, Todo } from './types';
 
-export function useTodos(frequency: Frequency) {
+/**
+ * Which slice of a frequency to load.
+ *
+ * 'done' is a SEPARATE query rather than a filter over one list, because
+ * completed tasks are never deleted and outnumber open ones many times over.
+ * Fetching both and hiding half would mean downloading a growing pile of
+ * finished work on every visit to a screen that mostly shows open tasks.
+ */
+export type TodoStatus = 'open' | 'done';
+
+export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
   const [todos, setTodos] = useState<Todo[]>([]);
   // Starts true so the very first render shows a spinner rather than a
   // misleading "no tasks yet" empty state before the fetch resolves.
@@ -50,7 +60,10 @@ export function useTodos(frequency: Frequency) {
     setError(null);
 
     try {
-      const rows = await api.listTodosByFrequency(frequency);
+      const rows =
+        status === 'done'
+          ? await api.listCompletedByFrequency(frequency)
+          : await api.listTodosByFrequency(frequency);
       if (mounted.current) setTodos(rows);
     } catch (e) {
       if (mounted.current) setError(e instanceof Error ? e.message : 'Something went wrong');
@@ -60,9 +73,10 @@ export function useTodos(frequency: Frequency) {
         setRefreshing(false);
       }
     }
-    // Depends on the tab: switching tabs must produce a new loader, or the
-    // effect below would keep refetching whichever tab was mounted first.
-  }, [frequency]);
+    // Depends on the tab AND the status: changing either must produce a new
+    // loader, or the effect below would keep refetching whichever combination
+    // was mounted first.
+  }, [frequency, status]);
 
   useEffect(() => {
     setLoading(true);
@@ -84,11 +98,29 @@ export function useTodos(frequency: Frequency) {
    */
   const complete = useCallback(async (todo: Todo) => {
     const snapshot = todos;
+    // The row leaves whichever list it is in, because completing removes it
+    // from Open and reopening removes it from Done. Same gesture, same result
+    // from the list's point of view.
     setTodos((current) => current.filter((t) => t.id !== todo.id));
+
+    if (todo.is_done) {
+      try {
+        await api.reopenTask(todo.id);
+        return null;
+      } catch (e) {
+        if (mounted.current) {
+          setTodos(snapshot);
+          setError(e instanceof Error ? e.message : 'Could not reopen the task');
+        }
+        return null;
+      }
+    }
 
     try {
       const next = await api.completeTask(todo);
-      if (next && mounted.current) {
+      // Only in the open list: a repeating task's successor is open, so it
+      // does not belong in a list of finished work.
+      if (next && mounted.current && status === 'open') {
         setTodos((current) =>
           [...current, next].sort((a, b) => {
             // Undated tasks sort last, matching the SQL ordering.
@@ -106,7 +138,7 @@ export function useTodos(frequency: Frequency) {
       }
       return null;
     }
-  }, [todos]);
+  }, [todos, status]);
 
   /** Same idea: remove locally straight away, restore the row if the delete fails. */
   const remove = useCallback(
