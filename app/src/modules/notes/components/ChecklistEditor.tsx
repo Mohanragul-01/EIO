@@ -71,7 +71,7 @@ export function ChecklistEditor({ items, onChange }: ChecklistEditorProps) {
       </View>
 
       {items.map((item, index) => (
-        // eslint-disable-next-line react/no-array-index-key -- see file header
+         
         <View key={index} style={styles.row}>
           <Pressable onPress={() => toggle(index)} hitSlop={10}>
             <View style={[styles.box, item.done && styles.boxDone]}>

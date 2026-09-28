@@ -111,7 +111,17 @@ export function NoteEditScreen() {
    * Snapshot of what was loaded, for the unsaved-changes guard. A ref, because
    * comparing against it must never itself cause a render.
    */
-  const original = useRef({ title: '', body: '', tagsText: '', items: '[]' });
+  const original = useRef({
+    title: '',
+    body: '',
+    tagsText: '',
+    items: '[]',
+    // Type and entry date are part of the note too. Leaving them out of the
+    // snapshot meant changing only a journal's date, or switching a note to a
+    // checklist, and pressing back discarded it with no prompt at all.
+    noteType: (route.params?.type ?? 'note') as NoteType,
+    entryDate: todayISO() as string | null,
+  });
   const justSaved = useRef(false);
 
   /**
@@ -192,6 +202,8 @@ export function NoteEditScreen() {
           body: note.body,
           tagsText: tags,
           items: JSON.stringify(loadedItems),
+          noteType: note.note_type,
+          entryDate: note.entry_date ?? todayISO(),
         };
       } catch (e) {
         if (active) setLoadError(e instanceof Error ? e.message : 'Could not load this note');
@@ -219,7 +231,9 @@ export function NoteEditScreen() {
         title !== original.current.title ||
         body !== original.current.body ||
         tagsText !== original.current.tagsText ||
-        JSON.stringify(items) !== original.current.items;
+        JSON.stringify(items) !== original.current.items ||
+        noteType !== original.current.noteType ||
+        entryDate !== original.current.entryDate;
 
       if (!dirty || justSaved.current) return;
 
@@ -235,7 +249,9 @@ export function NoteEditScreen() {
     });
 
     return unsubscribe;
-  }, [navigation, title, body, tagsText, items]);
+    // `mode` belongs here: without it the effect kept a stale copy and the
+    // guard's registration lagged a render behind the switch into edit mode.
+  }, [navigation, title, body, tagsText, items, noteType, entryDate, mode]);
 
   /**
    * There is no required field any more, so "is this worth saving" replaces

@@ -117,7 +117,7 @@ export function useTheme(): ThemeValue {
  * per palette, so switching themes rebuilds the sheet once and normal renders
  * reuse it.
  */
-/* eslint-disable @typescript-eslint/no-explicit-any -- see note below */
+ 
 export function makeStyles<T extends StyleSheet.NamedStyles<T> | StyleSheet.NamedStyles<any>>(
   // This signature is copied from StyleSheet.create, `any` included, and the
   // `any` is load-bearing. It makes TypeScript treat the returned object as a

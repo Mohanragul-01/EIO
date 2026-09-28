@@ -8,7 +8,7 @@
  * fills the screen.
  */
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { GlassCard } from '../../../core/components';
 import { radius, spacing } from '../../../core/theme';

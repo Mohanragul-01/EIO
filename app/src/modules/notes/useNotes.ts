@@ -15,8 +15,9 @@
  * thousands of notes, the fix is a Postgres full-text index and a query in
  * api.ts - and again, only this file would change.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { useLatestRun } from '../../core/useLatestRun';
 import { useStableCallback } from '../../core/useStableCallback';
 
 import * as api from './api';
@@ -58,35 +59,35 @@ export function useNotes(view: NotesView = 'notes', filters?: Filters) {
   const query = filters?.query ?? ownQuery;
   const activeTag = filters !== undefined ? (filters.activeTag ?? null) : ownTag;
 
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+  const { begin } = useLatestRun();
 
-  const load = useCallback(async (showSpinner = false) => {
-    if (showSpinner) setRefreshing(true);
-    setError(null);
+  const load = useCallback(
+    async (showSpinner = false) => {
+      const isCurrent = begin();
+      if (showSpinner) setRefreshing(true);
+      else setLoading(true);
+      setError(null);
 
-    try {
-      const rows = await LOADERS[view]();
-      if (mounted.current) setNotes(rows);
-    } catch (e) {
-      if (mounted.current) setError(e instanceof Error ? e.message : 'Something went wrong');
-    } finally {
-      if (mounted.current) {
-        setLoading(false);
-        setRefreshing(false);
+      try {
+        const rows = await LOADERS[view]();
+        if (isCurrent()) setNotes(rows);
+      } catch (e) {
+        if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
+      } finally {
+        if (isCurrent()) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
-    }
-    // Depends on the view, so switching tabs rebuilds the loader and refetches.
-  }, [view]);
+      // Depends on the view, so switching tabs rebuilds the loader and refetches.
+    },
+    [view, begin],
+  );
 
   useEffect(() => {
-    setLoading(true);
-    load();
+    // Starts a fetch rather than computing derived state - see useTodos.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   /** Every tag in use, deduped and alphabetical - drives the filter row. */

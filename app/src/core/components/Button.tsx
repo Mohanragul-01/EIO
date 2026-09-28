@@ -9,14 +9,15 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useRef } from 'react';
+import React from 'react';
 import {
   ActivityIndicator,
   Animated,
   Pressable,
-  Text,
-  View,
   type StyleProp,
+  Text,
+  useAnimatedValue,
+  View,
   type ViewStyle,
 } from 'react-native';
 
@@ -46,7 +47,7 @@ export function Button({
 }: ButtonProps) {
   const styles = useStyles();
   const { colors, isDark } = useTheme();
-  const scale = useRef(new Animated.Value(1)).current;
+  const scale = useAnimatedValue(1);
   const isInactive = disabled || loading;
 
   const animateTo = (toValue: number) =>

@@ -114,6 +114,29 @@ export function ProductsListScreen() {
           ? colors.success
           : colors.textMuted;
 
+  /**
+   * Mark a container as used up.
+   *
+   * Errors surface rather than being dropped: the old version fired the write
+   * and reloaded off the back of it with no catch, so a failed write looked
+   * exactly like a successful one until the next refresh contradicted it.
+   */
+  const markFinished = useCallback(
+    async (product: Product) => {
+      setBusyId(product.id);
+      setError(null);
+      try {
+        await api.setFinished(product.id, true);
+        await load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : `Could not finish ${product.name}`);
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [load],
+  );
+
   const logUse = useCallback(
     async (product: Product) => {
       setBusyId(product.id);
@@ -245,9 +268,7 @@ export function ProductsListScreen() {
                             { text: 'Cancel', style: 'cancel' },
                             {
                               text: 'Finished',
-                              onPress: () => {
-                                void api.setFinished(product.id, true).then(() => load());
-                              },
+                              onPress: () => void markFinished(product),
                             },
                           ])
                         }

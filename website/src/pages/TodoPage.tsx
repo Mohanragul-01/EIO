@@ -342,11 +342,18 @@ export function TodoPage() {
       await reload();
       setPending(null);
     } catch (e) {
-      // Put the board back the way the server has it. A card that stayed where
-      // you dropped it after the write failed would be a lie you would only
-      // notice on the next refresh.
-      setPending(null);
       setActionError(e instanceof Error ? e.message : 'Could not save that move');
+      // Re-read rather than just dropping the optimistic board. A move is up to
+      // three writes, and the frequency change can land before the reorder
+      // fails - so the stale serverBoard is not the truth either, and falling
+      // back to it would show the card in the column it just left.
+      try {
+        await reload();
+      } catch {
+        // The reload failing too leaves the last known board on screen, which
+        // is the best available answer; the error above already says to retry.
+      }
+      setPending(null);
     }
   };
 

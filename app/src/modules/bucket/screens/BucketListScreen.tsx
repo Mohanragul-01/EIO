@@ -99,24 +99,47 @@ export function BucketListScreen() {
    * You scan and tick this list in bursts, and a round trip per item makes it
    * feel stuck. A failure puts the tick back and says so.
    */
-  const toggle = useCallback(
-    async (item: BucketItem) => {
-      const next = !item.is_done;
-      const snapshot = items;
+  const toggle = useCallback(async (item: BucketItem) => {
+    const next = !item.is_done;
 
+    setItems((current) =>
+      current.map((row) => (row.id === item.id ? { ...row, is_done: next } : row)),
+    );
+
+    try {
+      await api.setDone(item.id, next);
+    } catch (e) {
+      // Roll back THIS row only. Restoring a whole-list snapshot would also
+      // undo every other tick made while this one was in flight, and ticking
+      // in bursts is exactly how this list is used.
       setItems((current) =>
-        current.map((row) => (row.id === item.id ? { ...row, is_done: next } : row)),
+        current.map((row) => (row.id === item.id ? { ...row, is_done: item.is_done } : row)),
       );
+      setError(e instanceof Error ? e.message : 'Could not save that');
+    }
+  }, []);
 
-      try {
-        await api.setDone(item.id, next);
-      } catch (e) {
-        setItems(snapshot);
-        setError(e instanceof Error ? e.message : 'Could not save that');
-      }
-    },
-    [items],
-  );
+  const remove = useCallback(async (item: BucketItem) => {
+    let index = -1;
+    setItems((current) => {
+      index = current.findIndex((row) => row.id === item.id);
+      return current.filter((row) => row.id !== item.id);
+    });
+
+    try {
+      await api.deleteItem(item.id);
+    } catch (e) {
+      // Put this one row back where it was, rather than restoring a snapshot
+      // that would resurrect anything else deleted in the meantime.
+      setItems((current) => {
+        if (current.some((row) => row.id === item.id)) return current;
+        const next = [...current];
+        next.splice(index < 0 ? next.length : index, 0, item);
+        return next;
+      });
+      setError(e instanceof Error ? e.message : 'Could not remove that');
+    }
+  }, []);
 
   const costColor = (value: Cost) =>
     value === 'low'
@@ -272,9 +295,7 @@ export function BucketListScreen() {
                 {
                   text: 'Remove',
                   style: 'destructive',
-                  onPress: () => {
-                    void api.deleteItem(item.id).then(() => load());
-                  },
+                  onPress: () => void remove(item),
                 },
               ])
             }

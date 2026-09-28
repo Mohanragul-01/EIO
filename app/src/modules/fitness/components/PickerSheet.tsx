@@ -18,7 +18,7 @@
  * must not navigate away from the sets you are part-way through logging.
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -67,15 +67,23 @@ export function PickerSheet({
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
 
-  // Reopening must not inherit the last visit's search and ticks. Keyed on
-  // `visible` rather than cleared in the handlers, so it holds however the
-  // sheet was closed - button, backdrop, or Android back.
-  useEffect(() => {
+  /**
+   * Reopening must not inherit the last visit's search and ticks. Keyed on
+   * `visible` rather than cleared in the handlers, so it holds however the
+   * sheet was closed - button, backdrop, or Android back.
+   *
+   * Done during render for the same reason as the notes field in
+   * WorkoutSessionScreen: an effect would let one frame paint with the old
+   * search text still in the box on the way out.
+   */
+  const [wasVisible, setWasVisible] = useState(visible);
+  if (wasVisible !== visible) {
+    setWasVisible(visible);
     if (!visible) {
       setQuery('');
       setPicked([]);
     }
-  }, [visible]);
+  }
 
   const sections = useMemo(() => groupItems(items, query), [items, query]);
   const flat = useMemo(() => isFlat(items), [items]);

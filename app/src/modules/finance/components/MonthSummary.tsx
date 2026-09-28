@@ -9,7 +9,13 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Animated,
+  Pressable,
+  Text,
+  useAnimatedValue,
+  View,
+} from 'react-native';
 
 import { GlassCard } from '../../../core/components';
 import { formatMoney } from '../../../core/money';
@@ -145,7 +151,7 @@ function CategoryBar({ category }: { category: CategoryTotal }) {
    * driver can't handle - unlike opacity and transform. It's a short, small
    * animation on a handful of rows, so the cost is fine.
    */
-  const width = React.useRef(new Animated.Value(0)).current;
+  const width = useAnimatedValue(0);
 
   React.useEffect(() => {
     Animated.timing(width, {

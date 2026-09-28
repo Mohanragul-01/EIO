@@ -5,7 +5,9 @@
  * record count, nothing more. Field definitions are only loaded once you open
  * a module.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+
+import { useLatestRun } from '../../core/useLatestRun';
 
 import * as api from './api';
 import { summarise, type Summary } from './summary';
@@ -18,16 +20,12 @@ export function useCustomModules() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+  const { begin } = useLatestRun();
 
   const load = useCallback(async () => {
+    const isCurrent = begin();
     setError(null);
+    setLoading(true);
     try {
       // Both requests are independent, so Promise.all runs them concurrently
       // rather than paying two round trips back to back.
@@ -37,7 +35,7 @@ export function useCustomModules() {
         api.allFields(),
       ]);
 
-      if (!mounted.current) return;
+      if (!isCurrent()) return;
 
       setModules(rows);
       // Summarised here rather than in the screen: it is derived data, and the
@@ -58,14 +56,16 @@ export function useCustomModules() {
         ),
       );
     } catch (e) {
-      if (mounted.current) setError(e instanceof Error ? e.message : 'Could not load your modules');
+      if (isCurrent()) setError(e instanceof Error ? e.message : 'Could not load your modules');
     } finally {
-      if (mounted.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, []);
+  }, [begin]);
 
   useEffect(() => {
-    load();
+    // Starts a fetch rather than computing derived state - see useTodos.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   return { modules, summaries, loading, error, reload: load };

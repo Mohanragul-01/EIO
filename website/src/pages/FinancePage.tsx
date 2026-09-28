@@ -90,8 +90,12 @@ export function FinancePage() {
   // refetches and nothing else does.
   const { data, loading, error, reload } = useAsync(load, `finance-${year}-${month}`);
 
-  const rows = data?.rows ?? [];
-  const ledger = data?.ledger ?? [];
+  // Memoised, not `data?.rows ?? []` inline: the fallback builds a NEW empty
+  // array every render, so every memo below it saw a changed dependency and
+  // recomputed the month's totals, the trend and the category split on each
+  // keystroke in the filter box.
+  const rows = useMemo(() => data?.rows ?? [], [data]);
+  const ledger = useMemo(() => data?.ledger ?? [], [data]);
 
   const balance = useMemo(() => runningBalance(ledger), [ledger]);
   const trend = useMemo(() => monthlyTotals(ledger, 6), [ledger]);

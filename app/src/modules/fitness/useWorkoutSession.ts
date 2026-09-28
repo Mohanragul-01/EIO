@@ -9,7 +9,9 @@
  * badge rather than decide one. The comparison itself is a pure function in
  * types.ts, so the rule is testable without a session, a network or a clock.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
+import { useLatestRun } from '../../core/useLatestRun';
 
 import * as api from './api';
 import {
@@ -36,15 +38,10 @@ export function useWorkoutSession(sessionId: string) {
   /** Set ids that beat a previous best, so the badge survives a re-render. */
   const [prs, setPrs] = useState<Record<string, PrFlag>>({});
 
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+  const { begin, isMounted } = useLatestRun();
 
   const load = useCallback(async () => {
+    const isCurrent = begin();
     setError(null);
     try {
       const [setRows, exerciseRows, sessionRows] = await Promise.all([
@@ -53,7 +50,7 @@ export function useWorkoutSession(sessionId: string) {
         api.listSessions(),
       ]);
 
-      if (!mounted.current) return;
+      if (!isCurrent()) return;
 
       setSets(setRows);
       setExercises(exerciseRows);
@@ -71,14 +68,16 @@ export function useWorkoutSession(sessionId: string) {
         return seen;
       });
     } catch (e) {
-      if (mounted.current) setError(e instanceof Error ? e.message : 'Something went wrong');
+      if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
-      if (mounted.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, begin]);
 
   useEffect(() => {
-    load();
+    // Starts a fetch rather than computing derived state - see useTodos.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   /** Pre-fill the block list from a routine, without logging anything yet. */
@@ -118,7 +117,7 @@ export function useWorkoutSession(sessionId: string) {
         });
 
         const saved = await api.addSet(sessionId, { ...input, set_number: setNumber });
-        if (!mounted.current) return null;
+        if (!isMounted()) return null;
 
         setSets((current) => [...current, saved]);
         addExerciseToSession(input.exercise_id);
@@ -140,13 +139,13 @@ export function useWorkoutSession(sessionId: string) {
         setPrs((current) => ({ ...current, [saved.id]: flag }));
         return flag;
       } catch (e) {
-        if (mounted.current) {
+        if (isMounted()) {
           setError(e instanceof Error ? e.message : 'Could not save that set');
         }
         return null;
       }
     },
-    [sets, sessionId, addExerciseToSession],
+    [sets, sessionId, addExerciseToSession, isMounted],
   );
 
   const removeSet = useCallback(async (id: string) => {

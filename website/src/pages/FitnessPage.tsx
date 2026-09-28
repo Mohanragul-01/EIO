@@ -21,7 +21,7 @@ import {
   YAxis,
 } from 'recharts';
 
-import { formatEventDate, todayISO } from '@app/core/date';
+import { addDaysISO, formatEventDate, todayISO } from '@app/core/date';
 import * as api from '@app/modules/fitness/api';
 import { groupItems } from '@app/modules/fitness/pickerItems';
 import {
@@ -141,10 +141,19 @@ function LogView() {
   // dialog is reflected the moment the list reloads.
   const openSession = sessions.find((s) => s.id === openId) ?? null;
 
-  const weekCount = sessions.filter((s) => {
-    const diff = (Date.now() - new Date(`${s.date}T00:00:00`).getTime()) / 86400000;
-    return diff >= 0 && diff < 7;
-  }).length;
+  /**
+   * The clock is read once per mount, not on every render.
+   *
+   * Reading Date.now() while rendering makes the same data produce a different
+   * answer each time, which is the thing React is entitled to assume cannot
+   * happen. Comparing the stored 'YYYY-MM-DD' strings also avoids parsing a
+   * date into local midnight just to subtract it again.
+   */
+  const [weekWindow] = useState(() => ({ from: addDaysISO(-6), to: todayISO() }));
+
+  const weekCount = sessions.filter(
+    (s) => s.date >= weekWindow.from && s.date <= weekWindow.to,
+  ).length;
 
   return (
     <>
@@ -736,12 +745,19 @@ function RestTimer() {
     return () => window.clearInterval(id);
   }, [deadline]);
 
-  const start = (seconds: number) => {
-    // Tapping a running timer ADDS time rather than restarting: mid-rest you
-    // want thirty more seconds, not to start again from the top.
-    const base = deadline !== null && deadline > Date.now() ? deadline : Date.now();
-    setDeadline(base + seconds * 1000);
-  };
+  // useCallback so this reads as what it is: an event handler. Declared bare in
+  // the body, the compiler cannot prove it is not called during render, and
+  // reading the clock during render is exactly what it should object to.
+  const start = useCallback(
+    (seconds: number) => {
+      const now = Date.now();
+      // Tapping a running timer ADDS time rather than restarting: mid-rest you
+      // want thirty more seconds, not to start again from the top.
+      const base = deadline !== null && deadline > now ? deadline : now;
+      setDeadline(base + seconds * 1000);
+    },
+    [deadline],
+  );
 
   if (deadline === null) {
     return (
@@ -1162,7 +1178,9 @@ function ProgressDialog({ exercise, onClose }: { exercise: Exercise; onClose: ()
   const load = useCallback(() => api.listExerciseProgress(exercise.id), [exercise.id]);
   const { data, loading, error } = useAsync(load, `progress-${exercise.id}`);
 
-  const points = data ?? [];
+  // Memoised: the inline fallback is a new array each render, which would make
+  // the chart's best-set memo below recompute on every parent render.
+  const points = useMemo(() => data ?? [], [data]);
 
   /**
    * Best set per day, ranked by estimated one-rep max rather than raw weight.
@@ -1524,7 +1542,7 @@ function BodyView() {
 
   const { data, loading, reload } = useAsync(load, 'fitness-body');
 
-  const metrics = data?.metrics ?? [];
+  const metrics = useMemo(() => data?.metrics ?? [], [data]);
   const latest = metrics[0];
   // Never stored: BMI is fully determined by weight and height, and a stored
   // copy goes stale while looking just as authoritative.

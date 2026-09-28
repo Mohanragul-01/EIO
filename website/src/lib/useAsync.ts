@@ -53,8 +53,14 @@ export function useAsync<T>(loader: () => Promise<T>, key: string = ''): Async<T
   // The loader identity changes on every render at most call sites, so it is
   // held in a ref and the effect keys off `key` instead. Depending on the
   // function itself would re-fetch on every render, forever.
+  //
+  // Written in an effect rather than during render. Declared BEFORE the effect
+  // that calls run(), so within one commit React fires it first and run()
+  // always reaches the current loader.
   const loaderRef = useRef(loader);
-  loaderRef.current = loader;
+  useEffect(() => {
+    loaderRef.current = loader;
+  });
 
   const run = useCallback(async () => {
     const ticket = ++latest.current;
@@ -76,6 +82,9 @@ export function useAsync<T>(loader: () => Promise<T>, key: string = ''): Async<T
   }, []);
 
   useEffect(() => {
+    // set-state-in-effect is aimed at effects that compute derived state. This
+    // one starts a fetch, and a fetch has to be able to say it has started.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void run();
   }, [key, run]);
 

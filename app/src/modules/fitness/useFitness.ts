@@ -6,9 +6,10 @@
  * and error blocks in four places. The other modules have one hook each, which
  * is why theirs sit alone.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { addDaysISO, todayISO } from '../../core/date';
+import { useLatestRun } from '../../core/useLatestRun';
 import { useStableCallback } from '../../core/useStableCallback';
 import * as api from './api';
 import {
@@ -32,17 +33,10 @@ export type DayCell = {
   isToday: boolean;
 };
 
-/** Shared guard against setting state after unmount. */
-function useMounted() {
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  return mounted;
-}
+// The local useMounted this file used to carry is now core/useLatestRun, which
+// answers the harder question too: not just "is the screen still here" but "is
+// this still the newest request". All three hooks below can have two loads in
+// flight at once, and without a ticket the slower one wins.
 
 // HOME -------------------------------------------------------------------------
 
@@ -55,10 +49,12 @@ export function useFitnessHome() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const mounted = useMounted();
+  const { begin } = useLatestRun();
 
   const load = useCallback(async (showSpinner = false) => {
+    const isCurrent = begin();
     if (showSpinner) setRefreshing(true);
+    else setLoading(true);
     setError(null);
 
     try {
@@ -78,24 +74,26 @@ export function useFitnessHome() {
         .map((session) => session.id);
       const setRows = await api.listRecentSets(recentIds);
 
-      if (mounted.current) {
+      if (isCurrent()) {
         setSessions(sessionRows);
         setSets(setRows);
         setProfile(profileRow);
         setMetrics(metricRows);
       }
     } catch (e) {
-      if (mounted.current) setError(e instanceof Error ? e.message : 'Something went wrong');
+      if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
-      if (mounted.current) {
+      if (isCurrent()) {
         setLoading(false);
         setRefreshing(false);
       }
     }
-  }, [mounted]);
+  }, [begin]);
 
   useEffect(() => {
-    load();
+    // Starts a fetch rather than computing derived state - see useTodos.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   const summary = useMemo(() => {
@@ -169,10 +167,12 @@ export function usePlan() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const mounted = useMounted();
+  const { begin } = useLatestRun();
 
   const load = useCallback(async (showSpinner = false) => {
+    const isCurrent = begin();
     if (showSpinner) setRefreshing(true);
+    else setLoading(true);
     setError(null);
 
     try {
@@ -182,22 +182,24 @@ export function usePlan() {
         api.seedDefaultExercisesIfEmpty(),
         api.listRoutines(),
       ]);
-      if (mounted.current) {
+      if (isCurrent()) {
         setExercises(exerciseRows);
         setRoutines(routineRows);
       }
     } catch (e) {
-      if (mounted.current) setError(e instanceof Error ? e.message : 'Something went wrong');
+      if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
-      if (mounted.current) {
+      if (isCurrent()) {
         setLoading(false);
         setRefreshing(false);
       }
     }
-  }, [mounted]);
+  }, [begin]);
 
   useEffect(() => {
-    load();
+    // Starts a fetch rather than computing derived state - see useTodos.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   const refresh = useStableCallback(() => load(true));
@@ -279,28 +281,31 @@ export function useBody() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const mounted = useMounted();
+  const { begin, isMounted } = useLatestRun();
 
   const load = useCallback(async () => {
+    const isCurrent = begin();
     setError(null);
     try {
       const [profileRow, metricRows] = await Promise.all([
         api.getProfile(),
         api.listBodyMetrics(),
       ]);
-      if (mounted.current) {
+      if (isCurrent()) {
         setProfile(profileRow);
         setMetrics(metricRows);
       }
     } catch (e) {
-      if (mounted.current) setError(e instanceof Error ? e.message : 'Something went wrong');
+      if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
-      if (mounted.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [mounted]);
+  }, [begin]);
 
   useEffect(() => {
-    load();
+    // Starts a fetch rather than computing derived state - see useTodos.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   const saveHeight = useCallback(
@@ -329,19 +334,30 @@ export function useBody() {
     [load],
   );
 
-  const removeWeight = useCallback(
-    async (id: string) => {
-      const snapshot = metrics;
-      setMetrics((current) => current.filter((m) => m.id !== id));
-      try {
-        await api.deleteBodyMetric(id);
-      } catch (e) {
-        setMetrics(snapshot);
-        setError(e instanceof Error ? e.message : 'Could not delete that entry');
-      }
-    },
-    [metrics],
-  );
+  const removeWeight = useCallback(async (id: string) => {
+    let index = -1;
+    let removed: BodyMetric | undefined;
+    setMetrics((current) => {
+      index = current.findIndex((m) => m.id === id);
+      removed = current[index];
+      return current.filter((m) => m.id !== id);
+    });
+
+    try {
+      await api.deleteBodyMetric(id);
+    } catch (e) {
+      if (!isMounted()) return;
+      // Only this row comes back. Restoring a whole-list snapshot would also
+      // resurrect anything else deleted while this delete was in flight.
+      setMetrics((current) => {
+        if (!removed || current.some((m) => m.id === id)) return current;
+        const next = [...current];
+        next.splice(index < 0 ? next.length : index, 0, removed);
+        return next;
+      });
+      setError(e instanceof Error ? e.message : 'Could not delete that entry');
+    }
+  }, [isMounted]);
 
   /** BMI from the latest weight, computed rather than stored. See types.ts. */
   const currentBmi = useMemo(

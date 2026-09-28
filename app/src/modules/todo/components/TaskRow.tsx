@@ -7,8 +7,14 @@
  * it stays here.
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useRef } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import {
+  Animated,
+  Pressable,
+  Text,
+  useAnimatedValue,
+  View,
+} from 'react-native';
 
 import { GlassCard } from '../../../core/components';
 import { formatDueDate, isOverdue } from '../../../core/date';
@@ -32,7 +38,7 @@ export function TaskRow({ todo, onToggle, onPress }: TaskRowProps) {
    * springs back. Completing something should feel momentarily satisfying;
    * this is the cheapest possible version of that.
    */
-  const checkScale = useRef(new Animated.Value(1)).current;
+  const checkScale = useAnimatedValue(1);
 
   const handleToggle = () => {
     Animated.sequence([

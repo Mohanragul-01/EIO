@@ -15,13 +15,14 @@
  * actually glass.
  */
 import { BlurView } from 'expo-blur';
-import React, { useRef } from 'react';
+import React from 'react';
 import {
   Animated,
   Pressable,
-  StyleSheet,
-  View,
   type StyleProp,
+  StyleSheet,
+  useAnimatedValue,
+  View,
   type ViewStyle,
 } from 'react-native';
 
@@ -58,7 +59,7 @@ export function GlassCard({
    *
    * useRef, not useState, so the same Animated.Value survives every render.
    */
-  const scale = useRef(new Animated.Value(1)).current;
+  const scale = useAnimatedValue(1);
 
   const animateTo = (toValue: number) => {
     Animated.spring(scale, { toValue, useNativeDriver: true, ...motion.press }).start();

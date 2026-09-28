@@ -11,8 +11,14 @@
  * properties the native driver can handle off the JS thread. Animating
  * width/height/margin would force a layout pass every frame and drop frames.
  */
-import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, type StyleProp, type ViewStyle } from 'react-native';
+import React, { useEffect } from 'react';
+import {
+  Animated,
+  Easing,
+  type StyleProp,
+  useAnimatedValue,
+  type ViewStyle,
+} from 'react-native';
 
 import { motion } from '../theme';
 
@@ -28,7 +34,7 @@ type FadeInViewProps = {
 export function FadeInView({ children, delay = 0, offsetY = 14, style }: FadeInViewProps) {
   // One driver value from 0 -> 1; opacity and transform are derived from it via
   // interpolate(). Cheaper than running three separate animations in sync.
-  const progress = useRef(new Animated.Value(0)).current;
+  const progress = useAnimatedValue(0);
 
   useEffect(() => {
     const animation = Animated.timing(progress, {

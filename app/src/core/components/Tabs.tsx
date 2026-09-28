@@ -14,7 +14,14 @@
  * doing two unrelated jobs.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, Text, View, type LayoutChangeEvent } from 'react-native';
+import {
+  Animated,
+  type LayoutChangeEvent,
+  Pressable,
+  Text,
+  useAnimatedValue,
+  View,
+} from 'react-native';
 
 import { makeStyles, useTheme } from '../ThemeContext';
 import { motion, radius, spacing } from '../theme';
@@ -41,29 +48,46 @@ export function Tabs<T extends string>({
 
   const selectedIndex = Math.max(0, options.indexOf(value));
 
-  // Measured at runtime: tab width depends on screen width, which is not known
-  // until layout has happened.
-  const trackWidth = useRef(0);
-  const translateX = useRef(new Animated.Value(0)).current;
-  const [ready, setReady] = useState(false);
+  /**
+   * Measured at runtime: tab width depends on screen width, which is not known
+   * until layout has happened.
+   *
+   * STATE, NOT A REF. It was a ref read during render, which meant a second
+   * layout - rotating the device, or a split-screen resize - updated the width
+   * without re-rendering, because the setReady(true) beside it was a no-op by
+   * then. The underline corrected itself on that layout and then jumped to the
+   * OLD width the next time you changed tab.
+   */
+  const [trackWidth, setTrackWidth] = useState(0);
+  const translateX = useAnimatedValue(0);
+  /** Whether the underline has been placed once, so first paint does not slide. */
+  const placed = useRef(false);
 
-  const tabWidth = trackWidth.current / options.length;
+  const tabWidth = options.length > 0 ? trackWidth / options.length : 0;
 
   useEffect(() => {
-    if (!ready) return;
+    if (trackWidth === 0) return;
+
+    // Jump rather than animate the first time, so the underline does not
+    // visibly slide in from the left every time the screen mounts.
+    if (!placed.current) {
+      placed.current = true;
+      translateX.setValue(selectedIndex * tabWidth);
+      return;
+    }
+
     Animated.spring(translateX, {
       toValue: selectedIndex * tabWidth,
       useNativeDriver: true,
       ...motion.press,
     }).start();
-  }, [selectedIndex, tabWidth, ready, translateX]);
+  }, [selectedIndex, tabWidth, trackWidth, translateX]);
 
   const onLayout = (e: LayoutChangeEvent) => {
-    trackWidth.current = e.nativeEvent.layout.width;
-    // Jump rather than animate on first layout, so the underline does not
-    // visibly slide in from the left every time the screen mounts.
-    translateX.setValue(selectedIndex * (trackWidth.current / options.length));
-    setReady(true);
+    const width = e.nativeEvent.layout.width;
+    // Same width means nothing moved; setting it anyway would re-render on
+    // every layout pass.
+    setTrackWidth((current) => (current === width ? current : width));
   };
 
   return (
@@ -100,7 +124,7 @@ export function Tabs<T extends string>({
         );
       })}
 
-      {ready ? (
+      {trackWidth > 0 ? (
         <Animated.View
           style={[styles.underline, { width: tabWidth, transform: [{ translateX }] }]}
           pointerEvents="none"

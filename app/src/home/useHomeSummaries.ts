@@ -12,7 +12,9 @@
  * Everything runs through Promise.allSettled, so one failing module leaves a
  * blank line on its own tile rather than emptying the whole dashboard.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+
+import { useLatestRun } from '../core/useLatestRun';
 
 import { formatMoney } from '../core/money';
 import { daysUntil } from '../core/date';
@@ -143,20 +145,18 @@ export function useHomeSummaries() {
   const [summaries, setSummaries] = useState<SummaryMap>({});
   const [loading, setLoading] = useState(true);
 
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+  const { begin } = useLatestRun();
 
   const load = useCallback(async () => {
+    const isCurrent = begin();
     const keys = Object.keys(LOADERS);
     // allSettled, not all: one module erroring must not blank the others.
     const results = await Promise.allSettled(keys.map((key) => LOADERS[key]()));
 
-    if (!mounted.current) return;
+    // The home screen reloads on every focus, so returning to it twice in quick
+    // succession leaves two of these running. Without the ticket the first one
+    // back could repaint the tiles with figures the second has already replaced.
+    if (!isCurrent()) return;
 
     const next: SummaryMap = {};
     results.forEach((result, index) => {
@@ -165,10 +165,12 @@ export function useHomeSummaries() {
 
     setSummaries(next);
     setLoading(false);
-  }, []);
+  }, [begin]);
 
   useEffect(() => {
-    load();
+    // Starts a fetch rather than computing derived state - see useTodos.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   return { summaries, loading, reload: load };

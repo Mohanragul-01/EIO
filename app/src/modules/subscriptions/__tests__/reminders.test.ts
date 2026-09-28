@@ -16,6 +16,8 @@
  */
 // Default: NOT Expo Go, so the loader takes the real path. Individual tests
 // override this to exercise the bail-out.
+import { REMINDER_LEAD_DAYS, reminderDateFor, reminderId } from '../notifications';
+
 jest.mock('expo', () => ({ isRunningInExpoGo: () => false }));
 
 jest.mock('expo-notifications', () => ({
@@ -28,8 +30,6 @@ jest.mock('expo-notifications', () => ({
   AndroidImportance: { DEFAULT: 3 },
   SchedulableTriggerInputTypes: { DATE: 'date' },
 }));
-
-import { REMINDER_LEAD_DAYS, reminderDateFor, reminderId } from '../notifications';
 
 describe('reminderDateFor', () => {
   it('fires three days before the due date, in the morning', () => {

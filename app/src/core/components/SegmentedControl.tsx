@@ -14,11 +14,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Pressable,
-  Text,
-  View,
   type LayoutChangeEvent,
+  Pressable,
   type StyleProp,
+  Text,
+  useAnimatedValue,
+  View,
   type ViewStyle,
 } from 'react-native';
 
@@ -50,29 +51,42 @@ export function SegmentedControl<T extends string>({
   const { colors } = useTheme();
   const selectedIndex = Math.max(0, options.indexOf(value));
 
-  // Measured at runtime: the pill width is not knowable until layout, and it
-  // changes with screen width and option count.
-  const trackWidth = useRef(0);
-  const translateX = useRef(new Animated.Value(0)).current;
-  const [ready, setReady] = useState(false);
+  /**
+   * Measured at runtime: the pill width is not knowable until layout, and it
+   * changes with screen width and option count.
+   *
+   * State rather than a ref, for the reason spelled out in Tabs: a ref read
+   * during render does not re-render when a second layout changes it, so after
+   * a rotation the pill animated to the width it had before.
+   */
+  const [trackWidth, setTrackWidth] = useState(0);
+  const translateX = useAnimatedValue(0);
+  /** Whether the pill has been placed once, so first paint does not slide. */
+  const placed = useRef(false);
 
-  const segmentWidth = trackWidth.current / options.length;
+  const segmentWidth = options.length > 0 ? trackWidth / options.length : 0;
 
   useEffect(() => {
-    if (!ready) return;
+    if (trackWidth === 0) return;
+
+    // Jump rather than animate the first time, so an already-selected value
+    // does not visibly slide in from the left on mount.
+    if (!placed.current) {
+      placed.current = true;
+      translateX.setValue(selectedIndex * segmentWidth);
+      return;
+    }
+
     Animated.spring(translateX, {
       toValue: selectedIndex * segmentWidth,
       useNativeDriver: true,
       ...motion.press,
     }).start();
-  }, [selectedIndex, segmentWidth, ready, translateX]);
+  }, [selectedIndex, segmentWidth, trackWidth, translateX]);
 
   const onLayout = (e: LayoutChangeEvent) => {
-    trackWidth.current = e.nativeEvent.layout.width - PADDING * 2;
-    // Jump rather than animate on first layout, so an already-selected value
-    // does not visibly slide in from the left on mount.
-    translateX.setValue(selectedIndex * (trackWidth.current / options.length));
-    setReady(true);
+    const width = e.nativeEvent.layout.width - PADDING * 2;
+    setTrackWidth((current) => (current === width ? current : width));
   };
 
   const accent = accentFor ? accentFor(value) : colors.primary;
@@ -82,7 +96,7 @@ export function SegmentedControl<T extends string>({
       {label ? <Text style={styles.label}>{label}</Text> : null}
 
       <View style={styles.track} onLayout={onLayout}>
-        {ready ? (
+        {trackWidth > 0 ? (
           <Animated.View
             style={[
               styles.pill,

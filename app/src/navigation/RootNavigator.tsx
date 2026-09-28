@@ -14,7 +14,7 @@
 import { NavigationContainer, type Theme as NavTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 
 import { useAuth } from '../core/auth';
 import { SignInScreen } from '../core/screens/SignInScreen';

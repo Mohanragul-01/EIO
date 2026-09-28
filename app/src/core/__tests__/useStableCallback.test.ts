@@ -13,6 +13,12 @@
  */
 
 /** Minimal stand-in for React's hook machinery, so this needs no renderer. */
+/**
+ * The month arithmetic the Finance loader depends on. If stepping months is
+ * wrong, the fix above would faithfully fetch the wrong month.
+ */
+import { monthBounds } from '../date';
+
 function simulate() {
   let stored: ((...args: unknown[]) => unknown) | null = null;
   const ref = { current: null as ((...args: unknown[]) => unknown) | null };
@@ -70,12 +76,6 @@ describe('stable callback behaviour', () => {
     expect(calls[calls.length - 1]).toEqual([true]);
   });
 });
-
-/**
- * The month arithmetic the Finance loader depends on. If stepping months is
- * wrong, the fix above would faithfully fetch the wrong month.
- */
-import { monthBounds } from '../date';
 
 describe('monthBounds', () => {
   it('covers the whole month', () => {

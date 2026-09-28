@@ -13,9 +13,8 @@
  * generated form looks and behaves identically to a built-in one rather than
  * like a second-class citizen.
  */
-import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { DateField, TextField } from '../../../core/components';
 import { minorToAmountString, parseAmountToMinor } from '../../../core/money';

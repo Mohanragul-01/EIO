@@ -6,8 +6,9 @@
  * fields are what tell it how to read the jsonb - so they're fetched as one
  * unit rather than as three separate loading states.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
+import { useLatestRun } from '../../core/useLatestRun';
 import { useStableCallback } from '../../core/useStableCallback';
 
 import * as api from './api';
@@ -23,17 +24,13 @@ export function useCustomRecords(moduleId: string) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+  const { begin } = useLatestRun();
 
   const load = useCallback(
     async (showSpinner = false) => {
+      const isCurrent = begin();
       if (showSpinner) setRefreshing(true);
+      else setLoading(true);
       setError(null);
 
       try {
@@ -43,7 +40,7 @@ export function useCustomRecords(moduleId: string) {
           api.listRecords(moduleId),
         ]);
 
-        if (mounted.current) {
+        if (isCurrent()) {
           setModule(moduleRow);
           setFields(fieldRows);
           // Sorted here rather than in SQL. Ordering by a jsonb value in
@@ -59,34 +56,46 @@ export function useCustomRecords(moduleId: string) {
           );
         }
       } catch (e) {
-        if (mounted.current) setError(e instanceof Error ? e.message : 'Something went wrong');
+        if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
       } finally {
-        if (mounted.current) {
+        if (isCurrent()) {
           setLoading(false);
           setRefreshing(false);
         }
       }
     },
-    [moduleId],
+    [moduleId, begin],
   );
 
   useEffect(() => {
-    load();
+    // Starts a fetch rather than computing derived state - see useTodos.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   const remove = useCallback(
     async (record: CustomRecord) => {
-      const snapshot = records;
-      setRecords((current) => current.filter((r) => r.id !== record.id));
+      let index = -1;
+      setRecords((current) => {
+        index = current.findIndex((r) => r.id === record.id);
+        return current.filter((r) => r.id !== record.id);
+      });
 
       try {
         await api.deleteRecord(record.id);
       } catch (e) {
-        setRecords(snapshot);
+        // Only this row comes back. Restoring a whole-list snapshot would also
+        // resurrect anything else deleted while this delete was in flight.
+        setRecords((current) => {
+          if (current.some((r) => r.id === record.id)) return current;
+          const next = [...current];
+          next.splice(index < 0 ? next.length : index, 0, record);
+          return next;
+        });
         setError(e instanceof Error ? e.message : 'Could not delete');
       }
     },
-    [records],
+    [],
   );
 
 

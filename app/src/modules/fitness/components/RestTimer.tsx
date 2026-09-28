@@ -10,7 +10,7 @@
  * rest is "how much longer", not "how long has it been".
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
@@ -55,20 +55,26 @@ export function RestTimer() {
     return () => clearInterval(id);
   }, [target]);
 
-  const start = (seconds: number) => {
+  // useCallback so these read as what they are: event handlers. Declared bare
+  // in the body, the compiler cannot prove they are not called during render,
+  // and reading the clock or a ref during render is exactly what it should
+  // object to.
+  const start = useCallback((seconds: number) => {
+    const now = Date.now();
     // Tapping a running timer adds time rather than restarting: mid-rest you
     // want thirty more seconds, not to start again from the top.
-    const base = deadline.current && deadline.current > Date.now() ? deadline.current : Date.now();
-    deadline.current = base + seconds * 1000;
+    const base = deadline.current && deadline.current > now ? deadline.current : now;
+    const next = base + seconds * 1000;
+    deadline.current = next;
     setTarget(seconds);
-    setRemaining(Math.ceil((deadline.current - Date.now()) / 1000));
-  };
+    setRemaining(Math.ceil((next - now) / 1000));
+  }, []);
 
-  const stop = () => {
+  const stop = useCallback(() => {
     deadline.current = null;
     setTarget(null);
     setRemaining(0);
-  };
+  }, []);
 
   if (target === null) {
     return (

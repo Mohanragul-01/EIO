@@ -9,8 +9,9 @@
  * filter lived in useNotes: it's derived data. The screen's job is to render
  * what it's handed, not to compute it.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { useLatestRun } from '../../core/useLatestRun';
 import { useStableCallback } from '../../core/useStableCallback';
 
 import { categoryDef } from '../../core/categories';
@@ -46,17 +47,17 @@ export function useTransactions() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+  const { begin, isMounted } = useLatestRun();
 
   const load = useCallback(
     async (showSpinner = false) => {
+      // Stepping the month twice quickly leaves two of these in flight. Whoever
+      // answers LAST used to win, so a slow January could land after March and
+      // sit under a header saying March. The ticket makes the newest request
+      // the only one allowed to write.
+      const isCurrent = begin();
       if (showSpinner) setRefreshing(true);
+      else setLoading(true);
       setError(null);
 
       try {
@@ -66,14 +67,14 @@ export function useTransactions() {
           api.listTransactions(year, month),
           api.listLedgerPoints(),
         ]);
-        if (mounted.current) {
+        if (isCurrent()) {
           setTransactions(rows);
           setLedger(points);
         }
       } catch (e) {
-        if (mounted.current) setError(e instanceof Error ? e.message : 'Something went wrong');
+        if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
       } finally {
-        if (mounted.current) {
+        if (isCurrent()) {
           setLoading(false);
           setRefreshing(false);
         }
@@ -81,12 +82,13 @@ export function useTransactions() {
     },
     // Depends on year/month, so changing the month produces a new `load` and
     // the effect below refetches automatically.
-    [year, month],
+    [year, month, begin],
   );
 
   useEffect(() => {
-    setLoading(true);
-    load();
+    // Starts a fetch rather than computing derived state - see useTodos.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   /** Move one month back or forward, rolling the year over at the boundary. */
@@ -154,17 +156,28 @@ export function useTransactions() {
 
   const remove = useCallback(
     async (transaction: Transaction) => {
-      const snapshot = transactions;
-      setTransactions((current) => current.filter((t) => t.id !== transaction.id));
+      let index = -1;
+      setTransactions((current) => {
+        index = current.findIndex((t) => t.id === transaction.id);
+        return current.filter((t) => t.id !== transaction.id);
+      });
 
       try {
         await api.deleteTransaction(transaction.id);
       } catch (e) {
-        setTransactions(snapshot);
+        if (!isMounted()) return;
+        // Only this row comes back. Restoring a whole-list snapshot would also
+        // resurrect anything else deleted while this delete was in flight.
+        setTransactions((current) => {
+          if (current.some((t) => t.id === transaction.id)) return current;
+          const next = [...current];
+          next.splice(index < 0 ? next.length : index, 0, transaction);
+          return next;
+        });
         setError(e instanceof Error ? e.message : 'Could not delete');
       }
     },
-    [transactions],
+    [isMounted],
   );
 
 

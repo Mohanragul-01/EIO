@@ -70,7 +70,6 @@ const VIEW_LABEL: Record<FitnessView, string> = {
 
 export function FitnessListScreen() {
   const styles = useStyles();
-  const { colors } = useTheme();
   const [view, setView] = useState<FitnessView>('log');
 
   return (

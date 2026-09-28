@@ -34,5 +34,5 @@ export function downloadCsv(filename: string, csv: string): void {
   // The BOM is what makes Excel read the file as UTF-8. Without it, any
   // non-ASCII character in a note - including the rupee sign - is mangled on
   // open, and the file looks corrupt even though it is correct.
-  downloadText(filename, `﻿${csv}`, 'text/csv;charset=utf-8');
+  downloadText(filename, `\uFEFF${csv}`, 'text/csv;charset=utf-8');
 }

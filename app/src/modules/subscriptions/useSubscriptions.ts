@@ -1,8 +1,9 @@
 /**
  * useSubscriptions - data, the monthly-cost roll-up, and the renew action.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { useLatestRun } from '../../core/useLatestRun';
 import { useStableCallback } from '../../core/useStableCallback';
 
 import { daysUntil } from '../../core/date';
@@ -22,33 +23,34 @@ export function useSubscriptions() {
    */
   const [permission, setPermission] = useState<PermissionState | null>(null);
 
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+  const { begin, isMounted } = useLatestRun();
 
-  const load = useCallback(async (showSpinner = false) => {
-    if (showSpinner) setRefreshing(true);
-    setError(null);
+  const load = useCallback(
+    async (showSpinner = false) => {
+      const isCurrent = begin();
+      if (showSpinner) setRefreshing(true);
+      else setLoading(true);
+      setError(null);
 
-    try {
-      const rows = await api.listSubscriptions();
-      if (mounted.current) setSubscriptions(rows);
-    } catch (e) {
-      if (mounted.current) setError(e instanceof Error ? e.message : 'Something went wrong');
-    } finally {
-      if (mounted.current) {
-        setLoading(false);
-        setRefreshing(false);
+      try {
+        const rows = await api.listSubscriptions();
+        if (isCurrent()) setSubscriptions(rows);
+      } catch (e) {
+        if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
+      } finally {
+        if (isCurrent()) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
-    }
-  }, []);
+    },
+    [begin],
+  );
 
   useEffect(() => {
-    load();
+    // Starts a fetch rather than computing derived state - see useTodos.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, [load]);
 
   /**
@@ -58,9 +60,17 @@ export function useSubscriptions() {
    */
   useEffect(() => {
     let active = true;
-    ensurePermission().then((state) => {
-      if (active) setPermission(state);
-    });
+    ensurePermission()
+      .then((state) => {
+        if (active) setPermission(state);
+      })
+      // A rejection here used to be an unhandled promise. It is not worth an
+      // error banner - the banner it feeds is itself only a nudge - but it must
+      // not be silent either, and 'denied' is the safe reading of "we could not
+      // ask", because it shows the prompt to turn reminders on.
+      .catch(() => {
+        if (active) setPermission('denied');
+      });
     return () => {
       active = false;
     };
@@ -103,11 +113,10 @@ export function useSubscriptions() {
    */
   const markPaid = useCallback(
     async (subscription: Subscription): Promise<api.MarkPaidResult | null> => {
-      const snapshot = subscriptions;
       try {
         const result = await api.markPaid(subscription);
 
-        if (mounted.current) {
+        if (isMounted()) {
           setSubscriptions((current) =>
             current
               .map((s) => (s.id === result.subscription.id ? result.subscription : s))
@@ -119,33 +128,42 @@ export function useSubscriptions() {
         }
         return result;
       } catch (e) {
-        // Only reached if the due-date update itself failed, in which case
-        // nothing was written at all and rolling back is correct.
-        if (mounted.current) {
-          setSubscriptions(snapshot);
-          setError(e instanceof Error ? e.message : 'Could not update');
-        }
+        // Nothing to roll back: this one is not optimistic, the list is only
+        // touched on success. The old version restored a whole-list snapshot
+        // here, which could only ever undo somebody ELSE's change made while
+        // this request was in flight.
+        if (isMounted()) setError(e instanceof Error ? e.message : 'Could not update');
         return null;
       }
     },
-    [subscriptions],
+    [isMounted],
   );
 
   const remove = useCallback(
     async (subscription: Subscription) => {
-      const snapshot = subscriptions;
-      setSubscriptions((current) => current.filter((s) => s.id !== subscription.id));
+      let index = -1;
+      setSubscriptions((current) => {
+        index = current.findIndex((s) => s.id === subscription.id);
+        return current.filter((s) => s.id !== subscription.id);
+      });
 
       try {
         await api.deleteSubscription(subscription.id);
       } catch (e) {
-        setSubscriptions(snapshot);
+        if (!isMounted()) return;
+        // This row only. A snapshot would resurrect anything else deleted
+        // while this delete was in flight.
+        setSubscriptions((current) => {
+          if (current.some((s) => s.id === subscription.id)) return current;
+          const restored = [...current];
+          restored.splice(index < 0 ? restored.length : index, 0, subscription);
+          return restored;
+        });
         setError(e instanceof Error ? e.message : 'Could not delete');
       }
     },
-    [subscriptions],
+    [isMounted],
   );
-
 
   /**
    * Stable identities that always reach the CURRENT load closure. The focus

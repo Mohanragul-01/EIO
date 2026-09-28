@@ -7,7 +7,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { GlassCard } from '../../../core/components';
 import { daysUntil, formatDueDate } from '../../../core/date';

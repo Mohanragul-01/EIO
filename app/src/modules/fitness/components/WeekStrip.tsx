@@ -7,8 +7,13 @@
  * keeping a log worth the effort.
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useRef } from 'react';
-import { Animated, Text, View } from 'react-native';
+import React, { useEffect } from 'react';
+import {
+  Animated,
+  Text,
+  useAnimatedValue,
+  View,
+} from 'react-native';
 
 import { GlassCard } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
@@ -71,7 +76,7 @@ export function WeekStrip({
 
 function DayBar({ day, max }: { day: DayCell; max: number }) {
   const styles = useStyles();
-  const height = useRef(new Animated.Value(0)).current;
+  const height = useAnimatedValue(0);
 
   // Scaled to the busiest day, so a single-session day still shows a clear bar
   // rather than a sliver against some arbitrary fixed maximum.

@@ -56,7 +56,6 @@ export function WorkoutSessionScreen() {
     prs,
     loading,
     error,
-    reload,
     setDate,
     setExerciseOrder,
     addExerciseToSession,
@@ -66,7 +65,8 @@ export function WorkoutSessionScreen() {
   } = useWorkoutSession(sessionId);
 
   const [notes, setNotes] = useState('');
-  const [notesLoaded, setNotesLoaded] = useState(false);
+  /** Which session's notes the field below has already been seeded from. */
+  const [notesSeededFor, setNotesSeededFor] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
 
   const confirmDelete = useCallback(() => {
@@ -101,12 +101,20 @@ export function WorkoutSessionScreen() {
     // notes field. Declared rather than suppressed.
   }, [navigation, session, confirmDelete, colors.textMuted]);
 
-  useEffect(() => {
-    if (session && !notesLoaded) {
-      setNotes(session.notes);
-      setNotesLoaded(true);
-    }
-  }, [session, notesLoaded]);
+  /**
+   * Seed the notes field from the loaded session, once per session.
+   *
+   * Done during render rather than in an effect. This is the case React's own
+   * docs call "adjusting state when a prop changes": an effect would paint an
+   * empty field first and then replace it, which is a visible flash of the
+   * wrong content on a field you may already be reading.
+   *
+   * Safe from looping because the very next line makes the condition false.
+   */
+  if (session && notesSeededFor !== session.id) {
+    setNotesSeededFor(session.id);
+    setNotes(session.notes);
+  }
 
   /**
    * Pre-fill the exercise list from the routine, once.

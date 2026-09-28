@@ -96,6 +96,9 @@ export function NotesPage() {
       .map(([name, count]) => ({ name, count }));
   }, [notes]);
 
+  /** The clock, read once per mount, so the filter below stays a pure function. */
+  const [now] = useState(() => Date.now());
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
 
@@ -110,7 +113,11 @@ export function NotesPage() {
         if (age === 'any') return true;
         // Measured against updated_at, not created_at: "touched recently" is
         // what you are looking for when you cannot remember a note's name.
-        const days = (Date.now() - new Date(note.updated_at).getTime()) / 86400000;
+        //
+        // `now` is captured once per mount rather than read here. Reading the
+        // clock while filtering made this memo impure - the same notes and the
+        // same filter could give different answers on two renders.
+        const days = (now - new Date(note.updated_at).getTime()) / 86400000;
         if (age === 'week') return days <= 7;
         if (age === 'month') return days <= 31;
         return days <= 365;
@@ -139,7 +146,7 @@ export function NotesPage() {
         }
         return b.updated_at.localeCompare(a.updated_at);
       });
-  }, [notes, view, query, tag, age]);
+  }, [notes, view, query, tag, age, now]);
 
   const quickCapture = async (event: FormEvent) => {
     event.preventDefault();

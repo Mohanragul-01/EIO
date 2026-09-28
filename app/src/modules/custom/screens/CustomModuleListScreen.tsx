@@ -65,7 +65,10 @@ export function CustomModuleListScreen() {
         </Pressable>
       ),
     });
-  }, [navigation, module?.name, moduleId]);
+    // colors.text belongs here: without it the header icon keeps whichever
+    // theme was active when the screen mounted, so switching to dark mode
+    // leaves a near-black icon on a near-black header.
+  }, [navigation, module?.name, moduleId, colors.text]);
 
   if (loading) {
     return (
