@@ -73,7 +73,13 @@ export function ChecklistEditor({ items, onChange }: ChecklistEditorProps) {
       {items.map((item, index) => (
          
         <View key={index} style={styles.row}>
-          <Pressable onPress={() => toggle(index)} hitSlop={10}>
+          <Pressable
+            onPress={() => toggle(index)}
+            hitSlop={10}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: item.done }}
+            accessibilityLabel={item.text || 'Empty line'}
+          >
             <View style={[styles.box, item.done && styles.boxDone]}>
               {item.done ? (
                 <Ionicons name="checkmark" size={13} color={colors.onPrimary} />
@@ -91,7 +97,12 @@ export function ChecklistEditor({ items, onChange }: ChecklistEditorProps) {
             multiline
           />
 
-          <Pressable onPress={() => removeItem(index)} hitSlop={10}>
+          <Pressable
+            onPress={() => removeItem(index)}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove ${item.text || 'this line'}`}
+          >
             <Ionicons name="close" size={16} color={colors.textMuted} />
           </Pressable>
         </View>

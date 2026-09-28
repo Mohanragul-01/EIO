@@ -104,7 +104,12 @@ export function RestTimer() {
         <Text style={styles.actionText}>+30s</Text>
       </Pressable>
 
-      <Pressable onPress={stop} style={({ pressed }) => [styles.action, pressed && styles.pressed]}>
+      <Pressable
+        onPress={stop}
+        style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+        accessibilityRole="button"
+        accessibilityLabel="Stop the rest timer"
+      >
         <Ionicons name="close" size={15} color={colors.textMuted} />
       </Pressable>
     </View>

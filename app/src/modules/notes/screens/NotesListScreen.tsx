@@ -405,7 +405,12 @@ function SearchBar({ value, onChange }: { value: string; onChange: (v: string) =
         returnKeyType="search"
       />
       {value.length > 0 ? (
-        <Pressable onPress={() => onChange('')} hitSlop={10}>
+        <Pressable
+          onPress={() => onChange('')}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Clear the search"
+        >
           <Ionicons name="close-circle" size={16} color={colors.textMuted} />
         </Pressable>
       ) : null}

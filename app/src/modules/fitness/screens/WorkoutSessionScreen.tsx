@@ -381,7 +381,12 @@ function ExerciseBlock({
               </View>
             ) : null}
 
-            <Pressable onPress={() => onRemoveSet(set.id)} hitSlop={10}>
+            <Pressable
+              onPress={() => onRemoveSet(set.id)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Delete this set"
+            >
               <Ionicons name="close" size={15} color={colors.textMuted} />
             </Pressable>
           </View>

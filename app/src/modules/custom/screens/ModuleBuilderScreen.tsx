@@ -284,6 +284,9 @@ export function ModuleBuilderScreen() {
                     <Pressable
                       key={option}
                       onPress={() => setIcon(option)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: option === icon }}
+                      accessibilityLabel={`${option} icon`}
                       style={({ pressed }) => [
                         styles.iconTile,
                         selected && { backgroundColor: color + '26', borderColor: color + '66' },
@@ -526,7 +529,12 @@ function FieldEditor({
       <View style={styles.fieldHeader}>
         <Text style={styles.fieldIndex}>Field {index + 1}</Text>
         {canRemove ? (
-          <Pressable onPress={onRemove} hitSlop={10}>
+          <Pressable
+            onPress={onRemove}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Remove this field"
+          >
             <Ionicons name="close-circle-outline" size={19} color={colors.textMuted} />
           </Pressable>
         ) : null}
@@ -604,7 +612,13 @@ function FieldEditor({
               maxLength={30}
               style={styles.optionInput}
             />
-            <Pressable onPress={addOption} style={styles.optionAddButton} hitSlop={8}>
+            <Pressable
+              onPress={addOption}
+              style={styles.optionAddButton}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Add an option"
+            >
               <Ionicons name="add" size={20} color={colors.primary} />
             </Pressable>
           </View>

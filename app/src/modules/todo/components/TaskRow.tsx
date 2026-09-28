@@ -56,7 +56,13 @@ export function TaskRow({ todo, onToggle, onPress }: TaskRowProps) {
         {/* The checkbox is its own Pressable INSIDE the card's Pressable, so
             tapping the box toggles while tapping anywhere else opens the
             editor. hitSlop widens the target without enlarging the visual. */}
-        <Pressable onPress={handleToggle} hitSlop={12}>
+        <Pressable
+          onPress={handleToggle}
+          hitSlop={12}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: todo.is_done }}
+          accessibilityLabel={todo.title}
+        >
           <Animated.View
             style={[
               styles.checkbox,

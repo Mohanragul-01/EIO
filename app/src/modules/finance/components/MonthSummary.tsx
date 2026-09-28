@@ -78,7 +78,13 @@ export function MonthSummary({
 
       {/*  Month switcher  */}
       <View style={styles.monthRow}>
-        <Pressable onPress={() => onStepMonth(-1)} hitSlop={12} style={styles.arrow}>
+        <Pressable
+          onPress={() => onStepMonth(-1)}
+          hitSlop={12}
+          style={styles.arrow}
+          accessibilityRole="button"
+          accessibilityLabel="Previous month"
+        >
           <Ionicons name="chevron-back" size={18} color={colors.textSecondary} />
         </Pressable>
 
@@ -95,6 +101,9 @@ export function MonthSummary({
           hitSlop={12}
           disabled={isCurrentMonth}
           style={[styles.arrow, isCurrentMonth && styles.arrowDisabled]}
+          accessibilityRole="button"
+          accessibilityLabel="Next month"
+          accessibilityState={{ disabled: isCurrentMonth }}
         >
           <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
         </Pressable>

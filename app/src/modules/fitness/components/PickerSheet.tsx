@@ -208,7 +208,12 @@ export function PickerSheet({
                   returnKeyType="search"
                 />
                 {query ? (
-                  <Pressable onPress={() => setQuery('')} hitSlop={10}>
+                  <Pressable
+                    onPress={() => setQuery('')}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear the search"
+                  >
                     <Ionicons name="close-circle" size={16} color={colors.textMuted} />
                   </Pressable>
                 ) : null}

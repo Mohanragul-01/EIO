@@ -394,6 +394,8 @@ function RoutinesTab() {
                     ])
                   }
                   hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete the routine ${item.name}`}
                 >
                   <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
                 </Pressable>
@@ -671,6 +673,8 @@ function ExercisesTab() {
                         ])
                       }
                       hitSlop={10}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete the exercise ${exercise.name}`}
                     >
                       <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
                     </Pressable>
@@ -822,7 +826,12 @@ function BodyTab() {
                     <Text style={styles.rowTitle}>{metric.weight_kg} kg</Text>
                     <Text style={styles.rowSub}>{formatEventDate(metric.date)}</Text>
                   </View>
-                  <Pressable onPress={() => void removeWeight(metric.id)} hitSlop={10}>
+                  <Pressable
+                    onPress={() => void removeWeight(metric.id)}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete this weigh-in"
+                  >
                     <Ionicons name="close" size={16} color={colors.textMuted} />
                   </Pressable>
                 </View>

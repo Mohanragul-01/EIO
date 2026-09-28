@@ -219,14 +219,25 @@ export function RoutineEditScreen() {
                   <View style={styles.entryHeader}>
                     <Text style={styles.entryName}>{exercise?.name ?? 'Exercise'}</Text>
                     <View style={styles.entryActions}>
-                      <Pressable onPress={() => move(index, -1)} hitSlop={8}>
+                      <Pressable
+                        onPress={() => move(index, -1)}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Move up"
+                        accessibilityState={{ disabled: index === 0 }}
+                      >
                         <Ionicons
                           name="chevron-up"
                           size={16}
                           color={index === 0 ? colors.textFaint : colors.textSecondary}
                         />
                       </Pressable>
-                      <Pressable onPress={() => move(index, 1)} hitSlop={8}>
+                      <Pressable
+                        onPress={() => move(index, 1)}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Move down"
+                      >
                         <Ionicons
                           name="chevron-down"
                           size={16}
@@ -235,7 +246,12 @@ export function RoutineEditScreen() {
                           }
                         />
                       </Pressable>
-                      <Pressable onPress={() => removeEntry(index)} hitSlop={8}>
+                      <Pressable
+                        onPress={() => removeEntry(index)}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Remove from this routine"
+                      >
                         <Ionicons name="close" size={16} color={colors.textMuted} />
                       </Pressable>
                     </View>
