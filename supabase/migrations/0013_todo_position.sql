@@ -36,7 +36,10 @@ with ordered as (
 update public.todos t
 set position = ordered.rank
 from ordered
-where t.id = ordered.id;
+-- Only rows still sitting on the column default. Without this, running the
+-- migration a second time would recompute every position from due dates and
+-- silently undo every drag you have done since the first time.
+where t.id = ordered.id and t.position = 0;
 
 -- Exactly the board's query: this user, this tab, still open, in order.
 create index if not exists todos_board_idx
