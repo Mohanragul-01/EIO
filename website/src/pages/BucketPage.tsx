@@ -237,7 +237,7 @@ export function BucketPage() {
                 title={items.length === 0 ? 'Nothing on the list yet' : 'Nothing matches'}
                 message={
                   items.length === 0
-                    ? 'Run migration 0015 to import the list, or add something yourself.'
+                    ? 'Run migrations 0015, then 0015a to 0015e, to import the list. Or add something yourself.'
                     : 'Try a different filter, or clear them.'
                 }
               />

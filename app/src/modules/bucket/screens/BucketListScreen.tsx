@@ -253,7 +253,7 @@ export function BucketListScreen() {
             title={items.length === 0 ? 'Nothing on the list' : 'Nothing matches'}
             message={
               items.length === 0
-                ? 'Run migration 0015 to import your list.'
+                ? 'Run migrations 0015, then 0015a to 0015e, to import your list.'
                 : 'Try a different filter, or clear the search.'
             }
           />
