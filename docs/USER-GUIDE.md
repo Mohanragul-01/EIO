@@ -608,7 +608,8 @@ Until then the row reads **Not enough data**.
   on the row rather than something behind a tap into a detail screen.
 - **Long-press Log use** to mark a container finished.
 - A finished product is **kept, not deleted** — it becomes the record of how long
-  that one actually lasted.
+  that one actually lasted. It is hidden by default; the **In use / Finished /
+  All** switch appears once you have finished something.
 - Give it a price and it works out what it costs you **per day**.
 
 Colour is urgency: reorder now (a week or less), running low (three weeks), or
