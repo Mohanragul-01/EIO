@@ -15,7 +15,15 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, RefreshControl, Text, View } from 'react-native';
 
-import { Button, EmptyState, FadeInView, FormScroll, GlassCard, Screen } from '../../../core/components';
+import {
+  Button,
+  EmptyState,
+  FadeInView,
+  FormScroll,
+  GlassCard,
+  Screen,
+  SegmentedControl,
+} from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { formatEventDate, todayISO } from '../../../core/date';
 import { formatMoney } from '../../../core/money';
@@ -35,6 +43,15 @@ import {
 } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'ProductsList'>;
+
+type ProductState = 'open' | 'finished' | 'all';
+
+const STATES: ProductState[] = ['open', 'finished', 'all'];
+const STATE_LABEL: Record<ProductState, string> = {
+  open: 'In use',
+  finished: 'Finished',
+  all: 'All',
+};
 
 /** What needs acting on, first. */
 const RANK: Record<Urgency, number> = {
@@ -56,6 +73,7 @@ export function ProductsListScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [state, setState] = useState<ProductState>('open');
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -104,6 +122,24 @@ export function ProductsListScreen() {
   const needsReorder = rows.filter(
     (r) => !r.product.finished_on && (r.urgency === 'critical' || r.urgency === 'soon'),
   ).length;
+
+  const finishedCount = rows.filter((r) => r.product.finished_on).length;
+
+  /**
+   * Finished containers are kept, not deleted - they are the record of how long
+   * one actually lasted. But they accumulate forever, and a list of things you
+   * have already used up is not what you open this screen to read, so the
+   * default hides them. The website has had this filter since it was built.
+   */
+  const visible = useMemo(
+    () =>
+      rows.filter(({ product }) => {
+        if (state === 'open') return !product.finished_on;
+        if (state === 'finished') return !!product.finished_on;
+        return true;
+      }),
+    [rows, state],
+  );
 
   const colorFor = (urgency: Urgency) =>
     urgency === 'critical'
@@ -215,7 +251,30 @@ export function ProductsListScreen() {
               </GlassCard>
             </FadeInView>
 
-            {rows.map(({ product, projection, urgency }, index) => (
+            {/*
+              Only worth a control once something has actually been finished.
+              Before that every option says the same thing, and a segmented
+              control with one real answer is furniture.
+            */}
+            {finishedCount > 0 ? (
+              <SegmentedControl
+                options={STATES}
+                value={state}
+                onChange={setState}
+                renderLabel={(o) => STATE_LABEL[o]}
+                style={styles.states}
+              />
+            ) : null}
+
+            {visible.length === 0 ? (
+              <Text style={styles.noneHere}>
+                {state === 'finished'
+                  ? 'Nothing finished yet.'
+                  : 'Nothing in use — everything here is finished.'}
+              </Text>
+            ) : null}
+
+            {visible.map(({ product, projection, urgency }, index) => (
               <FadeInView key={product.id} delay={Math.min(index, 6) * 40}>
                 <GlassCard
                   style={styles.card}
@@ -340,6 +399,8 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   },
 
   summary: { marginBottom: spacing.lg, alignItems: 'flex-start' },
+  states: { marginBottom: spacing.lg },
+  noneHere: { ...typography.caption, marginBottom: spacing.lg },
   summaryBig: { ...typography.display, fontSize: 32 },
   summaryLabel: { ...typography.caption },
   summaryHint: {

@@ -191,11 +191,31 @@ export function BucketListScreen() {
 
   const save = useCallback(
     async (input: BucketInput) => {
-      if (editing) await api.updateItem(editing.id, input);
-      else await api.createItem(input);
+      if (editing) {
+        await api.updateItem(editing.id, input);
+        await load();
+        return;
+      }
+
+      const created = await api.createItem(input);
       await load();
+
+      /**
+       * Make sure you can see what you just added.
+       *
+       * Adding something in a category you are not filtered to - or a cost tier
+       * you have filtered out - used to save it and show you nothing, which
+       * reads as the add having failed. Only the filters that would actually
+       * hide it are cleared; a filter that still matches is left alone, because
+       * you set it on purpose.
+       */
+      if (cost !== 'any' && created.cost !== cost) setCost('any');
+      if (category !== 'any' && created.category !== category) setCategory('any');
+      if (query.trim() && !matchesQuery(created, query)) setQuery('');
+      // A new item is never done, so only the 'done' tab could hide it.
+      if (status === 'done') setStatus('todo');
     },
-    [editing, load],
+    [editing, load, cost, category, query, status],
   );
 
   const openAdd = () => {
