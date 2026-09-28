@@ -225,7 +225,12 @@ export function ProductsListScreen() {
                 >
                   <View style={styles.cardHead}>
                     <View style={[styles.dot, { backgroundColor: colorFor(urgency) }]} />
-                    <Text style={styles.name}>{product.name}</Text>
+                    {/* Truncated: the days-left label to its right is the
+                        thing you scan for, and a long product name would push
+                        it out of line. */}
+                    <Text style={styles.name} numberOfLines={1}>
+                      {product.name}
+                    </Text>
                     <Text style={[styles.days, { color: colorFor(urgency) }]}>
                       {product.finished_on
                         ? URGENCY_LABEL.finished

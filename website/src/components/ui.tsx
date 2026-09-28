@@ -357,19 +357,46 @@ export function Stat({
   value,
   sub,
   color,
+  onClick,
+  active,
+  title,
 }: {
   label: string;
   value: ReactNode;
   sub?: ReactNode;
   color?: string;
+  /**
+   * Makes the whole stat a filter.
+   *
+   * Some breakdowns ARE the question you came to ask - "how many cheap things
+   * are left" on the B-List - and reading the answer only to go and re-select
+   * it in a dropdown is a wasted step.
+   */
+  onClick?: () => void;
+  active?: boolean;
+  title?: string;
 }) {
-  return (
-    <div className="stat">
+  const body = (
+    <>
       <div className="stat-label">{label}</div>
       <div className="stat-value numeric" style={color ? { color } : undefined}>
         {value}
       </div>
       {sub ? <div className="stat-sub">{sub}</div> : null}
-    </div>
+    </>
+  );
+
+  if (!onClick) return <div className="stat">{body}</div>;
+
+  return (
+    <button
+      type="button"
+      className={`stat stat-button${active ? ' on' : ''}`}
+      onClick={onClick}
+      aria-pressed={active}
+      title={title}
+    >
+      {body}
+    </button>
   );
 }

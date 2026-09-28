@@ -204,23 +204,38 @@ export function BucketPage() {
           <div className="card card-pad" style={{ marginBottom: 'var(--space-lg)' }}>
             <div className="stat-row">
               <Stat label="Done" value={progress.done} sub={`of ${progress.total}`} />
+              {/*
+                Each tier filters to itself, and clicking the one already on
+                clears it. "What can I do for nothing" is the question this
+                page exists to answer, so reading the number and then going to
+                a dropdown to act on it was a wasted step.
+              */}
               <Stat
                 label="Free to do"
                 value={progress.byCost.low}
                 sub="no or low cost"
                 color={COST_COLOR.low}
+                onClick={() => setCost(cost === 'low' ? 'any' : 'low')}
+                active={cost === 'low'}
+                title="Show only the no or low cost ones"
               />
               <Stat
                 label="Moderate"
                 value={progress.byCost.moderate}
                 sub="left"
                 color={COST_COLOR.moderate}
+                onClick={() => setCost(cost === 'moderate' ? 'any' : 'moderate')}
+                active={cost === 'moderate'}
+                title="Show only the moderate ones"
               />
               <Stat
                 label="Big"
                 value={progress.byCost.high}
                 sub="left"
                 color={COST_COLOR.high}
+                onClick={() => setCost(cost === 'high' ? 'any' : 'high')}
+                active={cost === 'high'}
+                title="Show only the big investments"
               />
             </div>
 

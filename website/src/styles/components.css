@@ -94,6 +94,28 @@
 }
 .stat-sub { font-size: var(--text-xs); color: var(--text-faint); }
 
+/*
+  A stat that is also a filter. It has to keep reading as a figure rather than
+  turning into a button, so it borrows nothing from .btn: no fill, no border
+  until it is on, and the hover is the faintest thing that still says clickable.
+*/
+.stat-button {
+  appearance: none;
+  border: 1px solid transparent;
+  background: none;
+  padding: var(--space-sm);
+  margin: calc(var(--space-sm) * -1);
+  border-radius: var(--radius-md);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.stat-button:hover { background: var(--surface-3); }
+.stat-button.on { border-color: var(--border-strong); background: var(--surface-3); }
+.stat-button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
 /* SHELL -------------------------------------------------------------------- */
 
 .shell { display: flex; min-height: 100vh; }

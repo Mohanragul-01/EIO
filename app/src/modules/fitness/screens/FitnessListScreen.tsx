@@ -419,7 +419,9 @@ function RoutinesTab() {
                 <View style={[styles.rowIcon, { backgroundColor: colors.accentIndigo + '1F' }]}>
                   <Ionicons name="list-outline" size={17} color={colors.accentIndigo} />
                 </View>
-                <Text style={[styles.rowTitle, styles.rowBody]}>{item.name}</Text>
+                <Text style={[styles.rowTitle, styles.rowBody]} numberOfLines={1}>
+                  {item.name}
+                </Text>
                 <Pressable
                   onPress={() =>
                     Alert.alert('Delete routine', 'Sessions you already logged from it are kept.', [
@@ -696,7 +698,9 @@ function ExercisesTab() {
                 >
                   <View style={styles.rowInner}>
                     <View style={styles.rowBody}>
-                      <Text style={styles.rowTitle}>{exercise.name}</Text>
+                      <Text style={styles.rowTitle} numberOfLines={1}>
+                        {exercise.name}
+                      </Text>
                       <Text style={styles.rowSub}>
                         {normaliseMuscle(exercise.muscle_group) ?? 'Unsorted'}
                         {exercise.tracking_type === 'time' ? ' · timed' : ''}
