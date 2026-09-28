@@ -20,6 +20,8 @@ const NAV: { to: string; icon: IconName; label: string; exact?: boolean }[] = [
   { to: '/finance', icon: 'finance', label: 'Finance' },
   { to: '/subscriptions', icon: 'subscriptions', label: 'Subscriptions' },
   { to: '/fitness', icon: 'fitness', label: 'Fitness' },
+  { to: '/blist', icon: 'flag', label: 'B-List' },
+  { to: '/products', icon: 'inbox', label: 'Products' },
 ];
 
 type Theme = 'system' | 'light' | 'dark';

@@ -26,7 +26,10 @@ import { ModuleBuilderScreen } from '../modules/custom/screens/ModuleBuilderScre
 import { FinanceListScreen } from '../modules/finance/screens/FinanceListScreen';
 import { TransactionEditScreen } from '../modules/finance/screens/TransactionEditScreen';
 import { SubscriptionEditScreen } from '../modules/subscriptions/screens/SubscriptionEditScreen';
+import { BucketListScreen } from '../modules/bucket/screens/BucketListScreen';
 import { FitnessListScreen } from '../modules/fitness/screens/FitnessListScreen';
+import { ProductEditScreen } from '../modules/products/screens/ProductEditScreen';
+import { ProductsListScreen } from '../modules/products/screens/ProductsListScreen';
 import { ExerciseProgressScreen } from '../modules/fitness/screens/ExerciseProgressScreen';
 import { RoutineEditScreen } from '../modules/fitness/screens/RoutineEditScreen';
 import { WorkoutSessionScreen } from '../modules/fitness/screens/WorkoutSessionScreen';
@@ -133,6 +136,17 @@ export function RootNavigator() {
           component={FitnessListScreen}
           options={{ title: 'Fitness' }}
         />
+        <Stack.Screen
+          name="BucketList"
+          component={BucketListScreen}
+          options={{ title: 'B-List' }}
+        />
+        <Stack.Screen
+          name="ProductsList"
+          component={ProductsListScreen}
+          options={{ title: 'Products' }}
+        />
+        <Stack.Screen name="ProductEdit" component={ProductEditScreen} />
         {/* Titles are set by the screens themselves, from data the navigator
             does not have. */}
         <Stack.Screen name="WorkoutSession" component={WorkoutSessionScreen} />

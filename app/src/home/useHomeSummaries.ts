@@ -22,6 +22,8 @@ import * as fitnessApi from '../modules/fitness/api';
 import * as notesApi from '../modules/notes/api';
 import * as subscriptionsApi from '../modules/subscriptions/api';
 import { toMonthlyMinor } from '../modules/subscriptions/types';
+import * as bucketApi from '../modules/bucket/api';
+import * as productsApi from '../modules/products/api';
 import * as todoApi from '../modules/todo/api';
 
 /** Keyed by the module key from the registry. */
@@ -106,12 +108,35 @@ async function fitnessSummary(): Promise<string> {
   return `${thisWeek} this week`;
 }
 
+async function bucketSummary(): Promise<string> {
+  const { total, done, freeLeft } = await bucketApi.overview();
+  if (total === 0) return 'Nothing yet';
+
+  // The free ones are the actionable fact: what could you do this weekend
+  // without spending anything. The total is just context for it.
+  if (freeLeft > 0) return `${done}/${total} done · ${freeLeft} free`;
+  return `${done} of ${total} done`;
+}
+
+async function productsSummary(): Promise<string> {
+  const products = await productsApi.listProducts();
+  const open = products.filter((p) => !p.finished_on);
+  if (open.length === 0) return 'Nothing tracked';
+
+  // The projection needs every product's usage history, which is more than a
+  // tile should fetch. A count is the honest thing to show here; the module
+  // itself works out what needs reordering.
+  return `${open.length} in use`;
+}
+
 const LOADERS: Record<string, () => Promise<string>> = {
   todo: todoSummary,
   notes: notesSummary,
   finance: financeSummary,
   subscriptions: subscriptionsSummary,
   fitness: fitnessSummary,
+  bucket: bucketSummary,
+  products: productsSummary,
 };
 
 export function useHomeSummaries() {

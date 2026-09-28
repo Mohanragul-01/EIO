@@ -52,6 +52,8 @@ clients run the identical file.
 | **Finance** | Running balance, monthly transactions, category pie, trend chart, CSV export |
 | **Subscriptions** | Billing cycles, renewal reminders 3 days ahead, "mark paid" logs the expense to Finance |
 | **Fitness** | Exercise library, routines, per-set logging, personal records, progression charts, body metrics |
+| **B-List** | 818 bucket-list items in 61 categories, filtered by what each one costs to do |
+| **Products** | Daily-use products with a measured burn rate, projected empty date and cost per day |
 | **Module builder** | Define your own module from inside the app, with a chosen tile stat and sort order |
 
 The module builder is the one worth explaining. A built-in module is
@@ -329,6 +331,14 @@ try/catch see it. So it is loaded behind an `isRunningInExpoGo()` check, using
 the same signal the library itself uses. See
 [`app/src/modules/subscriptions/notifications.ts`](app/src/modules/subscriptions/notifications.ts).
 
+**A projection is measured, never assumed.** The product tracker could compute
+"uses left" as `total / per_use`, which answers a different question: how long
+it lasts *if you never miss a day*. Days get missed. Dividing what you have
+actually used by the days it has been open gives a rate that already accounts
+for them - and it refuses to project from a single day at all, because one use
+on day one implies one-per-day and would predict an empty bottle three times
+too soon. A confident wrong number is worse than "not enough data yet".
+
 **jsonb is sorted in JavaScript, not SQL.** Ordering a custom module's records
 by `data->>'key'` compares everything as TEXT, which puts 100 before 9 for a
 number field. It looks right until you scroll.
@@ -391,6 +401,10 @@ recorded in [`plan.md`](plan.MD) section 9 so nothing is lost.
 Known limits, to be fixed only if daily use proves them worth fixing:
 
 - **Network required.** No offline cache.
+- **Muscle tags were remapped by guesswork where the name gave nothing away.**
+  Migration 0014 matches exercises by name first - incline to upper chest,
+  skullcrushers to triceps - and only falls back to a region's most common
+  muscle when it cannot tell. Those fallbacks are meant to be corrected by hand.
 - **Reminders exist for subscription renewals only, and only on the phone**
   (3 days ahead, local notifications, no server). Tasks have no reminders. They
   are scheduled on the device, so they do not survive a reinstall until each

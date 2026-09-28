@@ -41,6 +41,9 @@ export type RootStackParamList = {
   SubscriptionsList: undefined;
   SubscriptionEdit: { id?: string };
   FitnessList: undefined;
+  BucketList: undefined;
+  ProductsList: undefined;
+  ProductEdit: { productId?: string } | undefined;
   /**
    * The session row already exists before this opens, so every set has a parent
    * to attach to. routineId only pre-fills which exercises appear; it logs

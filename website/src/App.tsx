@@ -28,6 +28,10 @@ const SubscriptionsPage = lazy(() =>
 const FitnessPage = lazy(() =>
   import('./pages/FitnessPage').then((m) => ({ default: m.FitnessPage })),
 );
+const BucketPage = lazy(() => import('./pages/BucketPage').then((m) => ({ default: m.BucketPage })));
+const ProductsPage = lazy(() =>
+  import('./pages/ProductsPage').then((m) => ({ default: m.ProductsPage })),
+);
 const CustomModulePage = lazy(() =>
   import('./pages/CustomModulePage').then((m) => ({ default: m.CustomModulePage })),
 );
@@ -53,6 +57,8 @@ function Routed() {
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/subscriptions" element={<SubscriptionsPage />} />
         <Route path="/fitness" element={<FitnessPage />} />
+        <Route path="/blist" element={<BucketPage />} />
+        <Route path="/products" element={<ProductsPage />} />
         <Route path="/m/:moduleId" element={<CustomModulePage />} />
         <Route path="/builder" element={<ModuleBuilderPage />} />
         <Route path="/builder/:moduleId" element={<ModuleBuilderPage />} />
