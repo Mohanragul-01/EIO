@@ -139,7 +139,9 @@ update public.exercises
 set tracking_type = 'time'
 where tracking_type = 'reps'
   and (
-    name ilike '%plank%' or name ilike '%hang%' or name ilike '%wall sit%'
+    -- \m \M are word boundaries. Plain '%hang%' also catches "Hanging Leg
+    -- Raise", which is counted, not held.
+    name ilike '%plank%' or name ~* '\mhang\M' or name ilike '%wall sit%'
     or name ilike '%hold%' or name ilike '%carry%' or name ilike '%l-sit%'
   );
 
