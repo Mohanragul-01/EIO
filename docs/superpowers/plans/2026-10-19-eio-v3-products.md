@@ -28,6 +28,7 @@ Data and side effects:
 - `products/api.ts` — new fields; `updateUse`, `deleteUses`, `logUses`, `countUses`, `setFinished(id, date|null)`, `openSpare`, `overview()` returns `{ inUse, toReorder }`, `resyncReminders()` + `registerResync('products', …)`; unique-violation message.
 - `products/notifications.ts` — channel `{ id: 'products', name: 'Reorder reminders' }`, `replaceReminders(outlooks)` (cancel `product-` prefix, schedule the plan).
 - `products/useProducts.ts` — list data hook (useLatestRun), optimistic one-row log/un-log, reminders replaced after every load.
+- `products/changes.ts` — a change signal between the list and the product page, so an Undo tapped after leaving a screen updates the one on screen (tested).
 
 Phone UI:
 - `products/components/DayChoice.tsx` — Today · Yesterday · Pick a day, the last opening an inline core `MonthCalendar` bounded to [opened, today], logged days dotted.
@@ -110,3 +111,12 @@ ProductsPage at parity: lifecycle filter, Today checklist, chips, marker bar, es
 - Ruling: the Pick-a-day choice is an inline core `MonthCalendar` inside the sheet rather than the native date dialog — it can show which days already have uses, bound the range to [opened, today] visibly, and avoids stacking a native dialog over a Modal — cost if wrong: one more row of height in the sheet.
 - Ruling: deleting a use on the website happens inside the history dialog, where a toast would sit under the `<dialog>`; the dialog shows its own inline "Deleted · Undo" line instead — cost if wrong: none.
 - Ruling: the phone tile now fetches open containers' uses to count what to reorder (v2 deliberately did not) — the spec asks for "2 to reorder", and only open containers' uses are read — cost if wrong: one more small query on the home screen.
+
+### Added while building
+
+- Ruling: an open container cannot be turned back into a spare from the edit form (the "Not opened yet" box shows only when creating, restocking, or editing a spare) — its logged uses would lose the opening day their rate counts from — cost if wrong: a container opened by mistake has to be deleted and re-added as a spare.
+- Ruling: the measured estimate never feeds the expiry conflict, only the measured days left — an early "this outlasts its shelf life" warning from a guess is the confident wrong number the README warns about — cost if wrong: the conflict line appears two days later on a new container.
+- Ruling: a small in-module change signal (`changes.ts`) tells the list and the product page when the other changed something, because a toast's Undo can run after its screen has gone — cost if wrong: one extra list reload (two queries) after each write on a product page.
+- Ruling: the website keeps a native date field plus Today / Yesterday chips for "which day", not the research's typed shortcuts (`y`, `-3`, `DDMM`) — the native field already steps a day per arrow key, and the spec does not ask for shortcuts — cost if wrong: a few more keystrokes for an old day.
+- Ruling: no use-by notification — the spec's expiry bullet asks for chips and the conflict line, and the channel is "Reorder reminders" — cost if wrong: an expiring sunscreen is noticed only in the app (the chip appears 30 days ahead).
+- Ruling: "Finish and start a new one" finishes first, then opens the pre-filled form; backing out of the form leaves the old one finished with no new one — a real state ("finished, buying later") — cost if wrong: none.
