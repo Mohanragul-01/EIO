@@ -29,6 +29,7 @@ export function MonthCalendar({
   selected = null,
   onSelect,
   renderDay,
+  dayLabel,
   weekStartsOn = 1,
 }: {
   year: number;
@@ -38,8 +39,14 @@ export function MonthCalendar({
   selected?: string | null;
   /** Without it, days are not clickable. */
   onSelect?: (iso: string) => void;
-  /** Draws the inside of a day cell. The cell itself handles the click. */
+  /**
+   * Draws the inside of a day cell. The cell itself handles the click. With
+   * it, the cell draws no today or selected styling of its own, as on the
+   * phone: the day passed in says which it is.
+   */
   renderDay?: (day: CalendarDay) => ReactNode;
+  /** Extra words for screen readers after the date, describing what renderDay drew. */
+  dayLabel?: (day: CalendarDay) => string | null;
   /** 1 = Monday (the default), 0 = Sunday. */
   weekStartsOn?: 0 | 1;
 }) {
@@ -101,17 +108,19 @@ export function MonthCalendar({
             isToday: iso === today,
             isSelected: iso === selected,
           };
-          const label = fromISODate(iso).toLocaleDateString(undefined, {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-          });
+          const extra = dayLabel?.(day);
+          const label =
+            fromISODate(iso).toLocaleDateString(undefined, {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            }) + (extra ? `, ${extra}` : '');
           const className =
             'cal-day' +
             (day.inMonth ? '' : ' cal-day-outside') +
-            (day.isToday ? ' cal-day-today' : '') +
-            (day.isSelected ? ' cal-day-selected' : '');
+            (!renderDay && day.isToday ? ' cal-day-today' : '') +
+            (!renderDay && day.isSelected ? ' cal-day-selected' : '');
           const content = renderDay ? (
             renderDay(day)
           ) : (

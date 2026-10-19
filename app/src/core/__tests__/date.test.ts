@@ -100,12 +100,23 @@ describe('monthGrid', () => {
     for (const week of monthGrid(2026, 10, 0)) expect(weekday(week[0])).toBe(0);
   });
 
-  it('lists consecutive days with no gaps or repeats', () => {
-    // A DST change inside the month must not skip or double a day.
-    const days = monthGrid(2026, 3, 1).flat();
+  it.each([
+    // [year, month, a day before the change, a day after it]
+    [2026, 3, 7, 9],
+    [2026, 11, 0, 2],
+  ])('lists consecutive days across a daylight-saving change (%i-%i)', (year, month, before, after) => {
+    // The suite runs in New York (jest.timezone.js). Stepping 24 hours from
+    // midnight there drifts to 01:00 when the clocks spring forward and to
+    // 23:00 THE DAY BEFORE when they fall back in November, so a grid built
+    // that way repeats a day. The first assertion proves the zone really is in
+    // effect; without it this test would be empty in India, which has no DST.
+    expect(new Date(year, month - 1, before).getTimezoneOffset()).not.toBe(
+      new Date(year, month - 1, after).getTimezoneOffset(),
+    );
+    const days = monthGrid(year, month, 1).flat();
     for (let i = 1; i < days.length; i++) {
-      const gap = (fromISODate(days[i]).getTime() - fromISODate(days[i - 1]).getTime()) / 86_400_000;
-      expect(Math.round(gap)).toBe(1);
+      const [y, m, d] = days[i - 1].split('-').map(Number);
+      expect(days[i]).toBe(toISODate(new Date(y, m - 1, d + 1)));
     }
   });
 });

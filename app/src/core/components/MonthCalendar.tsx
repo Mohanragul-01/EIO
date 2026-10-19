@@ -36,8 +36,18 @@ type MonthCalendarProps = {
   selected?: string | null;
   /** Without it, days are not pressable. */
   onSelect?: (iso: string) => void;
-  /** Draws the inside of a day cell. The cell itself handles the press. */
+  /**
+   * Draws the inside of a day cell. The cell itself handles the press. With
+   * it, the cell draws no today or selected styling of its own - the day
+   * passed in says which it is, so the module draws it the way it wants.
+   */
   renderDay?: (day: CalendarDay) => React.ReactNode;
+  /**
+   * Extra words for TalkBack after the date, describing what renderDay drew
+   * ("2 workouts", "₹1,240 spent"). The cell's label replaces whatever is
+   * inside it, so without this the screen reader hears only the date.
+   */
+  dayLabel?: (day: CalendarDay) => string | null;
   /** 1 = Monday (the default), 0 = Sunday. */
   weekStartsOn?: 0 | 1;
 };
@@ -49,6 +59,7 @@ export function MonthCalendar({
   selected = null,
   onSelect,
   renderDay,
+  dayLabel,
   weekStartsOn = 1,
 }: MonthCalendarProps) {
   const styles = useStyles();
@@ -77,7 +88,8 @@ export function MonthCalendar({
   return (
     <View>
       <View style={styles.header}>
-        <Text style={styles.title} accessibilityRole="header">
+        {/* Polite live region: paging months announces the new one. */}
+        <Text style={styles.title} accessibilityRole="header" accessibilityLiveRegion="polite">
           {title}
         </Text>
         <Pressable
@@ -132,13 +144,16 @@ export function MonthCalendar({
               isToday: iso === today,
               isSelected: iso === selected,
             };
+            const extra = dayLabel?.(day);
             const label =
               fromISODate(iso).toLocaleDateString(undefined, {
                 weekday: 'long',
                 day: 'numeric',
                 month: 'long',
                 year: 'numeric',
-              }) + (day.isToday ? ', today' : '');
+              }) +
+              (day.isToday ? ', today' : '') +
+              (extra ? `, ${extra}` : '');
             const content = renderDay ? renderDay(day) : <DayNumber day={day} />;
 
             return onSelect ? (
@@ -192,6 +207,9 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    // 8dp between the Today button and the two arrows, so a thumb aimed at
+    // one cannot land on its neighbour.
+    gap: spacing.sm,
     marginBottom: spacing.sm,
   },
   title: {
@@ -232,7 +250,7 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   },
   cell: {
     flex: 1,
-    minHeight: 46,
+    minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.sm,
