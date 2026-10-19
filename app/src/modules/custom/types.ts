@@ -213,6 +213,18 @@ export const MODULE_COLORS = [
   '#FB7185', '#C084FC', '#FB923C', '#A3E635',
 ];
 
+/** What each colour is called, for screen readers: a hex code is not a name. */
+export const MODULE_COLOR_NAMES: Record<string, string> = {
+  '#818CF8': 'Indigo',
+  '#FBBF24': 'Amber',
+  '#34D399': 'Emerald',
+  '#22D3EE': 'Cyan',
+  '#FB7185': 'Rose',
+  '#C084FC': 'Violet',
+  '#FB923C': 'Orange',
+  '#A3E635': 'Lime',
+};
+
 /**
  * Turn a human label into a stable jsonb key: "Hours slept" -> "hours_slept".
  *
