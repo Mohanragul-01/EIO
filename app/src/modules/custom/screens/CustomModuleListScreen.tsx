@@ -140,19 +140,23 @@ export function CustomModuleListScreen() {
   }, [records, dateField]);
 
   const sections = useMemo<Section[]>(() => {
+    let all: Section[];
     if (view === 'calendar') {
-      return [{ key: 'day', title: null, stat: '', data: byDay.get(selectedDay) ?? [] }];
-    }
-    if (groupField && module) {
-      return groupRecords(visible, groupField).map((group) => ({
+      all = [{ key: 'day', title: null, stat: '', data: byDay.get(selectedDay) ?? [] }];
+    } else if (groupField && module) {
+      all = groupRecords(visible, groupField).map((group) => ({
         key: group.key,
         title: group.label,
         stat: groupStatLine(module, summaryField, group.records),
         // A collapsed group keeps its header, so it can be opened again.
         data: collapsed.includes(group.key) ? [] : group.records,
       }));
+    } else {
+      all = [{ key: 'all', title: null, stat: '', data: visible }];
     }
-    return [{ key: 'all', title: null, stat: '', data: visible }];
+    // A headerless section with nothing in it is dropped, so an empty list is
+    // an empty `sections` array: SectionList only shows its empty state then.
+    return all.filter((section) => section.title !== null || section.data.length > 0);
   }, [view, byDay, selectedDay, groupField, module, visible, summaryField, collapsed]);
 
   const openForm = useCallback(() => {
@@ -388,7 +392,7 @@ export function CustomModuleListScreen() {
           />
         }
         ListHeaderComponent={header}
-        ListEmptyComponent={sections.every((s) => s.title === null) ? empty : null}
+        ListEmptyComponent={empty}
         renderSectionHeader={({ section }) =>
           section.title ? (
             <GroupHeader
