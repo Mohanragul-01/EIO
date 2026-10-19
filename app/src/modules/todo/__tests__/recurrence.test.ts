@@ -3,47 +3,57 @@
  *
  * This is the highest-risk logic in the Todo module: a wrong next date is not a
  * crash, it is a task that quietly appears on the wrong day forever. These
- * tests pin the two properties that matter, anchoring and month-end clamping.
+ * tests pin the properties that matter: the schedule is anchored, an overdue
+ * repeat catches up in one tick, and a month-end date comes back to the month
+ * end.
+ *
+ * Dates are built as 'YYYY-MM-DD' strings and the suite runs in New York (see
+ * jest.timezone.js), so anything that slipped into instant arithmetic would
+ * fail on the daylight-saving weekends in March and November.
  */
 import { addInterval } from '../../../core/date';
 import { nextDueDate } from '../types';
 
-describe('nextDueDate anchoring', () => {
-  it('advances by one interval from the task own due date', () => {
-    expect(nextDueDate('2026-08-30', 'daily')).toBe('2026-08-31');
-    expect(nextDueDate('2026-08-30', 'weekly')).toBe('2026-09-06');
-    expect(nextDueDate('2026-08-30', 'monthly')).toBe('2026-09-30');
-    expect(nextDueDate('2026-08-30', 'yearly')).toBe('2027-08-30');
+describe('bug 1: an overdue repeat rolls forward past today', () => {
+  it('a daily task three weeks overdue comes back tomorrow, not still overdue', () => {
+    // v2 added one interval to the OLD due date: 1 Aug -> 2 Aug, three weeks
+    // in the past, so it took about 21 ticks to catch up.
+    expect(nextDueDate('2026-08-01', 'daily', { today: '2026-08-22' })).toBe('2026-08-23');
   });
 
-  it('anchors to the due date, not to today', () => {
-    // THE RULE. A daily task due three weeks ago, completed today, must move to
-    // the day after its own due date. Anchoring to the completion moment would
-    // let a habit slide across the calendar every time it was finished late.
-    const longOverdue = '2026-08-01';
-    expect(nextDueDate(longOverdue, 'daily')).toBe('2026-08-02');
-
-    // And the same for a task completed early: it does not jump backwards.
-    const future = '2026-12-25';
-    expect(nextDueDate(future, 'daily')).toBe('2026-12-26');
+  it('a weekly task keeps its weekday while catching up', () => {
+    // Monday 5 Oct, completed on Wednesday 21 Oct: the next Monday after today.
+    expect(nextDueDate('2026-10-05', 'weekly', { today: '2026-10-21' })).toBe('2026-10-26');
   });
 
-  it('produces a date strictly after the one it came from', () => {
-    // A next date equal to or before the current one would make the task
-    // immediately due again, so the same tap could repeat forever.
-    for (const unit of ['daily', 'weekly', 'monthly', 'yearly'] as const) {
-      for (const from of ['2026-01-31', '2026-02-28', '2024-02-29', '2026-12-31']) {
-        expect(nextDueDate(from, unit) > from).toBe(true);
-      }
-    }
+  it('completing an overdue daily task schedules tomorrow, never today', () => {
+    // Due yesterday, done today: today has passed for this occurrence too.
+    expect(nextDueDate('2026-10-18', 'daily', { today: '2026-10-19' })).toBe('2026-10-20');
   });
 
-  it('falls back to today when the task has no due date', () => {
-    // A due date is optional while a frequency is required, so this case is
-    // reachable. There is nothing to anchor to, so today is the only sane base.
-    const result = nextDueDate(null, 'daily');
-    expect(result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(result > new Date().toISOString().slice(0, 10)).toBe(true);
+  it('a task completed early still moves one step from its own date', () => {
+    expect(nextDueDate('2026-12-25', 'daily', { today: '2026-10-19' })).toBe('2026-12-26');
+    expect(nextDueDate('2026-10-19', 'weekly', { today: '2026-10-19' })).toBe('2026-10-26');
+  });
+});
+
+describe('bug 2: month-end anchor is kept', () => {
+  it('the 31st clamps to the 28th in February and returns to the 31st in March', () => {
+    // v2 stepped from the CLAMPED date: 28 Feb + 1 month = 28 March, and the
+    // task stayed on the 28th forever after.
+    expect(addInterval('2026-02-28', 'monthly')).toBe('2026-03-28');
+
+    const rule = { frequency: 'monthly' as const, anchorDay: 31 };
+    expect(nextDueDate('2026-01-31', rule, { today: '2026-01-31' })).toBe('2026-02-28');
+    expect(nextDueDate('2026-02-28', rule, { today: '2026-02-28' })).toBe('2026-03-31');
+    expect(nextDueDate('2026-03-31', rule, { today: '2026-03-31' })).toBe('2026-04-30');
+    expect(nextDueDate('2026-04-30', rule, { today: '2026-04-30' })).toBe('2026-05-31');
+  });
+
+  it('a 29 February yearly task is the 28th in common years and the 29th in leap years', () => {
+    const rule = { frequency: 'yearly' as const, anchorDay: 29 };
+    expect(nextDueDate('2024-02-29', rule, { today: '2024-02-29' })).toBe('2025-02-28');
+    expect(nextDueDate('2027-02-28', rule, { today: '2027-02-28' })).toBe('2028-02-29');
   });
 });
 

@@ -901,7 +901,7 @@ function TaskDialog({
             */}
             {isRepeat
               ? `Completing it creates the next one, due ${formatDueDate(
-                  nextDueDate(dueDate || null, freq),
+                  nextDueDate(dueDate || null, freq, { today: todayISO() }),
                 )}`
               : 'Completing it just marks it done'}
           </div>

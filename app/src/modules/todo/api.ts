@@ -21,7 +21,8 @@
  */
 import { supabase } from '../../core/supabase';
 import { getOwnerId } from '../../core/session';
-import { nextDueDate, type Frequency, type Todo, type TodoInput } from './types';
+import { todayISO } from '../../core/date';
+import { nextDueDate, ruleOf, type Frequency, type Todo, type TodoInput } from './types';
 
 const TABLE = 'todos';
 
@@ -205,7 +206,7 @@ export async function completeTask(todo: Todo): Promise<Todo | null> {
       title: todo.title,
       frequency: todo.frequency,
       is_repeat: true,
-      due_date: nextDueDate(todo.due_date, todo.frequency),
+      due_date: nextDueDate(todo.due_date, ruleOf(todo), { today: todayISO() }),
       priority: 'normal',
     })
     .select()

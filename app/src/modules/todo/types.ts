@@ -6,12 +6,34 @@
  * on each other" looks like in practice.
  */
 
-import { addInterval, todayISO } from '../../core/date';
+import type { RepeatFrom } from './recurrence';
+
+export {
+  describeRule,
+  firstDueDate,
+  nextDueDate,
+  ruleOf,
+  shortRule,
+  toRule,
+  upcomingDates,
+  type RepeatFrom,
+  type RepeatRule,
+  type RuleInput,
+} from './recurrence';
 
 export type Priority = 'low' | 'normal' | 'high';
 
 /** Which tab a task lives in. Also the interval a repeating task repeats on. */
 export type Frequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+/**
+ * How a closed task was closed. 'skipped' is a repeat deliberately passed over
+ * (history stays honest: it was not done); 'wont_do' is a one-off abandoned.
+ */
+export type Outcome = 'done' | 'skipped' | 'wont_do';
+
+/** One check item. The id is local to the task, only for list keys and edits. */
+export type ChecklistItem = { id: string; text: string; done: boolean };
 
 /** A row exactly as it comes back from the `todos` table. */
 export type Todo = {
@@ -34,6 +56,27 @@ export type Todo = {
    * order - which is the point of storing it rather than keeping it local.
    */
   position: number;
+  /** Wall-clock 'HH:MM:SS' on the due date, or null for an all-day task. */
+  due_time: string | null;
+  /** Minutes before due_date + due_time to remind; null = no reminder. */
+  reminder_offset_min: number | null;
+  repeat_every: number;
+  /** 0 = Sunday ... 6 = Saturday. See RepeatRule. */
+  repeat_weekdays: number[] | null;
+  repeat_anchor_day: number | null;
+  repeat_nth: number | null;
+  repeat_from: RepeatFrom;
+  /**
+   * Shared by every occurrence of a routine. Null on the first occurrence;
+   * use seriesKey() rather than reading this directly.
+   */
+  series_id: string | null;
+  /** When it was closed. Null while open, and on rows closed by v2 before 0020. */
+  completed_at: string | null;
+  /** Null while open. Null on a done row means 'done' (v2 never set it). */
+  outcome: Outcome | null;
+  notes: string;
+  checklist: ChecklistItem[];
   created_at: string;
   updated_at: string;
 };
@@ -51,7 +94,30 @@ export type TodoInput = {
   priority: Priority;
   frequency: Frequency;
   is_repeat: boolean;
+  due_time?: string | null;
+  reminder_offset_min?: number | null;
+  repeat_every?: number;
+  repeat_weekdays?: number[] | null;
+  repeat_anchor_day?: number | null;
+  repeat_nth?: number | null;
+  repeat_from?: RepeatFrom;
+  notes?: string;
+  checklist?: ChecklistItem[];
 };
+
+/**
+ * The key every occurrence of one routine shares. The first occurrence has no
+ * series_id (its successors carry its id), so the key is whichever is set.
+ */
+export function seriesKey(todo: Pick<Todo, 'id' | 'series_id'>): string {
+  return todo.series_id ?? todo.id;
+}
+
+/** How a closed row was closed, reading v2's done rows (no outcome) as done. */
+export function outcomeOf(todo: Pick<Todo, 'is_done' | 'outcome'>): Outcome | null {
+  if (!todo.is_done) return null;
+  return todo.outcome ?? 'done';
+}
 
 /** Ordered for use in a segmented picker; also drives the color lookup below. */
 export const PRIORITIES: Priority[] = ['low', 'normal', 'high'];
@@ -96,24 +162,3 @@ export const FREQUENCY_LABEL: Record<Frequency, string> = {
   monthly: 'Monthly',
   yearly: 'Yearly',
 };
-
-/**
- * The due date of the NEXT occurrence of a repeating task.
- *
- * THE RULE THAT MATTERS: the next date is computed from the task's OWN due
- * date, never from today or from when you ticked it off. Anchoring to the
- * completion moment would make a daily task drift by a day every time you
- * finished it late, so a habit you keep imperfectly would slowly slide across
- * the calendar. Anchoring to the original due date means a Monday task stays a
- * Monday task no matter when you actually got to it.
- *
- * A repeating task with no due date has nothing to anchor to, so it falls back
- * to today. That case only arises because a due date is optional while a
- * frequency is required.
- *
- * Pure, and separate from the database call, so the arithmetic can be tested
- * without a network or a clock fixture.
- */
-export function nextDueDate(currentDueDate: string | null, frequency: Frequency): string {
-  return addInterval(currentDueDate ?? todayISO(), frequency);
-}
