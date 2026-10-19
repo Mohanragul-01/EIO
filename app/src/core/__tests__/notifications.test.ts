@@ -24,6 +24,11 @@ type NativeMock = {
   requestPermissionsAsync: jest.Mock;
   AndroidImportance: { DEFAULT: number };
   SchedulableTriggerInputTypes: { DATE: string };
+  setNotificationCategoryAsync: jest.Mock;
+  addNotificationResponseReceivedListener: jest.Mock;
+  getLastNotificationResponseAsync: jest.Mock;
+  clearLastNotificationResponseAsync: jest.Mock;
+  DEFAULT_ACTION_IDENTIFIER: string;
 };
 
 function nativeMock(granted = true): NativeMock {
@@ -37,6 +42,11 @@ function nativeMock(granted = true): NativeMock {
     requestPermissionsAsync: jest.fn(() => Promise.resolve({ granted })),
     AndroidImportance: { DEFAULT: 3 },
     SchedulableTriggerInputTypes: { DATE: 'date' },
+    setNotificationCategoryAsync: jest.fn(() => Promise.resolve({})),
+    addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+    getLastNotificationResponseAsync: jest.fn(() => Promise.resolve(null)),
+    clearLastNotificationResponseAsync: jest.fn(() => Promise.resolve()),
+    DEFAULT_ACTION_IDENTIFIER: 'expo.modules.notifications.actions.DEFAULT',
   };
 }
 
@@ -196,5 +206,119 @@ describe('runResync', () => {
 
     expect(old).not.toHaveBeenCalled();
     expect(replacement).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('categories (action buttons)', () => {
+  const category = {
+    id: 'subscription_renewal',
+    actions: [{ id: 'mark_paid', title: 'Mark paid' }],
+  };
+
+  it('registers the category once, then names it on the notification', async () => {
+    const native = nativeMock();
+    const core = load(native);
+
+    await core.schedule({ id: 'a', date: inOneHour(), title: 't', body: 'b', category });
+    await core.schedule({ id: 'b', date: inOneHour(), title: 't', body: 'b', category });
+
+    expect(native.setNotificationCategoryAsync).toHaveBeenCalledTimes(1);
+    expect(native.setNotificationCategoryAsync).toHaveBeenCalledWith('subscription_renewal', [
+      { identifier: 'mark_paid', buttonTitle: 'Mark paid', options: { opensAppToForeground: true } },
+    ]);
+    const request = native.scheduleNotificationAsync.mock.calls[0][0];
+    expect(request.content.categoryIdentifier).toBe('subscription_renewal');
+  });
+
+  it('still schedules the reminder when the buttons cannot be registered', async () => {
+    // A reminder without its button is still a reminder; none at all is the
+    // failure this whole file exists to avoid.
+    const native = nativeMock();
+    native.setNotificationCategoryAsync.mockImplementation(() => Promise.reject(new Error('no')));
+    const core = load(native);
+
+    await expect(
+      core.schedule({ id: 'a', date: inOneHour(), title: 't', body: 'b', category }),
+    ).resolves.toBe(true);
+    const request = native.scheduleNotificationAsync.mock.calls[0][0];
+    expect(request.content.categoryIdentifier).toBeUndefined();
+  });
+});
+
+describe('onResponse', () => {
+  const response = (actionIdentifier: string, data: Record<string, unknown> = { x: 1 }) => ({
+    actionIdentifier,
+    notification: { request: { identifier: 'n-1', content: { data } } },
+  });
+
+  it('hands over a tap as no action, and a button by its id', async () => {
+    const native = nativeMock();
+    const core = load(native);
+    const seen: unknown[] = [];
+
+    core.onResponse((r) => seen.push(r));
+    await Promise.resolve();
+    const deliver = native.addNotificationResponseReceivedListener.mock.calls[0][0];
+    deliver(response('expo.modules.notifications.actions.DEFAULT'));
+    deliver(response('mark_paid'));
+
+    expect(seen).toEqual([
+      { id: 'n-1', actionId: null, data: { x: 1 } },
+      { id: 'n-1', actionId: 'mark_paid', data: { x: 1 } },
+    ]);
+  });
+
+  it('delivers the response that launched the app, once', async () => {
+    const native = nativeMock();
+    native.getLastNotificationResponseAsync.mockImplementation(() =>
+      Promise.resolve(response('mark_paid')),
+    );
+    const core = load(native);
+    const listener = jest.fn();
+
+    core.onResponse(listener);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(listener).toHaveBeenCalledWith({ id: 'n-1', actionId: 'mark_paid', data: { x: 1 } });
+    // Cleared, so the next launch does not replay it.
+    expect(native.clearLastNotificationResponseAsync).toHaveBeenCalled();
+  });
+
+  it('stops listening when unsubscribed', () => {
+    const native = nativeMock();
+    const remove = jest.fn();
+    native.addNotificationResponseReceivedListener.mockImplementation(() => ({ remove }));
+    const core = load(native);
+
+    const stop = core.onResponse(jest.fn());
+    stop();
+
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing in Expo Go, and never loads the library', () => {
+    const { core, required } = loadInExpoGo();
+    const stop = core.onResponse(jest.fn());
+    expect(() => stop()).not.toThrow();
+    expect(required).not.toHaveBeenCalled();
+  });
+});
+
+describe('permissionState', () => {
+  it('reports without ever prompting', async () => {
+    // Opening a screen that shows "reminders are off" must not itself ask:
+    // asking belongs to the moment you turn a reminder on.
+    const native = nativeMock(false);
+    const core = load(native);
+
+    await expect(core.permissionState()).resolves.toBe('denied');
+    expect(native.requestPermissionsAsync).not.toHaveBeenCalled();
+  });
+
+  it('reports granted, and unsupported in Expo Go', async () => {
+    await expect(load(nativeMock(true)).permissionState()).resolves.toBe('granted');
+    const { core, required } = loadInExpoGo();
+    await expect(core.permissionState()).resolves.toBe('unsupported');
+    expect(required).not.toHaveBeenCalled();
   });
 });

@@ -14,10 +14,11 @@
 import {
   NavigationContainer,
   type LinkingOptions,
+  useNavigationContainerRef,
   type Theme as NavTheme,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import React from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
 import { useAuth } from '../core/auth';
@@ -49,9 +50,12 @@ import { PlateCalculatorScreen } from '../modules/fitness/screens/PlateCalculato
 import { NoteEditScreen } from '../modules/notes/screens/NoteEditScreen';
 import { NotesListScreen } from '../modules/notes/screens/NotesListScreen';
 import { SubscriptionsListScreen } from '../modules/subscriptions/screens/SubscriptionsListScreen';
+import { SubscriptionCatalogueScreen } from '../modules/subscriptions/screens/SubscriptionCatalogueScreen';
+import { SubscriptionDetailScreen } from '../modules/subscriptions/screens/SubscriptionDetailScreen';
 import { TodoEditScreen } from '../modules/todo/screens/TodoEditScreen';
 import { TodoListScreen } from '../modules/todo/screens/TodoListScreen';
 import type { RootStackParamList } from './types';
+import { useNotificationRoutes } from './useNotificationRoutes';
 import { makeStyles, useTheme } from '../core/ThemeContext';
 
 // Passing the param list here is what makes navigate() calls type-safe.
@@ -90,6 +94,14 @@ export function RootNavigator() {
   const styles = useStyles();
   const { colors, isDark } = useTheme();
   const { session, initializing } = useAuth();
+
+  // A tapped reminder opens the screen its data names (a subscription, its
+  // Mark paid sheet). Only once the navigator is ready, and ready for THIS
+  // person: the container remounts on every sign-in. Up here, above the early
+  // returns, because hooks must run on every render.
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  const [readyFor, setReadyFor] = useState<string | null>(null);
+  useNotificationRoutes(navigationRef, !!session && readyFor === session.user.id);
 
   /**
    *  THE AUTH GATE
@@ -134,6 +146,8 @@ export function RootNavigator() {
           <ActivityIndicator color={colors.primary} />
         </View>
       }
+      ref={navigationRef}
+      onReady={() => setReadyFor(session.user.id)}
     >
       <Stack.Navigator
         // screenOptions applies to EVERY screen - set header styling once here
@@ -184,6 +198,10 @@ export function RootNavigator() {
           options={{ title: 'Subscriptions' }}
         />
         <Stack.Screen name="SubscriptionEdit" component={SubscriptionEditScreen} />
+        {/* Titles set by the screens: the subscription's name, and the
+            catalogue's own. */}
+        <Stack.Screen name="SubscriptionDetail" component={SubscriptionDetailScreen} />
+        <Stack.Screen name="SubscriptionCatalogue" component={SubscriptionCatalogueScreen} />
         <Stack.Screen
           name="FitnessList"
           component={FitnessListScreen}

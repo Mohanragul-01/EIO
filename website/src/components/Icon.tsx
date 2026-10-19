@@ -67,7 +67,12 @@ export type IconName =
   | 'sliders'
   | 'star'
   | 'starFilled'
-  | 'bell';
+  | 'bell'
+  | 'archive'
+  | 'external'
+  | 'more'
+  | 'arrowUp'
+  | 'arrowDown';
 
 /**
  * Path data per icon. Several use more than one subpath; they are joined with
@@ -135,6 +140,11 @@ const PATHS: Record<IconName, string> = {
   star: 'M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z',
   starFilled: 'M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z',
   bell: 'M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z M10 20.5a2 2 0 0 0 4 0',
+  archive: 'M3 4h18v4H3z M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8 M10 12h4',
+  external: 'M15 3h6v6 M10 14L21 3 M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6',
+  more: 'M5 12h.01 M12 12h.01 M19 12h.01',
+  arrowUp: 'M12 19V5 M5 12l7-7 7 7',
+  arrowDown: 'M12 5v14 M19 12l-7 7-7-7',
 };
 
 /**

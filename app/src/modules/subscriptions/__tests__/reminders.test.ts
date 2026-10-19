@@ -1,108 +1,202 @@
 /**
- * Renewal reminder scheduling.
+ * Scheduling renewal reminders: the join between the plan (reminderPlan.test)
+ * and the OS.
  *
- * The part worth testing is the date maths, not the OS call. A reminder that
- * fires on the wrong day, or fires instantly because it was scheduled in the
- * past, is the failure people actually hit - and neither throws, so nothing
- * else would catch it.
- *
- * expo-notifications is mocked because importing it outside a native runtime
- * pulls in modules Jest cannot resolve. Only the pure helpers are exercised.
+ * expo-notifications is mocked, because importing it outside a native runtime
+ * pulls in modules Jest cannot resolve. What is tested here is what reaches
+ * the scheduler: which ids, which moments, and that a rebuild starts clean.
  *
  * The last block pins a real bug: the library resolves its native module at
- * import time and throws when it is absent, so a STATIC import of it here took
- * down the home screen in Expo Go. It is now require()d lazily, and the test
- * below fails if anyone reverts that.
+ * import time and throws when it is absent, so a STATIC import of it took
+ * down the home screen in Expo Go. It is require()d lazily now, and the tests
+ * below fail if anyone reverts that.
  */
-// Default: NOT Expo Go, so the loader takes the real path. Individual tests
-// override this to exercise the bail-out.
-import { REMINDER_LEAD_DAYS, reminderDateFor, reminderId } from '../notifications';
+import { DEFAULT_REMINDER_SETTINGS } from '../reminders';
+import type { Subscription } from '../types';
 
-jest.mock('expo', () => ({ isRunningInExpoGo: () => false }));
+type Native = ReturnType<typeof nativeMock>;
 
-jest.mock('expo-notifications', () => ({
-  setNotificationHandler: jest.fn(),
-  setNotificationChannelAsync: jest.fn(),
-  scheduleNotificationAsync: jest.fn(),
-  cancelScheduledNotificationAsync: jest.fn(),
-  getPermissionsAsync: jest.fn(),
-  requestPermissionsAsync: jest.fn(),
-  AndroidImportance: { DEFAULT: 3 },
-  SchedulableTriggerInputTypes: { DATE: 'date' },
-}));
+function nativeMock(scheduled: { identifier: string }[] = []) {
+  return {
+    setNotificationHandler: jest.fn(),
+    setNotificationChannelAsync: jest.fn(() => Promise.resolve()),
+    setNotificationCategoryAsync: jest.fn(() => Promise.resolve({})),
+    scheduleNotificationAsync: jest.fn(
+      (_request: { identifier: string; trigger: { date: Date } }) => Promise.resolve('id'),
+    ),
+    cancelScheduledNotificationAsync: jest.fn((_id: string) => Promise.resolve()),
+    getAllScheduledNotificationsAsync: jest.fn(() => Promise.resolve(scheduled)),
+    getPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true, canAskAgain: true })),
+    requestPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true })),
+    AndroidImportance: { DEFAULT: 3 },
+    SchedulableTriggerInputTypes: { DATE: 'date' },
+  };
+}
 
-describe('reminderDateFor', () => {
-  it('fires three days before the due date, in the morning', () => {
-    const now = new Date(2026, 7, 1); // 1 August
-    const fireAt = reminderDateFor('2026-08-20', now);
+function load(native: Native = nativeMock()) {
+  jest.resetModules();
+  jest.doMock('expo', () => ({ isRunningInExpoGo: () => false }));
+  jest.doMock('expo-notifications', () => native);
+  return require('../notifications') as typeof import('../notifications');
+}
 
-    expect(fireAt).not.toBeNull();
-    expect(fireAt?.getFullYear()).toBe(2026);
-    expect(fireAt?.getMonth()).toBe(7); // August
-    expect(fireAt?.getDate()).toBe(17); // 20 minus 3
-    expect(fireAt?.getHours()).toBe(9);
+/** 'YYYY-MM-DD' for today plus `days`, built from the local calendar. */
+function inDays(days: number): string {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function sub(overrides: Partial<Subscription> = {}): Subscription {
+  return {
+    id: 'abc',
+    user_id: 'u',
+    name: 'Netflix',
+    amount_minor: 64900,
+    billing_cycle: 'monthly',
+    next_due_date: inDays(20),
+    is_active: true,
+    category: 'fun',
+    note: '',
+    created_at: '',
+    updated_at: '',
+    status: 'active',
+    trial_ends_on: null,
+    ends_on: null,
+    resume_on: null,
+    cancel_url: null,
+    cancel_notes: '',
+    service_key: null,
+    color: null,
+    account_id: null,
+    charge_channel: null,
+    reminder_offsets: null,
+    cycle_unit: 'month',
+    cycle_count: 1,
+    currency: 'INR',
+    fx_rate: null,
+    fx_rate_on: null,
+    ...overrides,
+  };
+}
+
+describe('a renewal close to its due date (the confirmed bug)', () => {
+  /**
+   * v2 had one reminder, three days ahead, and dropped it whenever that moment
+   * had passed - so a subscription due in two days, the one closest to being
+   * forgotten, got no reminder at all.
+   */
+  it('still reminds the day before and on the day', async () => {
+    const native = nativeMock();
+    const notifications = load(native);
+    const due = inDays(2);
+
+    await expect(
+      notifications.scheduleReminders(sub({ next_due_date: due }), DEFAULT_REMINDER_SETTINGS),
+    ).resolves.toBe(2);
+
+    const fireDays = native.scheduleNotificationAsync.mock.calls.map(([request]) =>
+      request.trigger.date.getDate(),
+    );
+    const [y, m, d] = due.split('-').map(Number);
+    const dayBefore = new Date(y, m - 1, d - 1).getDate();
+    expect(fireDays).toEqual([dayBefore, d]);
+  });
+});
+
+describe('scheduleReminders', () => {
+  it('clears every old reminder for the subscription first, v2s included', async () => {
+    const native = nativeMock([
+      { identifier: 'subscription-renewal-abc-d7' },
+      { identifier: 'subscription-renewal-other-d3' },
+    ]);
+    const notifications = load(native);
+
+    await notifications.scheduleReminders(sub(), DEFAULT_REMINDER_SETTINGS);
+
+    const cancelled = native.cancelScheduledNotificationAsync.mock.calls.map(([id]) => id);
+    expect(cancelled).toContain('subscription-renewal-abc'); // v2's single id
+    expect(cancelled).toContain('subscription-renewal-abc-d7');
+    expect(cancelled).not.toContain('subscription-renewal-other-d3');
   });
 
-  it('returns null when the reminder moment has already passed', () => {
-    // The important case. Scheduling in the past either fires immediately or is
-    // rejected outright, so an overdue subscription would buzz the instant you
-    // saved it. Neither is a reminder.
-    const now = new Date(2026, 7, 30);
-    expect(reminderDateFor('2026-08-20', now)).toBeNull();
+  it('schedules nothing for a cancelled subscription, after clearing it', async () => {
+    const native = nativeMock();
+    const notifications = load(native);
+
+    await expect(
+      notifications.scheduleReminders(sub({ status: 'cancelled', ends_on: inDays(9) }), DEFAULT_REMINDER_SETTINGS),
+    ).resolves.toBe(0);
+    expect(native.scheduleNotificationAsync).not.toHaveBeenCalled();
+    expect(native.cancelScheduledNotificationAsync).toHaveBeenCalledWith('subscription-renewal-abc');
   });
 
-  it('returns null when the due date is closer than the lead time', () => {
-    // Due in two days: the three-day reminder is already behind us.
-    const now = new Date(2026, 7, 30, 12, 0);
-    expect(reminderDateFor('2026-09-01', now)).toBeNull();
+  it('keeps the renewals channel and attaches the Mark paid button', async () => {
+    const native = nativeMock();
+    const notifications = load(native);
+
+    await notifications.scheduleReminders(sub({ next_due_date: inDays(1) }), DEFAULT_REMINDER_SETTINGS);
+
+    const [request] = native.scheduleNotificationAsync.mock.calls[0] as unknown as [
+      { trigger: { channelId: string }; content: { categoryIdentifier?: string } },
+    ];
+    expect(request.trigger.channelId).toBe('renewals');
+    expect(request.content.categoryIdentifier).toBe('subscription_renewal');
+  });
+});
+
+describe('rescheduleAll (the launch resync)', () => {
+  it('cancels every subscription reminder, then schedules each row', async () => {
+    // A subscription deleted on the website has no row any more; starting
+    // clean is the only way its reminders go.
+    const native = nativeMock([
+      { identifier: 'subscription-renewal-deleted-d3' },
+      { identifier: 'task-1' },
+    ]);
+    const notifications = load(native);
+
+    await notifications.rescheduleAll(
+      [sub({ id: 'one', next_due_date: inDays(10) }), sub({ id: 'two', next_due_date: inDays(10) })],
+      DEFAULT_REMINDER_SETTINGS,
+    );
+
+    const cancelled = native.cancelScheduledNotificationAsync.mock.calls.map(([id]) => id);
+    expect(cancelled).toEqual(['subscription-renewal-deleted-d3']);
+    const ids = native.scheduleNotificationAsync.mock.calls.map(([request]) => request.identifier);
+    expect(ids).toEqual([
+      'subscription-renewal-one-d3',
+      'subscription-renewal-one-d1',
+      'subscription-renewal-one-d0',
+      'subscription-renewal-two-d3',
+      'subscription-renewal-two-d1',
+      'subscription-renewal-two-d0',
+    ]);
   });
 
-  it('still schedules when the reminder is later today', () => {
-    // 08:00 now, reminder at 09:00 today. Same day, still in the future.
-    const now = new Date(2026, 7, 30, 8, 0);
-    const fireAt = reminderDateFor('2026-09-02', now);
-    expect(fireAt).not.toBeNull();
-    expect(fireAt?.getDate()).toBe(30);
-  });
+  it('puts the charged-to account in each reminder', async () => {
+    const native = nativeMock();
+    const notifications = load(native);
 
-  it('crosses a month boundary backwards', () => {
-    const now = new Date(2026, 7, 1);
-    const fireAt = reminderDateFor('2026-09-02', now);
-    expect(fireAt?.getMonth()).toBe(7); // August, not September
-    expect(fireAt?.getDate()).toBe(30);
-  });
+    await notifications.rescheduleAll([sub({ next_due_date: inDays(1) })], DEFAULT_REMINDER_SETTINGS, () => ({
+      accountName: 'HDFC Card',
+    }));
 
-  it('crosses a year boundary backwards', () => {
-    const now = new Date(2026, 11, 1);
-    const fireAt = reminderDateFor('2027-01-02', now);
-    expect(fireAt?.getFullYear()).toBe(2026);
-    expect(fireAt?.getMonth()).toBe(11); // December
-    expect(fireAt?.getDate()).toBe(30);
-  });
-
-  it('handles the leap day without inventing a date', () => {
-    const now = new Date(2024, 1, 1);
-    const fireAt = reminderDateFor('2024-03-02', now);
-    expect(fireAt?.getMonth()).toBe(1); // February
-    expect(fireAt?.getDate()).toBe(28); // 2 March minus 3 days, in a leap year
-  });
-
-  it('uses the configured lead time', () => {
-    const now = new Date(2026, 7, 1);
-    expect(reminderDateFor('2026-08-20', now, 10)?.getDate()).toBe(10);
-    expect(REMINDER_LEAD_DAYS).toBe(3);
+    const [request] = native.scheduleNotificationAsync.mock.calls[0] as unknown as [
+      { content: { body: string } },
+    ];
+    expect(request.content.body).toContain('HDFC Card');
   });
 });
 
 describe('reminderId', () => {
   it('is deterministic, so cancelling never needs a lookup', () => {
-    // This is what makes reschedule-on-every-write safe: there is exactly one
-    // possible id per subscription, so an edit cannot orphan the old reminder.
-    expect(reminderId('abc')).toBe(reminderId('abc'));
+    const notifications = load();
+    expect(notifications.reminderId('abc')).toBe('subscription-renewal-abc');
   });
 
   it('differs per subscription', () => {
-    expect(reminderId('abc')).not.toBe(reminderId('abd'));
+    const notifications = load();
+    expect(notifications.reminderId('abc')).not.toBe(notifications.reminderId('abd'));
   });
 });
 
@@ -114,28 +208,25 @@ describe('lazy loading of expo-notifications', () => {
     // static import is hoisted above every try/catch in the file, so the throw
     // escaped the module and crashed the home screen at startup, because
     // useHomeSummaries imports subscriptions/api which imports this file.
-    //
-    // Importing the module and calling a pure helper must not require it.
     jest.resetModules();
+    jest.doMock('expo', () => ({ isRunningInExpoGo: () => false }));
+    const required = jest.fn(() => nativeMock());
+    jest.doMock('expo-notifications', required);
+
     const notifications = require('../notifications');
 
     expect(notifications.reminderId('abc')).toBe('subscription-renewal-abc');
-    expect(notifications.reminderDateFor('2099-01-10', new Date(2099, 0, 1))).not.toBeNull();
+    expect(required).not.toHaveBeenCalled();
   });
 
   it('never requires the library at all in Expo Go', async () => {
-    // THE SECOND REGRESSION, and the one the first version of this test missed.
-    //
-    // A try/catch around the require is not enough. expo-notifications throws
-    // during module evaluation in Expo Go, and Metro's guardedLoadModule hands
-    // that to ErrorUtils.reportFatalError rather than rethrowing - so the red
-    // screen is already up before any catch here could run.
-    //
-    // The only fix is to not require it. This test fails if the require is
-    // ever reached in Expo Go, regardless of what it is wrapped in.
+    // THE SECOND REGRESSION. expo-notifications throws during module
+    // evaluation in Expo Go, and Metro's guardedLoadModule hands that to
+    // ErrorUtils.reportFatalError rather than rethrowing - so the red screen
+    // is up before any catch here could run. The only fix is to not require
+    // it; this fails if the require is ever reached in Expo Go.
     jest.resetModules();
     jest.doMock('expo', () => ({ isRunningInExpoGo: () => true }));
-
     const required = jest.fn(() => {
       throw new Error('expo-notifications must not be required in Expo Go');
     });
@@ -145,14 +236,11 @@ describe('lazy loading of expo-notifications', () => {
 
     await expect(notifications.ensurePermission()).resolves.toBe('unsupported');
     await expect(
-      notifications.scheduleReminder({
-        id: 'abc',
-        name: 'Netflix',
-        next_due_date: '2099-01-10',
-        is_active: true,
-        amount_minor: 64900,
-      }),
-    ).resolves.toBe(false);
+      notifications.scheduleReminders(sub({ next_due_date: '2099-01-10' }), DEFAULT_REMINDER_SETTINGS),
+    ).resolves.toBe(0);
+    await expect(
+      notifications.rescheduleAll([sub({ next_due_date: '2099-01-10' })], DEFAULT_REMINDER_SETTINGS),
+    ).resolves.toBeUndefined();
 
     expect(required).not.toHaveBeenCalled();
   });
@@ -169,15 +257,9 @@ describe('lazy loading of expo-notifications', () => {
 
     await expect(notifications.ensurePermission()).resolves.toBe('unsupported');
     // And the write paths stay quiet, so a subscription still saves.
-    await expect(notifications.cancelReminder('abc')).resolves.toBeUndefined();
+    await expect(notifications.cancelReminders('abc')).resolves.toBeUndefined();
     await expect(
-      notifications.scheduleReminder({
-        id: 'abc',
-        name: 'Netflix',
-        next_due_date: '2099-01-10',
-        is_active: true,
-        amount_minor: 64900,
-      }),
-    ).resolves.toBe(false);
+      notifications.scheduleReminders(sub({ next_due_date: '2099-01-10' }), DEFAULT_REMINDER_SETTINGS),
+    ).resolves.toBe(0);
   });
 });
