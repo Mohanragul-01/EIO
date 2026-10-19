@@ -1,6 +1,6 @@
 # Subscriptions v3 Implementation Plan
 
-> **For agentic workers:** built inline by one builder, task by task, TDD for every pure function. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** built inline by one builder, task by task, TDD for every pure function. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make Subscriptions the tracker that cannot let a renewal slip past — reminders that never skip and survive a reinstall, real trials, a lifecycle beyond on/off, an India-first quick-add catalogue, honest Mark paid against a Finance account, price history, flexible cycles, per-subscription currency, an upcoming strip, a month calendar and insights — spec §8 in full, on the phone and the website.
 
@@ -49,59 +49,59 @@ Website: `pages/SubscriptionsPage.tsx` (rebuilt; the page splits into `pages/sub
 ### S0: Plan (this file) — commit.
 
 ### S1: The confirmed bug, test first
-- [ ] Failing test in `__tests__/reminders.test.ts`: a subscription due in 2 days still gets a reminder (`scheduleReminder` resolves `true`, the native scheduler is called for the 1-day and same-day moments). Watch it fail (returns `false`).
-- [ ] Fix inside the current shape: offsets `[3, 1, 0]`, schedule each one still in the future, ids `subscription-renewal-<id>-d<N>`, cancel the old bare id too. Test passes; whole suite green. Commit.
+- [x] Failing test in `__tests__/reminders.test.ts`: a subscription due in 2 days still gets a reminder (`scheduleReminder` resolves `true`, the native scheduler is called for the 1-day and same-day moments). Watch it fail (returns `false`).
+- [x] Fix inside the current shape: offsets `[3, 1, 0]`, schedule each one still in the future, ids `subscription-renewal-<id>-d<N>`, cancel the old bare id too. Test passes; whole suite green. Commit.
 
 ### S2: Migration `supabase/migrations/0023_subscriptions_v3.sql`
-- [ ] Columns on `subscriptions`: `status`, `trial_ends_on`, `ends_on`, `resume_on`, `cancel_url`, `cancel_notes`, `service_key`, `color`, `account_id` (→ `accounts`, set null), `charge_channel`, `reminder_offsets smallint[]`, `cycle_unit`, `cycle_count`, `currency`, `fx_rate`, `fx_rate_on`; guarded backfills (`status` from `is_active`, cycle from `billing_cycle`).
-- [ ] `transactions.subscription_id` (→ `subscriptions`, set null) + partial index.
-- [ ] `subscription_price_changes` (cascade with its subscription) and `subscription_settings` (one row per user); RLS + four policies each; `updated_at` trigger on settings.
-- [ ] Re-read for syntax and idempotency. Commit.
+- [x] Columns on `subscriptions`: `status`, `trial_ends_on`, `ends_on`, `resume_on`, `cancel_url`, `cancel_notes`, `service_key`, `color`, `account_id` (→ `accounts`, set null), `charge_channel`, `reminder_offsets smallint[]`, `cycle_unit`, `cycle_count`, `currency`, `fx_rate`, `fx_rate_on`; guarded backfills (`status` from `is_active`, cycle from `billing_cycle`).
+- [x] `transactions.subscription_id` (→ `subscriptions`, set null) + partial index.
+- [x] `subscription_price_changes` (cascade with its subscription) and `subscription_settings` (one row per user); RLS + four policies each; `updated_at` trigger on settings.
+- [x] Re-read for syntax and idempotency. Commit.
 
 ### S3: Types and cycles (`types.ts`, `cycles.ts`)
-- [ ] Tests: legacy fallback (`weekly → week×1`, `quarterly → month×3`), `addCycle` for N days across DST, N weeks, N months with month-end clamp from the anchor (31 Jan + 2 months = 31 Mar, not 28 Mar), years incl. 29 Feb, `once → null`; `perMonthMinor` (weekly = 52/12, 28 days = 365/28/12, once = 0, whole paise); `legacyCycleFor` (28 d → monthly, 84 d → quarterly, once → yearly); labels ("Every 28 days", "Every 2 months", "One-time"); `occurrences` from a due date to an end date. Then implement. Commit.
+- [x] Tests: legacy fallback (`weekly → week×1`, `quarterly → month×3`), `addCycle` for N days across DST, N weeks, N months with month-end clamp from the anchor (31 Jan + 2 months = 31 Mar, not 28 Mar), years incl. 29 Feb, `once → null`; `perMonthMinor` (weekly = 52/12, 28 days = 365/28/12, once = 0, whole paise); `legacyCycleFor` (28 d → monthly, 84 d → quarterly, once → yearly); labels ("Every 28 days", "Every 2 months", "One-time"); `occurrences` from a due date to an end date. Then implement. Commit.
 
 ### S4: Currency (`currency.ts`)
-- [ ] Tests: INR passthrough, `$20.00 × 86.50 = ₹1,730.00`, rounding to whole paise, missing rate → `null`, `rateFromPayment(₹1,742.40 for $20) = 87.12`, formatting with symbol. Implement. Commit.
+- [x] Tests: INR passthrough, `$20.00 × 86.50 = ₹1,730.00`, rounding to whole paise, missing rate → `null`, `rateFromPayment(₹1,742.40 for $20) = 87.12`, formatting with symbol. Implement. Commit.
 
 ### S5: Lifecycle (`lifecycle.ts`)
-- [ ] Tests: paused past its resume date is active; cancelled before/on/after `ends_on`; cancelled with no end date is ended; trial before/at/after its end; archived; `countsInTotals` (active yes, cancelled until ends_on, trial no, foreign without rate excluded separately); `bucketOf` (overdue, this week = 0–6 days, this month = rest of the calendar month, later, trials, paused & ending, archive); `countdownLabel` ("Today", "Tomorrow", "in 5 days", "in 3 wks", "2 days overdue", "Ends in 9 days", "Trial ends today"); `isActiveFlag` for the v2 column. Implement. Commit.
+- [x] Tests: paused past its resume date is active; cancelled before/on/after `ends_on`; cancelled with no end date is ended; trial before/at/after its end; archived; `countsInTotals` (active yes, cancelled until ends_on, trial no, foreign without rate excluded separately); `bucketOf` (overdue, this week = 0–6 days, this month = rest of the calendar month, later, trials, paused & ending, archive); `countdownLabel` ("Today", "Tomorrow", "in 5 days", "in 3 wks", "2 days overdue", "Ends in 9 days", "Trial ends today"); `isActiveFlag` for the v2 column. Implement. Commit.
 
 ### S6: Reminders (`reminders.ts`, `notifications.ts`)
-- [ ] Tests for `reminderPlan(sub, settings, now, context)`: every chosen offset still in the future; same-day always included (the floor); due in 2 days with `[7,3]` → only same-day; per-subscription override wins; `[]` = off; time of day honoured; trial → 3d/1d/morning-of the end date with trial wording; paused with a resume date → "resumes" wording; cancelled / archived / ended → none; overdue → none; DST-safe (fire time is local wall-clock time built from y/m/d). Titles: "Netflix renews tomorrow · ₹649", body names the date and the account.
-- [ ] `notifications.ts`: `scheduleReminders(sub, settings, context)`, `cancelReminders(id)`, `rescheduleAll(rows, settings, context)` (`cancelPrefix('subscription-renewal-')` then schedule all), the `'renewals'` channel, `reminderId` unchanged. Lazy-loading tests kept. Commit.
+- [x] Tests for `reminderPlan(sub, settings, now, context)`: every chosen offset still in the future; same-day always included (the floor); due in 2 days with `[7,3]` → only same-day; per-subscription override wins; `[]` = off; time of day honoured; trial → 3d/1d/morning-of the end date with trial wording; paused with a resume date → "resumes" wording; cancelled / archived / ended → none; overdue → none; DST-safe (fire time is local wall-clock time built from y/m/d). Titles: "Netflix renews tomorrow · ₹649", body names the date and the account.
+- [x] `notifications.ts`: `scheduleReminders(sub, settings, context)`, `cancelReminders(id)`, `rescheduleAll(rows, settings, context)` (`cancelPrefix('subscription-renewal-')` then schedule all), the `'renewals'` channel, `reminderId` unchanged. Lazy-loading tests kept. Commit.
 
 ### S7: Upcoming, insights, prices (`upcoming.ts`, `insights.ts`, `prices.ts`)
-- [ ] Tests: 14-day strip (days, per-day items, INR totals, trials marked but not totalled); sections with count + INR total; month calendar (projected charges + paid entries); summary totals per week/month/year normalised; period ranges (Mon–Sun week, calendar month, calendar year); `periodTotal` = paid in period + still due; category breakdown with % summing to 100 and sorted; `recentIncrease` within 60 days only and only for increases; `priceSteps` with %. Implement. Commit.
+- [x] Tests: 14-day strip (days, per-day items, INR totals, trials marked but not totalled); sections with count + INR total; month calendar (projected charges + paid entries); summary totals per week/month/year normalised; period ranges (Mon–Sun week, calendar month, calendar year); `periodTotal` = paid in period + still due; category breakdown with % summing to 100 and sorted; `recentIncrease` within 60 days only and only for increases; `priceSteps` with %. Implement. Commit.
 
 ### S8: Catalogue and brand (`catalogue.ts`, `brand.ts`)
-- [ ] Tests: unique keys, valid hex, valid category keys, valid cycles, https URLs; search by name and alias, case/space-insensitive, Indian services first for an empty query; `monogram` ("Amazon Prime Video" → "AP", "JioCinema" → "JC", "Zee5" → "Z5"); `readableOn` picks the higher-contrast of white/near-black. Write the catalogue (~80 services: OTT, music, telecom, DTH, broadband, cloud, AI, software, news, food/shopping memberships, fitness, education, gaming), flagging uncertain URLs. Commit.
+- [x] Tests: unique keys, valid hex, valid category keys, valid cycles, https URLs; search by name and alias, case/space-insensitive, Indian services first for an empty query; `monogram` ("Amazon Prime Video" → "AP", "JioCinema" → "JC", "Zee5" → "Z5"); `readableOn` picks the higher-contrast of white/near-black. Write the catalogue (~80 services: OTT, music, telecom, DTH, broadband, cloud, AI, software, news, food/shopping memberships, fitness, education, gaming), flagging uncertain URLs. Commit.
 
 ### S9: Core additions (shared, additive)
-- [ ] `core/ledger.ts`: `LedgerEntry` gains optional `account_id`, `subscription_id`; `recordEntry` returns the new row's id; `removeEntry(id)`.
-- [ ] `core/notifications.ts`: `schedule({... categoryId?})`, `defineCategory(id, actions)`, `onResponse(listener)` (live responses + the one that launched the app). Tests in `core/__tests__/notifications.test.ts`.
-- [ ] `navigation/types.ts` (`SubscriptionDetail`, `SubscriptionCatalogue`, `SubscriptionEdit.serviceKey`), `RootNavigator.tsx` (register, plus `useNotificationRoutes`: a notification whose data carries `route`/`params` — or `actions[actionId]` — opens that screen). Commit.
+- [x] `core/ledger.ts`: `LedgerEntry` gains optional `account_id`, `subscription_id`; `recordEntry` returns the new row's id; `removeEntry(id)`.
+- [x] `core/notifications.ts`: `schedule({... categoryId?})`, `defineCategory(id, actions)`, `onResponse(listener)` (live responses + the one that launched the app). Tests in `core/__tests__/notifications.test.ts`.
+- [x] `navigation/types.ts` (`SubscriptionDetail`, `SubscriptionCatalogue`, `SubscriptionEdit.serviceKey`), `RootNavigator.tsx` (register, plus `useNotificationRoutes`: a notification whose data carries `route`/`params` — or `actions[actionId]` — opens that screen). Commit.
 
 ### S10: API and hooks
-- [ ] `api.ts`: list/get/create/update (writes `is_active`, `billing_cycle` for v2; records a price change when the amount changes), delete; `markPaid` / `undoMarkPaid`; `pause`, `resume`, `cancel`, `undoLifecycle` (restore a snapshot of the lifecycle fields), `archive`, `restore`, `convertTrial`, `endTrial`; `listAccounts`, `listPayments(subId)`, `listPaymentsBetween(from, to)`, `listPriceChanges(subId)`, `listRecentPriceChanges(since)`; `getReminderSettings` / `saveReminderSettings`; `resyncReminders` registered with `registerResync('subscriptions', …)`.
-- [ ] `useSubscriptions` (list + accounts + settings + recent price changes + permission; actions update their own row only), `useSubscription(id)` (detail). Commit.
+- [x] `api.ts`: list/get/create/update (writes `is_active`, `billing_cycle` for v2; records a price change when the amount changes), delete; `markPaid` / `undoMarkPaid`; `pause`, `resume`, `cancel`, `undoLifecycle` (restore a snapshot of the lifecycle fields), `archive`, `restore`, `convertTrial`, `endTrial`; `listAccounts`, `listPayments(subId)`, `listPaymentsBetween(from, to)`, `listPriceChanges(subId)`, `listRecentPriceChanges(since)`; `getReminderSettings` / `saveReminderSettings`; `resyncReminders` registered with `registerResync('subscriptions', …)`.
+- [x] `useSubscriptions` (list + accounts + settings + recent price changes + permission; actions update their own row only), `useSubscription(id)` (detail). Commit.
 
 ### S11: App screens
-- [ ] Components: `BrandTile`, `SubscriptionRow`, `SectionHeader`, `UpcomingStrip`, `MarkPaidSheet`, `DateActionSheet`, `TrialSheet`, `ActionsSheet`, `OffsetChips`, `ReminderSettingsSheet`, `CalendarView`, `InsightsView`.
-- [ ] `SubscriptionsListScreen`: hero with cadence pill (/wk /mo /yr), permission banner, `Tabs` Upcoming · Calendar · Insights, strip + sections, archive link, FAB → catalogue.
-- [ ] `SubscriptionCatalogueScreen`: search with keyboard up, brand rows, "Add own" extended button.
-- [ ] `SubscriptionEditScreen`: amount + currency + rate, name, cycle (unit/count/one-time), trial toggle, next due, category, charged to (account + channel), reminders (default / custom / off), how to cancel, colour, note; unsaved-changes guard.
-- [ ] `SubscriptionDetailScreen`: hero, Mark paid, payments, price history, reminders, charged to, how to cancel, lifecycle actions, delete (confirm stating the cascade). Opens the Mark paid / trial sheet when routed from a notification. Commit after each screen.
+- [x] Components: `BrandTile`, `SubscriptionRow`, `SectionHeader`, `UpcomingStrip`, `MarkPaidSheet`, `DateActionSheet`, `TrialSheet`, `ActionsSheet`, `OffsetChips`, `ReminderSettingsSheet`, `CalendarView`, `InsightsView`.
+- [x] `SubscriptionsListScreen`: hero with cadence pill (/wk /mo /yr), permission banner, `Tabs` Upcoming · Calendar · Insights, strip + sections, archive link, FAB → catalogue.
+- [x] `SubscriptionCatalogueScreen`: search with keyboard up, brand rows, "Add own" extended button.
+- [x] `SubscriptionEditScreen`: amount + currency + rate, name, cycle (unit/count/one-time), trial toggle, next due, category, charged to (account + channel), reminders (default / custom / off), how to cancel, colour, note; unsaved-changes guard.
+- [x] `SubscriptionDetailScreen`: hero, Mark paid, payments, price history, reminders, charged to, how to cancel, lifecycle actions, delete (confirm stating the cascade). Opens the Mark paid / trial sheet when routed from a notification. Commit after each screen.
 
 ### S12: Home tile
-- [ ] `home/useHomeSummaries.ts`: overdue → trial ending → due this week → ₹/mo, using the new rules. Commit.
+- [x] `home/useHomeSummaries.ts`: overdue → trial ending → due this week → ₹/mo, using the new rules. Commit.
 
 ### S13: Website
-- [ ] `SubscriptionsPage`: stats with cadence, Segmented List · Calendar · Insights, FilterBar (search, status, category, charged to), strip, sections with brand tiles, detail dialog (payments, price history, how to cancel, lifecycle), Mark paid dialog, cancel/pause dialogs, trial decision, edit dialog with catalogue search, reminder defaults dialog, archive view, undo toasts.
-- [ ] `Dashboard.tsx` tile; `Icon.tsx` icons; CSS section at the end of `components.css`. Commit.
+- [x] `SubscriptionsPage`: stats with cadence, Segmented List · Calendar · Insights, FilterBar (search, status, category, charged to), strip, sections with brand tiles, detail dialog (payments, price history, how to cancel, lifecycle), Mark paid dialog, cancel/pause dialogs, trial decision, edit dialog with catalogue search, reminder defaults dialog, archive view, undo toasts.
+- [x] `Dashboard.tsx` tile; `Icon.tsx` icons; CSS section at the end of `components.css`. Commit.
 
 ### S14: Verification
-- [ ] All six checks; read both themes' styles once more; `git log --oneline v3..HEAD`; report.
+- [x] All six checks; read both themes' styles once more; `git log --oneline v3..HEAD`; report.
 
 ---
 
@@ -132,3 +132,16 @@ Website: `pages/SubscriptionsPage.tsx` (rebuilt; the page splits into `pages/sub
 - Ruling: "This week" = due in the next 7 days (0–6), "This month" = later in the current calendar month, "Later" after that — why: predictable on any day of the month — cost if wrong: labels only.
 - Ruling: the list screen uses core `Tabs` (Upcoming · Calendar · Insights), not `SwipeTabs` — why: the 14-day strip scrolls horizontally, and two horizontal gestures in one place fight — cost if wrong: none.
 - Ruling: Delete stays a confirm and names the cascade ("Deletes its price history (3 changes). Payments already in Finance stay.") — why: permanent; Archive is the undoable alternative and is offered first — cost if wrong: none.
+
+### Rulings made during the build
+
+- Ruling: the new hooks start their fetch without the house `react-hooks/set-state-in-effect` suppression: state is set only inside the fetch promise's callbacks — why: the brief forbids `react-hooks/*` suppressions, and the rule accepts state set in a callback — cost if wrong: none; the older hooks elsewhere keep theirs.
+- Ruling: a trial reminder's "Keep it" and "I cancelled" buttons open the decision sheet rather than applying the choice in the background — why: it is a decision about money, made on a screen you can see and undo — cost if wrong: one extra tap.
+- Ruling: a subscription whose reminders are Off gets no trial reminders either — why: Off should mean off — cost if wrong: a silenced trial converts unannounced (the editor says "trial or renewal").
+- Ruling: the row's "Mark paid" opens the sheet, never pays in one tap — why: the amount (GST, forex, a rise) is the thing to check — cost if wrong: one tap.
+- Ruling: `ActionKey` lives in the pure `actions.ts` — why: the website imports it, and must never type-check against a React Native component — cost if wrong: none.
+- Ruling: reminder defaults are editable on the website too; the phone applies them at its next launch (the resync reads them fresh) — why: they live in the database, so the website can be honest about when they take effect — cost if wrong: none.
+- Ruling: the phone calendar shows up to two tiles a day (a check for a paid one); the website names what renews inside each day — why: research §6.7; a monitor has the width — cost if wrong: none.
+- Ruling: the home and Dashboard tiles read, in order: overdue, a trial ending within 3 days (by name), what leaves this week, then the monthly cost — why: in order of what costs money if ignored — cost if wrong: wording only.
+- Ruling: a notification's target screen travels in its data (`route`, `params`, `actions`), checked against the navigator's route names before navigating — why: the navigator stays module-agnostic and an unknown route is dropped, not thrown — cost if wrong: none.
+- Ruling: `website/src/lib/types/expo-notifications.d.ts` gains the members core now uses (categories, responses) — why: the website type-checks core through that declaration — cost if wrong: none at runtime (the website's runtime stub stays empty).
