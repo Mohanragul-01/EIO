@@ -25,6 +25,7 @@ import { project, urgencyOf } from '@app/modules/products/types';
 import * as subsApi from '@app/modules/subscriptions/api';
 import { toMonthlyMinor } from '@app/modules/subscriptions/types';
 import * as todoApi from '@app/modules/todo/api';
+import { summarizeOpen } from '@app/modules/todo/today';
 
 import { Icon, type IconName } from '../components/Icon';
 import { Shell } from '../components/Shell';
@@ -36,11 +37,14 @@ import { useCustomModules } from '../modules/custom/useCustomModules';
 
 async function todoSummary() {
   const open = await todoApi.listOpenTodos();
+  // The same counts as the phone's tile and Today view (todo/today.ts).
+  const { overdue, dueToday } = summarizeOpen(open, todayISO());
   if (open.length === 0) return { text: 'All clear', tone: 'ok' as const };
 
-  const overdue = open.filter((t) => t.due_date && daysUntil(t.due_date) < 0).length;
+  const rest = `${dueToday > 0 ? `${dueToday} due today · ` : ''}${open.length} open`;
   // Overdue is the more urgent fact, so it wins the line when there is any.
-  if (overdue > 0) return { text: `${overdue} overdue`, sub: `${open.length} open`, tone: 'bad' as const };
+  if (overdue > 0) return { text: `${overdue} overdue`, sub: rest, tone: 'bad' as const };
+  if (dueToday > 0) return { text: `${dueToday} today`, sub: `${open.length} open`, tone: 'warn' as const };
   return { text: `${open.length} open`, tone: 'neutral' as const };
 }
 

@@ -7,7 +7,7 @@
  * own row if the server says no - ticking happens in bursts, and restoring a
  * whole-list snapshot would undo the other ticks made meanwhile.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { todayISO } from '../../core/date';
 import { useLatestRun } from '../../core/useLatestRun';
@@ -51,11 +51,14 @@ export function useToday() {
   const [error, setError] = useState<string | null>(null);
   const { begin, isMounted } = useLatestRun();
 
+  /**
+   * Fetch. There is no mount effect calling this: the page calls reload() from
+   * useFocusEffect, which also runs when it mounts inside a focused screen, so
+   * a second trigger here would only fetch everything twice.
+   */
   const load = useCallback(
-    async (isRefresh = false) => {
+    async () => {
       const isCurrent = begin();
-      if (isRefresh) setRefreshing(true);
-      setError(null);
       try {
         const today = todayISO();
         const { open, closedToday, next } = await api.listToday(today);
@@ -67,7 +70,10 @@ export function useToday() {
         } catch {
           // Keep the empty map.
         }
-        if (isCurrent()) setState({ today, open, closedToday, next, history });
+        if (isCurrent()) {
+          setState({ today, open, closedToday, next, history });
+          setError(null);
+        }
       } catch (e) {
         if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
       } finally {
@@ -79,12 +85,6 @@ export function useToday() {
     },
     [begin],
   );
-
-  useEffect(() => {
-    // Starts a fetch rather than computing derived state - see useTodos.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load();
-  }, [load]);
 
   const sections = useMemo(
     () => buildToday(state.open, state.closedToday, state.today),
@@ -241,8 +241,11 @@ export function useToday() {
     [state.history, state.today],
   );
 
-  const refresh = useStableCallback(() => load(true));
-  const reload = useStableCallback(() => load(false));
+  const refresh = useStableCallback(() => {
+    setRefreshing(true);
+    return load();
+  });
+  const reload = useStableCallback(() => load());
 
   return {
     today: state.today,

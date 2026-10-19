@@ -742,3 +742,203 @@ button.cal-day-selected:hover {
   color: var(--on-primary);
   font-weight: 600;
 }
+
+/* TASKS v3 ------------------------------------------------------------------ */
+/* Quick add, the richer card, column overdue counts, the repeat and checklist
+   fields of the task dialog, and the month calendar of tasks. All colour comes
+   from tokens, so both themes follow. */
+
+.quick-add {
+  margin-bottom: var(--space-lg);
+}
+
+.quick-add-form {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.quick-add-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.quick-add-input { padding-left: 32px; }
+
+.quick-add-tokens { margin-top: var(--space-sm); }
+
+.quick-add-preview {
+  margin-top: 6px;
+  font-size: var(--text-xs);
+}
+
+.column-overdue {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--danger);
+  font-size: var(--text-2xs);
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-card.closed { background: var(--completed); }
+.task-card.closed .task-title.strike { color: var(--text-secondary); }
+
+.task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 2px;
+}
+
+.task-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.task-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--warning-soft);
+  color: var(--text);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+.task-streak svg { color: var(--accent-amber); }
+
+.repeat-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+
+.repeat-summary {
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--primary-soft);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+.repeat-summary svg { color: var(--primary); }
+
+.checklist { display: flex; flex-direction: column; gap: 2px; }
+
+.checklist-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.checklist-input {
+  flex: 1;
+  height: 30px;
+  border-color: transparent;
+  background: transparent;
+}
+.checklist-input:hover,
+.checklist-input:focus { border-color: var(--border); background: var(--surface); }
+
+.task-cal-day {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  width: 100%;
+  min-height: 84px;
+  gap: 2px;
+  padding: 2px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md);
+  text-align: left;
+  overflow: hidden;
+}
+.task-cal-day.today { border-color: var(--primary); }
+.task-cal-day.selected { background: var(--primary-soft); }
+
+.task-cal-number {
+  align-self: flex-end;
+  padding: 0 3px;
+  font-size: var(--text-xs);
+  font-weight: 550;
+}
+
+.task-cal-entry {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  font-size: var(--text-2xs);
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+.task-cal-entry.closed { color: var(--text-muted); text-decoration: line-through; }
+.task-cal-entry.projected { color: var(--text-faint); }
+.task-cal-entry svg { flex-shrink: 0; }
+
+.task-cal-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.task-cal-more {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.task-cal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  align-self: start;
+}
+
+.task-cal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-cal-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.task-cal-row:last-child { border-bottom: 0; }
+.task-cal-row .check { margin-top: 2px; }
+
+.task-cal-glyph { margin-top: 1px; }
+
+.task-cal-open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.task-cal-open:hover > span:first-child { text-decoration: underline; }

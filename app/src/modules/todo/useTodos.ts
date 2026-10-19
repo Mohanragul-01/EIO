@@ -14,7 +14,7 @@
  * row. Ticking happens in bursts; restoring a whole-list snapshot would also
  * undo whatever else was ticked while this write was in flight.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { todayISO } from '../../core/date';
 import { useLatestRun } from '../../core/useLatestRun';
@@ -97,17 +97,11 @@ export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
         }
       }
       // Depends on the tab AND the status: changing either must produce a new
-      // loader, or the effect below would keep refetching the first one.
+      // loader. There is no mount effect calling it: the page calls reload()
+      // from useFocusEffect, which also runs on mount in a focused screen.
     },
     [frequency, status, begin],
   );
-
-  useEffect(() => {
-    // set-state-in-effect is aimed at effects that compute derived state; this
-    // one starts a fetch, and a fetch has to be able to say it has started.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load();
-  }, [load]);
 
   /** Take a row out of the list; the returned function says where it was. */
   const takeOut = useCallback((todo: Todo) => {

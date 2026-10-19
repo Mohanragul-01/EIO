@@ -55,7 +55,10 @@ export type IconName =
   | 'repeat'
   | 'reset'
   | 'flag'
-  | 'sparkline';
+  | 'sparkline'
+  // Tasks: a routine's streak, and skipping one occurrence.
+  | 'flame'
+  | 'skip';
 
 /**
  * Path data per icon. Several use more than one subpath; they are joined with
@@ -109,6 +112,8 @@ const PATHS: Record<IconName, string> = {
   reset: 'M3 4v6h6 M4.4 15a9 9 0 1 0 1-7.5L3 10',
   flag: 'M5 21V4 M5 5h11l-2 3.5L16 12H5',
   sparkline: 'M3 17l5-6 4 3 5-8 4 5',
+  flame: 'M12 3c.6 3.2 5 5.4 5 10.2a5 5 0 0 1-10 0c0-2.3 1.1-3.9 2.4-5 .2 1.6 1 2.6 2 3C11 8.6 11.3 5.6 12 3z',
+  skip: 'M5 5.5l9 6.5-9 6.5z M18.5 5.5v13',
 };
 
 /**
