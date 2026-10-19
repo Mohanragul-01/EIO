@@ -1223,3 +1223,17 @@ export async function recentSessionSets(
     });
   return out;
 }
+
+/** Sessions with a date in [start, end], for the month calendar. */
+export async function listSessionsBetween(start: string, end: string): Promise<WorkoutSession[]> {
+  const ownerId = await getOwnerId();
+  const { data, error } = await supabase
+    .from('workout_sessions')
+    .select('*')
+    .eq('user_id', ownerId)
+    .gte('date', start)
+    .lte('date', end)
+    .order('date', { ascending: true });
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}

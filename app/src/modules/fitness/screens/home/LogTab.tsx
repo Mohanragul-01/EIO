@@ -26,6 +26,7 @@ import { motion } from '../../../../core/theme';
 import * as api from '../../api';
 import { MODE_LABEL } from '../../mode';
 import { PickerSheet } from '../../components/PickerSheet';
+import { TrainingCalendar } from '../../components/TrainingCalendar';
 import { WeekStrip } from '../../components/WeekStrip';
 import { type FitnessMode, type Routine, type WorkoutSession } from '../../types';
 import { useFitnessHome } from '../../useFitness';
@@ -186,8 +187,10 @@ export function LogTab() {
               weekVolume={summary.weekVolume}
               weekMax={summary.weekMax}
               streak={summary.streak}
+              restDays={summary.restDays}
               onPickDay={pickDay}
             />
+            <TrainingCalendar onPickDay={pickDay} refreshKey={sessions} />
             {sessions.length > 0 ? (
               <Text style={styles.sectionLabel}>
                 History · {summary.totalSessions}{' '}
