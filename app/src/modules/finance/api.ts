@@ -13,12 +13,13 @@
  * Tables: transactions (0004, extended by 0008), accounts and budgets (0008),
  * finance_templates and finance_settings (0022).
  */
-import { monthBounds } from '../../core/date';
+import { monthBounds, todayISO } from '../../core/date';
 import { supabase } from '../../core/supabase';
 import { getOwnerId } from '../../core/session';
 import { buildTransferRows, newUuid } from './accounts';
+import { financeOverview, type FinanceOverview } from './overview';
 import { collectPages } from './paging';
-import type { DateRange } from './period';
+import { normalizeStartDay, type DateRange } from './period';
 import {
   DEFAULT_SETTINGS,
   type Account,
@@ -442,4 +443,27 @@ export async function saveMonthStartDay(day: number): Promise<void> {
     .from('finance_settings')
     .upsert({ user_id: ownerId, month_start_day: day }, { onConflict: 'user_id' });
   fail(error);
+}
+
+// HOME --------------------------------------------------------------------------
+
+/**
+ * Balance, this month's spending and budgets over, for the home tile and the
+ * website's dashboard: the same figures the Finance screen shows, from the
+ * same rules (overview.ts).
+ */
+export async function loadOverview(): Promise<FinanceOverview> {
+  const [settings, accounts, points, budgets] = await Promise.all([
+    getSettings(),
+    listAccounts(),
+    listLedgerPoints(),
+    listBudgets(),
+  ]);
+  return financeOverview({
+    accounts,
+    points,
+    budgets,
+    startDay: normalizeStartDay(settings.month_start_day),
+    today: todayISO(),
+  });
 }
