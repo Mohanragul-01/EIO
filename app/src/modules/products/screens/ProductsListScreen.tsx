@@ -106,7 +106,7 @@ export function ProductsListScreen() {
   const { products, uses, outlooks, today, loading, refreshing, error, load, logUse, logMany, removeUses } =
     useProducts();
 
-  const [lifecycle, setLifecycle] = useState<Lifecycle>('in_use');
+  const [chosenLifecycle, setLifecycle] = useState<Lifecycle>('in_use');
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [loggingAll, setLoggingAll] = useState(false);
   const [sheetFor, setSheetFor] = useState<Product | null>(null);
@@ -129,6 +129,15 @@ export function ProductsListScreen() {
     });
     return result;
   }, [outlooks]);
+
+  /**
+   * The filter only shows while there are spares or finished containers. If
+   * the last one goes (a spare opened on its page, say) while its tab is
+   * chosen, the control disappears - so the list falls back to In use rather
+   * than leaving you on an empty tab with no way off it.
+   */
+  const showLifecycles = counts.unopened > 0 || counts.finished > 0;
+  const lifecycle: Lifecycle = showLifecycles ? chosenLifecycle : 'in_use';
 
   const visible = useMemo(
     () =>
@@ -240,8 +249,6 @@ export function ProductsListScreen() {
       </Screen>
     );
   }
-
-  const showLifecycles = counts.unopened > 0 || counts.finished > 0;
 
   return (
     <Screen padded={false}>

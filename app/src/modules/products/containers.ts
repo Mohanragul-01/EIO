@@ -198,11 +198,22 @@ export function finishedGroups(products: Product[]): ContainerGroup[] {
   return [...groups.values()];
 }
 
-/** The finished containers of the same product, newest first, without this one. */
+/**
+ * The finished containers of the same product that came BEFORE this one,
+ * newest first. "Before" is finished by the day this one opened, so an old
+ * tub's page does not list its successors; a spare has not started, so every
+ * finished one came before it.
+ */
 export function previousContainers(product: Product, all: Product[]): Product[] {
   const key = nameKey(product.name);
   return all
-    .filter((other) => other.id !== product.id && !!other.finished_on && nameKey(other.name) === key)
+    .filter(
+      (other) =>
+        other.id !== product.id &&
+        !!other.finished_on &&
+        nameKey(other.name) === key &&
+        (!product.opened_on || other.finished_on <= product.opened_on),
+    )
     .sort(newestFinishedFirst);
 }
 

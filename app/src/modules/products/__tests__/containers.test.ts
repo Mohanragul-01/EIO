@@ -214,6 +214,20 @@ describe('previousContainers', () => {
     const current = product({ id: 'c', opened_on: '2025-09-21' });
     expect(previousContainers(current, [a, current, b]).map((p) => p.id)).toEqual(['b', 'a']);
   });
+
+  it('leaves out containers that came after this one', () => {
+    // On an old tub's page, "before this one" must not list its successors.
+    const a = product({ id: 'a', opened_on: '2025-07-01', finished_on: '2025-08-10' });
+    const b = product({ id: 'b', opened_on: '2025-08-11', finished_on: '2025-09-20' });
+    const c = product({ id: 'c', opened_on: '2025-09-21', finished_on: '2025-10-30' });
+    expect(previousContainers(b, [a, b, c]).map((p) => p.id)).toEqual(['a']);
+  });
+
+  it('lists every finished one for a spare, which has not started yet', () => {
+    const a = product({ id: 'a', opened_on: '2025-07-01', finished_on: '2025-08-10' });
+    const spare = product({ id: 's', opened_on: null });
+    expect(previousContainers(spare, [a, spare]).map((p) => p.id)).toEqual(['a']);
+  });
 });
 
 describe('spareFor and activeSibling', () => {
