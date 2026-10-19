@@ -136,3 +136,48 @@ export function readChecklistItems(value: unknown): ChecklistItem[] {
 export function checklistProgress(items: ChecklistItem[]): { done: number; total: number } {
   return { done: items.filter((i) => i.done).length, total: items.length };
 }
+
+/** An item with the position it is stored at, which is its identity. */
+export type IndexedItem = { item: ChecklistItem; index: number };
+
+/**
+ * What is left to do, and what is ticked, for the read view.
+ *
+ * A VIEW, not a reorder: the stored list keeps its order, and each item keeps
+ * its stored index. So unticking an item puts it back where it was, rather
+ * than at the bottom of the open items, and a tap on the ticked group still
+ * reaches the right line.
+ */
+export function partitionChecklist(items: ChecklistItem[]): {
+  open: IndexedItem[];
+  ticked: IndexedItem[];
+} {
+  const open: IndexedItem[] = [];
+  const ticked: IndexedItem[] = [];
+  items.forEach((item, index) => (item.done ? ticked : open).push({ item, index }));
+  return { open, ticked };
+}
+
+/*
+ * The edits below never change the list they are given. A read-mode mass
+ * action writes immediately and offers Undo, and Undo needs the list exactly
+ * as it was to put back.
+ */
+
+export function toggleItem(items: ChecklistItem[], index: number): ChecklistItem[] {
+  return items.map((item, i) => (i === index ? { ...item, done: !item.done } : item));
+}
+
+/**
+ * Manual reset only. A checklist you reuse weekly should clear when YOU say
+ * so, not on a schedule: an automatic reset would wipe the evidence of what
+ * you had already done, at a moment you did not choose.
+ */
+export function uncheckAll(items: ChecklistItem[]): ChecklistItem[] {
+  return items.map((item) => ({ ...item, done: false }));
+}
+
+/** Clear out what is done, for a list that is used up rather than reused. */
+export function deleteTicked(items: ChecklistItem[]): ChecklistItem[] {
+  return items.filter((item) => !item.done);
+}

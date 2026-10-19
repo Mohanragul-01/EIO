@@ -10,7 +10,11 @@
 import {
   belongsInInbox,
   checklistProgress,
+  deleteTicked,
+  partitionChecklist,
   readChecklistItems,
+  toggleItem,
+  uncheckAll,
   type ChecklistItem,
 } from '../types';
 
@@ -94,5 +98,55 @@ describe('checklistProgress', () => {
 
   it('handles an empty list without dividing by anything', () => {
     expect(checklistProgress([])).toEqual({ done: 0, total: 0 });
+  });
+});
+
+describe('checklist upgrades', () => {
+  const items: ChecklistItem[] = [
+    { text: 'Milk', done: true },
+    { text: 'Bread', done: false },
+    { text: 'Eggs', done: true },
+    { text: 'Rice', done: false },
+  ];
+
+  it('splits open from ticked without reordering what is stored', () => {
+    // The ticked group is a view: each item keeps its stored index, so
+    // unticking puts it back where it was and a tap still finds its line.
+    expect(partitionChecklist(items)).toEqual({
+      open: [
+        { item: items[1], index: 1 },
+        { item: items[3], index: 3 },
+      ],
+      ticked: [
+        { item: items[0], index: 0 },
+        { item: items[2], index: 2 },
+      ],
+    });
+    expect(items.map((i) => i.text)).toEqual(['Milk', 'Bread', 'Eggs', 'Rice']);
+  });
+
+  it('toggles one item by its stored index', () => {
+    expect(toggleItem(items, 1)[1]).toEqual({ text: 'Bread', done: true });
+    expect(toggleItem(items, 1).filter((i) => i.done)).toHaveLength(3);
+    expect(toggleItem(items, 99)).toEqual(items);
+  });
+
+  it('unchecks everything, keeping the order', () => {
+    expect(uncheckAll(items)).toEqual(items.map((i) => ({ ...i, done: false })));
+  });
+
+  it('deletes only the ticked items', () => {
+    expect(deleteTicked(items)).toEqual([
+      { text: 'Bread', done: false },
+      { text: 'Rice', done: false },
+    ]);
+  });
+
+  it('never changes the list it was given, so an undo can restore it', () => {
+    const before = JSON.stringify(items);
+    uncheckAll(items);
+    deleteTicked(items);
+    toggleItem(items, 0);
+    expect(JSON.stringify(items)).toBe(before);
   });
 });
