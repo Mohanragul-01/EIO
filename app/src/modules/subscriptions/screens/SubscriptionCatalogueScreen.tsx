@@ -73,7 +73,7 @@ export function SubscriptionCatalogueScreen() {
           {query ? (
             <Pressable
               onPress={() => setQuery('')}
-              hitSlop={12}
+              style={styles.iconButton}
               accessibilityRole="button"
               accessibilityLabel="Clear search"
             >
@@ -153,6 +153,14 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     backgroundColor: colors.glassStrong,
     borderWidth: 1,
     borderColor: colors.glassBorderStrong,
+  },
+  // 48dp to press; pulled into the field's padding so the icon sits at its edge.
+  iconButton: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: -spacing.md,
   },
   input: {
     flex: 1,

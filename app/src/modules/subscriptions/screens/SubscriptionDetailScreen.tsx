@@ -111,7 +111,7 @@ export function SubscriptionDetailScreen() {
           <View style={styles.headerButtons}>
             <Pressable
               onPress={() => navigation.navigate('SubscriptionEdit', { id: sub.id })}
-              hitSlop={10}
+              style={styles.iconButton}
               accessibilityRole="button"
               accessibilityLabel="Edit"
             >
@@ -119,7 +119,7 @@ export function SubscriptionDetailScreen() {
             </Pressable>
             <Pressable
               onPress={() => openMenu(sub)}
-              hitSlop={10}
+              style={styles.iconButton}
               accessibilityRole="button"
               accessibilityLabel="More actions"
             >
@@ -128,7 +128,7 @@ export function SubscriptionDetailScreen() {
           </View>
         ) : null,
     });
-  }, [navigation, sub, colors.text, openMenu, styles.headerButtons]);
+  }, [navigation, sub, colors.text, openMenu, styles.headerButtons, styles.iconButton]);
 
   const { reload } = d;
   useFocusEffect(
@@ -288,7 +288,7 @@ export function SubscriptionDetailScreen() {
                   </View>
                   <Pressable
                     onPress={() => removeChange(step.change)}
-                    hitSlop={12}
+                    style={styles.iconButton}
                     accessibilityRole="button"
                     accessibilityLabel="Remove this price change"
                   >
@@ -430,8 +430,8 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   headerButtons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xl,
   },
+  iconButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   heroTop: {
     flexDirection: 'row',
     alignItems: 'center',

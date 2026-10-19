@@ -125,7 +125,7 @@ export function SubscriptionsListScreen() {
       headerRight: () => (
         <Pressable
           onPress={() => setSettingsOpen(true)}
-          hitSlop={12}
+          style={styles.iconButton}
           accessibilityRole="button"
           accessibilityLabel="Reminder settings"
         >
@@ -133,7 +133,7 @@ export function SubscriptionsListScreen() {
         </Pressable>
       ),
     });
-  }, [navigation, colors.text]);
+  }, [navigation, colors.text, styles.iconButton]);
 
   useFocusEffect(
     // reload keeps one identity for the life of the screen and always calls
@@ -607,8 +607,9 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    minHeight: 32,
+    minHeight: 48,
   },
+  iconButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   errorText: {
     ...typography.caption,
     color: colors.text,
