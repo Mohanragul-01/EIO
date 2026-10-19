@@ -7,6 +7,7 @@
  * resolveIsDark out of the provider is what made that possible, and it put the
  * rule somewhere findable at the same time.
  */
+import { contrastRatio } from '../contrast';
 import {
   darkColors,
   lightColors,
@@ -14,7 +15,61 @@ import {
   makeTypography,
   paletteFor,
   resolveIsDark,
+  type ThemeColors,
 } from '../theme';
+
+describe('contrastRatio', () => {
+  it('is 21:1 for black on white, the maximum', () => {
+    expect(contrastRatio('#000000', '#ffffff')).toBeCloseTo(21, 1);
+  });
+
+  it('is 1:1 for a colour against itself', () => {
+    expect(contrastRatio('#8B93A5', '#8B93A5')).toBe(1);
+  });
+
+  it('does not care which colour is the foreground', () => {
+    expect(contrastRatio('#12141B', '#F4F6FA')).toBeCloseTo(contrastRatio('#F4F6FA', '#12141B'), 10);
+  });
+
+  it('matches a published reference pair', () => {
+    // #767676 on white is the well-known lightest grey that passes AA: 4.54:1.
+    expect(contrastRatio('#767676', '#ffffff')).toBeCloseTo(4.54, 2);
+  });
+});
+
+/**
+ * Every text colour is used for small text somewhere - captions, hints, the
+ * date under a row - so all four must clear WCAG AA for NORMAL text, 4.5:1, on
+ * both surfaces text is drawn on. textFaint used to be about 3.7:1 on the dark
+ * canvas and 3.1:1 on the light one.
+ */
+describe.each([
+  ['dark', darkColors],
+  ['light', lightColors],
+] as [string, ThemeColors][])('%s palette text contrast', (_name, palette) => {
+  const TEXT_TOKENS = ['text', 'textSecondary', 'textMuted', 'textFaint'] as const;
+
+  it.each(TEXT_TOKENS)('%s reaches 4.5:1 on the background', (token) => {
+    expect(contrastRatio(palette[token], palette.background)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each(TEXT_TOKENS)('%s reaches 4.5:1 on an elevated surface', (token) => {
+    expect(contrastRatio(palette[token], palette.backgroundElevated)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('keeps faint text fainter than muted text, so the hierarchy survives', () => {
+    expect(contrastRatio(palette.textFaint, palette.background)).toBeLessThan(
+      contrastRatio(palette.textMuted, palette.background),
+    );
+  });
+
+  it('has an info colour and a completed tint distinct from success', () => {
+    expect(palette.info).toMatch(/^#[0-9a-fA-F]{6}$/);
+    expect(palette.completed).toBeTruthy();
+    expect(palette.info).not.toBe(palette.success);
+    expect(palette.completed).not.toBe(palette.success);
+  });
+});
 
 describe('palettes', () => {
   it('define exactly the same keys', () => {
@@ -81,6 +136,12 @@ describe('makeTypography', () => {
     const t = makeTypography(darkColors);
     expect(t.display.letterSpacing).toBeLessThan(t.h2.letterSpacing);
     expect(t.overline.letterSpacing).toBeGreaterThan(0);
+  });
+
+  it('offers tabular figures for numbers that line up in columns', () => {
+    // "60" and "57.5" in a set table, or rupee amounts down a list, wobble
+    // left and right with proportional digits.
+    expect(makeTypography(darkColors).numeric.fontVariant).toEqual(['tabular-nums']);
   });
 });
 

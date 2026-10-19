@@ -72,8 +72,15 @@
 
   --text: #16161a;
   --text-secondary: #4a4a55;
-  --text-muted: #71717f;
-  --text-faint: #9b9ba7;
+  /*
+    Both were below the 4.5:1 that small text needs: muted 4.37:1 at worst and
+    faint 2.50:1. Muted now clears it even on surface-3, where a selected stat
+    puts a muted label; faint clears it on the page, cards and inputs, where
+    faint text actually sits. Three distinct steps remain - secondary 8.45,
+    muted 5.30, faint 4.92 on the page.
+  */
+  --text-muted: #686876;
+  --text-faint: #6d6d7b;
 
   --primary: #4f46e5;
   --primary-hover: #4338ca;
@@ -86,6 +93,11 @@
   --warning-soft: #fffbeb;
   --danger: #be123c;
   --danger-soft: #fff1f2;
+  /* Neutral information - a drop set's "D". 6.05:1 on the page. */
+  --info: #0a5dc2;
+  --info-soft: #eff6ff;
+  /* The background of something finished: a ticked set row. */
+  --completed: rgba(21, 128, 61, 0.1);
 
   /* Category and module colours. Data, not decoration - these are only ever
      used to identify a thing, never to brighten a surface. */
@@ -133,8 +145,9 @@
 
     --text: #ededf0;
     --text-secondary: #a7a7b3;
-    --text-muted: #82828f;
-    --text-faint: #5d5d68;
+    /* Muted 4.37 -> 4.62:1 at worst; faint 2.75 -> 4.64:1. See the light block. */
+    --text-muted: #868693;
+    --text-faint: #81818d;
 
     --primary: #8b8cf8;
     --primary-hover: #a3a4fa;
@@ -147,6 +160,9 @@
     --warning-soft: #241c08;
     --danger: #fb7185;
     --danger-soft: #24101a;
+    --info: #7cb7ff;
+    --info-soft: #0d1a2b;
+    --completed: rgba(74, 222, 128, 0.12);
 
     --accent-indigo: #8b8cf8;
     --accent-amber: #fbbf24;
@@ -180,8 +196,8 @@
 
   --text: #ededf0;
   --text-secondary: #a7a7b3;
-  --text-muted: #82828f;
-  --text-faint: #5d5d68;
+  --text-muted: #868693;
+  --text-faint: #81818d;
 
   --primary: #8b8cf8;
   --primary-hover: #a3a4fa;
@@ -194,6 +210,9 @@
   --warning-soft: #241c08;
   --danger: #fb7185;
   --danger-soft: #24101a;
+  --info: #7cb7ff;
+  --info-soft: #0d1a2b;
+  --completed: rgba(74, 222, 128, 0.12);
 
   --accent-indigo: #8b8cf8;
   --accent-amber: #fbbf24;

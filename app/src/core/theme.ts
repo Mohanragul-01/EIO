@@ -40,6 +40,19 @@ export type ThemeColors = {
   success: string;
   warning: string;
   danger: string;
+  /**
+   * Neutral information - a drop set's "D", a notice that is neither good
+   * news nor a problem. A blue kept clear of the indigo accent and of the
+   * normal-priority dot, since those already mean something.
+   */
+  info: string;
+  /**
+   * The background of something you have finished: a ticked set row, a done
+   * checklist item. Translucent, so it reads as a tint over whatever surface
+   * it lands on rather than a solid block, and calm enough that a screen full
+   * of completed rows is not a wall of green.
+   */
+  completed: string;
 
   /**
    * Task priority, as a three-step scale: red, blue, green.
@@ -96,6 +109,8 @@ export const darkColors: ThemeColors = {
   success: '#4ADEA9',
   warning: '#FCC53D',
   danger: '#FF8497',
+  info: '#7CB7FF',
+  completed: 'rgba(74, 222, 169, 0.14)',
 
   priorityHigh: 'rgb(251, 113, 133)',
   priorityNormal: 'rgb(96, 165, 250)',
@@ -104,7 +119,10 @@ export const darkColors: ThemeColors = {
   text: '#F7F8FA',
   textSecondary: '#BFC5D2',
   textMuted: '#8B93A5',
-  textFaint: '#646C7E',
+  // Was #646C7E: 3.49:1 on the canvas and 3.23:1 on a sheet, below the 4.5:1
+  // that small text needs. Moved the least distance toward textMuted that
+  // clears it on both (5.04 / 4.66), so it is still visibly the faintest.
+  textFaint: '#7E8698',
 
   shadow: '#000000',
 };
@@ -145,6 +163,8 @@ export const lightColors: ThemeColors = {
   success: '#047857',
   warning: '#B45309',
   danger: '#BE123C',
+  info: '#0A5DC2',
+  completed: 'rgba(4, 120, 87, 0.10)',
 
   priorityHigh: 'rgb(225, 29, 72)',
   priorityNormal: 'rgb(37, 99, 235)',
@@ -153,7 +173,10 @@ export const lightColors: ThemeColors = {
   text: '#111827',
   textSecondary: '#3F4757',
   textMuted: '#606B7E',
-  textFaint: '#8B94A6',
+  // Was #8B94A6: 2.82:1 on the canvas, the worst text contrast in the app.
+  // Darkened to the least that clears 4.5:1 on the canvas and on white
+  // (4.61 / 4.99), staying a shade lighter than textMuted.
+  textFaint: '#667083',
 
   shadow: '#1E293B',
 };
@@ -251,6 +274,15 @@ export function makeTypography(colors: ThemeColors) {
       letterSpacing: 1.1,
       textTransform: 'uppercase' as const,
       color: colors.textMuted,
+    },
+    /**
+     * Spread into any style whose digits must line up: weights and reps down a
+     * set table, rupee amounts down a list, a running timer. Proportional
+     * digits make "57.5" and "60" wobble against each other, and a ticking
+     * clock visibly jitters as its width changes every second.
+     */
+    numeric: {
+      fontVariant: ['tabular-nums'] as ['tabular-nums'],
     },
   } as const;
 }
