@@ -7,18 +7,38 @@
  */
 import { getOwnerId } from '../../core/session';
 import { supabase } from '../../core/supabase';
+import { toSetFact, type SetFact } from './load';
 import {
   DEFAULT_EXERCISES,
+  type Band,
   type BodyMetric,
   type Exercise,
+  type FitnessMode,
   type Profile,
   type Routine,
   type RoutineExercise,
+  type SessionExercise,
   type SessionSet,
   type SetInput,
   type WorkoutSession,
   type TrackingType,
 } from './types';
+
+/** The exercise fields a form can write. Everything but identity and timestamps. */
+export type ExerciseFields = Partial<
+  Pick<
+    Exercise,
+    | 'tracking_type'
+    | 'discipline'
+    | 'load_mode'
+    | 'bodyweight_factor'
+    | 'equipment'
+    | 'is_unilateral'
+    | 'default_rest_seconds'
+    | 'pinned_note'
+    | 'instructions'
+  >
+>;
 
 // PROFILE ---------------------------------------------------------------------
 
@@ -131,11 +151,9 @@ export async function seedDefaultExercisesIfEmpty(): Promise<Exercise[]> {
   return listExercises();
 }
 
-export async function createExercise(input: {
-  name: string;
-  muscle_group: string | null;
-  tracking_type?: TrackingType;
-}): Promise<Exercise> {
+export async function createExercise(
+  input: { name: string; muscle_group: string | null; tracking_type?: TrackingType } & ExerciseFields,
+): Promise<Exercise> {
   const ownerId = await getOwnerId();
   const { data, error } = await supabase
     .from('exercises')
@@ -149,7 +167,7 @@ export async function createExercise(input: {
 
 export async function updateExercise(
   id: string,
-  input: { name: string; muscle_group: string | null; tracking_type?: TrackingType },
+  input: { name?: string; muscle_group?: string | null; tracking_type?: TrackingType } & ExerciseFields,
 ): Promise<void> {
   const { error } = await supabase.from('exercises').update(input).eq('id', id);
   if (error) throw new Error(error.message);
@@ -436,4 +454,363 @@ export async function listRecentSets(sessionIds: string[]): Promise<SessionSet[]
 
   if (error) throw new Error(error.message);
   return data ?? [];
+}
+
+// SESSIONS v3 --------------------------------------------------------------------
+
+export async function getSession(id: string): Promise<WorkoutSession | null> {
+  const { data, error } = await supabase
+    .from('workout_sessions')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/**
+ * The weigh-in in force on a day: the latest on or before it. A session keeps
+ * a copy (bodyweight_kg) so editing an old weigh-in later does not rewrite the
+ * volume of sessions already done.
+ */
+export async function bodyweightOn(date: string): Promise<number | null> {
+  const ownerId = await getOwnerId();
+  const { data, error } = await supabase
+    .from('body_metrics')
+    .select('weight_kg')
+    .eq('user_id', ownerId)
+    .lte('date', date)
+    .order('date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? Number(data.weight_kg) : null;
+}
+
+/**
+ * The exercise each ladder's current rung points at, for resolving routine
+ * slots that follow a ladder. A ladder with no current rung resolves to
+ * nothing and its slot is skipped.
+ */
+export async function currentRungExercises(
+  progressionIds: string[],
+): Promise<Record<string, string>> {
+  if (progressionIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from('progressions')
+    .select('id, current_step_id, progression_steps!progression_steps_progression_id_fkey(id, exercise_id)')
+    .in('id', progressionIds);
+  if (error) throw new Error(error.message);
+
+  type Row = {
+    id: string;
+    current_step_id: string | null;
+    progression_steps: { id: string; exercise_id: string }[] | null;
+  };
+  const out: Record<string, string> = {};
+  for (const row of (data ?? []) as Row[]) {
+    const step = (row.progression_steps ?? []).find((s) => s.id === row.current_step_id);
+    if (step) out[row.id] = step.exercise_id;
+  }
+  return out;
+}
+
+/**
+ * Start a session: the row, a bodyweight snapshot, and - for a routine - its
+ * blocks, so the session opens with every planned exercise in order before
+ * anything is logged. A ladder slot becomes the ladder's current rung.
+ */
+export async function startSession(input: {
+  date: string;
+  mode: FitnessMode;
+  routine_id: string | null;
+}): Promise<WorkoutSession> {
+  const ownerId = await getOwnerId();
+  const bodyweight = await bodyweightOn(input.date);
+
+  const { data: session, error } = await supabase
+    .from('workout_sessions')
+    .insert({
+      user_id: ownerId,
+      date: input.date,
+      mode: input.mode,
+      routine_id: input.routine_id,
+      notes: '',
+      started_at: new Date().toISOString(),
+      bodyweight_kg: bodyweight,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+
+  if (input.routine_id) {
+    const slots = await listRoutineExercises(input.routine_id);
+    const ladders = await currentRungExercises(
+      slots.flatMap((slot) => (slot.progression_id ? [slot.progression_id] : [])),
+    );
+    const rows: Omit<SessionExercise, 'id' | 'created_at'>[] = [];
+    const seen = new Set<string>();
+    for (const slot of slots) {
+      const exerciseId =
+        slot.exercise_id ?? (slot.progression_id ? ladders[slot.progression_id] : undefined);
+      // One block per exercise: a ladder whose rung is also listed on its own
+      // shares that block rather than failing the insert.
+      if (!exerciseId || seen.has(exerciseId)) continue;
+      seen.add(exerciseId);
+      rows.push({
+        session_id: session.id,
+        exercise_id: exerciseId,
+        user_id: ownerId,
+        position: rows.length,
+        rest_seconds: slot.rest_seconds,
+        note: '',
+        superset_group: slot.pair_group,
+      });
+    }
+    if (rows.length > 0) {
+      const { error: blockError } = await supabase.from('session_exercises').insert(rows);
+      if (blockError) throw new Error(blockError.message);
+    }
+  }
+
+  return session;
+}
+
+/** Finish is optional and never gates saving: it only stamps the end. */
+export async function finishSession(id: string): Promise<WorkoutSession> {
+  const { data, error } = await supabase
+    .from('workout_sessions')
+    .update({ ended_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function reopenSession(id: string): Promise<void> {
+  const { error } = await supabase.from('workout_sessions').update({ ended_at: null }).eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+export async function listSessionExercises(sessionId: string): Promise<SessionExercise[]> {
+  const { data, error } = await supabase
+    .from('session_exercises')
+    .select('*')
+    .eq('session_id', sessionId)
+    .order('position', { ascending: true });
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+/**
+ * Add an exercise to a session. Upsert on (session, exercise): adding one that
+ * is already there returns the existing block instead of failing.
+ */
+export async function addSessionExercise(input: {
+  session_id: string;
+  exercise_id: string;
+  position: number;
+  rest_seconds?: number | null;
+}): Promise<SessionExercise> {
+  const ownerId = await getOwnerId();
+  const { data, error } = await supabase
+    .from('session_exercises')
+    .upsert(
+      { ...input, user_id: ownerId },
+      { onConflict: 'session_id,exercise_id', ignoreDuplicates: false },
+    )
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function updateSessionExercise(
+  id: string,
+  patch: Partial<Pick<SessionExercise, 'position' | 'rest_seconds' | 'note' | 'superset_group' | 'exercise_id'>>,
+): Promise<void> {
+  const { error } = await supabase.from('session_exercises').update(patch).eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+/** Write a new order. Each row's position is its index in `ids`. */
+export async function reorderSessionExercises(ids: string[]): Promise<void> {
+  const results = await Promise.all(
+    ids.map((id, position) => supabase.from('session_exercises').update({ position }).eq('id', id)),
+  );
+  const failed = results.find((r) => r.error);
+  if (failed?.error) throw new Error(failed.error.message);
+}
+
+/**
+ * Remove an exercise from a session, with the sets logged for it. The screen
+ * confirms first when there are sets, because those are gone for good.
+ */
+export async function removeSessionExercise(input: {
+  sessionId: string;
+  exerciseId: string;
+  blockId: string | null;
+}): Promise<void> {
+  const { error: setsError } = await supabase
+    .from('session_sets')
+    .delete()
+    .eq('session_id', input.sessionId)
+    .eq('exercise_id', input.exerciseId);
+  if (setsError) throw new Error(setsError.message);
+
+  if (input.blockId) {
+    const { error } = await supabase.from('session_exercises').delete().eq('id', input.blockId);
+    if (error) throw new Error(error.message);
+  }
+}
+
+export async function updateSet(
+  id: string,
+  patch: Partial<
+    Pick<
+      SessionSet,
+      | 'reps'
+      | 'duration_seconds'
+      | 'weight_kg'
+      | 'rpe'
+      | 'set_type'
+      | 'assist_kg'
+      | 'band_id'
+      | 'side'
+      | 'clean'
+    >
+  >,
+): Promise<SessionSet> {
+  const { data, error } = await supabase
+    .from('session_sets')
+    .update(patch)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** The columns the training maths reads, and nothing else. */
+const FACT_COLUMNS =
+  'id, exercise_id, session_id, set_type, reps, duration_seconds, weight_kg, assist_kg, clean, created_at';
+
+/**
+ * Each exercise's sets from OTHER sessions, for record checks. Fetched once
+ * when a session opens rather than per tick, so ticking a set is one write.
+ */
+export async function listBaseline(
+  exerciseIds: string[],
+  excludeSessionId: string,
+): Promise<Record<string, SetFact[]>> {
+  if (exerciseIds.length === 0) return {};
+  const ownerId = await getOwnerId();
+  const { data, error } = await supabase
+    .from('session_sets')
+    .select(FACT_COLUMNS)
+    .eq('user_id', ownerId)
+    .in('exercise_id', exerciseIds)
+    .neq('session_id', excludeSessionId);
+  if (error) throw new Error(error.message);
+
+  const out: Record<string, SetFact[]> = {};
+  for (const row of data ?? []) {
+    const fact = toSetFact(row as Parameters<typeof toSetFact>[0]);
+    (out[fact.exercise_id] ??= []).push(fact);
+  }
+  return out;
+}
+
+/**
+ * For each exercise, the sets of the most recent OTHER session that had it,
+ * on or before `onOrBefore` - "last time", for the PREVIOUS column and ghost
+ * values. Logging a past day compares with the session before that day.
+ */
+export async function listPreviousSets(
+  exerciseIds: string[],
+  excludeSessionId: string,
+  onOrBefore: string,
+): Promise<Record<string, { date: string; sets: SetFact[] }>> {
+  if (exerciseIds.length === 0) return {};
+  const ownerId = await getOwnerId();
+  const { data, error } = await supabase
+    .from('session_sets')
+    .select(`${FACT_COLUMNS}, set_number, workout_sessions!inner(date, created_at)`)
+    .eq('user_id', ownerId)
+    .in('exercise_id', exerciseIds)
+    .neq('session_id', excludeSessionId)
+    .lte('workout_sessions.date', onOrBefore)
+    // Enough history to find each exercise's last session; a person logs
+    // far fewer sets than this between sessions of one exercise.
+    .order('created_at', { ascending: false })
+    .limit(600);
+  if (error) throw new Error(error.message);
+
+  type Row = Parameters<typeof toSetFact>[0] & {
+    set_number: number;
+    workout_sessions: { date: string; created_at: string } | { date: string; created_at: string }[];
+  };
+  const rows = ((data ?? []) as Row[]).map((row) => {
+    const session = Array.isArray(row.workout_sessions) ? row.workout_sessions[0] : row.workout_sessions;
+    return { row, date: session?.date ?? '', sessionCreated: session?.created_at ?? '' };
+  });
+  // Newest session first: by date, then by when the session was created.
+  rows.sort((a, b) => b.date.localeCompare(a.date) || b.sessionCreated.localeCompare(a.sessionCreated));
+
+  const out: Record<string, { date: string; sets: SetFact[] }> = {};
+  const lastSession: Record<string, string> = {};
+  for (const { row, date } of rows) {
+    const exerciseId = row.exercise_id;
+    lastSession[exerciseId] ??= row.session_id;
+    if (lastSession[exerciseId] !== row.session_id) continue;
+    (out[exerciseId] ??= { date, sets: [] }).sets.push({ ...toSetFact(row), created_at: row.created_at });
+  }
+  for (const entry of Object.values(out)) {
+    entry.sets.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  }
+  return out;
+}
+
+// BANDS ---------------------------------------------------------------------------
+
+export async function listBands(): Promise<Band[]> {
+  const ownerId = await getOwnerId();
+  const { data, error } = await supabase
+    .from('bands')
+    .select('*')
+    .eq('user_id', ownerId)
+    .order('position', { ascending: true });
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function saveBand(input: {
+  id?: string;
+  label: string;
+  color: string;
+  approx_kg: number | null;
+  position: number;
+}): Promise<Band> {
+  const ownerId = await getOwnerId();
+  const { data, error } = input.id
+    ? await supabase
+        .from('bands')
+        .update({ label: input.label, color: input.color, approx_kg: input.approx_kg, position: input.position })
+        .eq('id', input.id)
+        .select()
+        .single()
+    : await supabase
+        .from('bands')
+        .insert({ ...input, user_id: ownerId })
+        .select()
+        .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Sets that used the band keep their assistance; only the band link is cleared. */
+export async function deleteBand(id: string): Promise<void> {
+  const { error } = await supabase.from('bands').delete().eq('id', id);
+  if (error) throw new Error(error.message);
 }
