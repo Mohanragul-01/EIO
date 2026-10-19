@@ -216,7 +216,11 @@ function findBoldClose(text: string, open: number, ch: string): number {
     if (!text.startsWith(marker, j)) continue;
     if (isSpace(text[j - 1])) continue;
     if (ch === '_' && isWordChar(text[j + 2])) continue;
-    return j;
+    // In a run of three ("***word***", bold and italic together) the bold
+    // closes on the LAST two, leaving the first to close the italics inside.
+    let close = j;
+    while (text[close + 2] === ch) close += 1;
+    return close;
   }
   return -1;
 }
