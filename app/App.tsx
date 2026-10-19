@@ -56,9 +56,10 @@ export default function App() {
   }
 
   return (
-    // Outermost, so every gesture anywhere in the tree - swipe-to-delete a set,
-    // a sheet dragged down - is recognised natively rather than in JS, and the
-    // pager's horizontal swipe and a row's swipe can arbitrate between them.
+    // Outermost, so every gesture in the app's window - swipe-to-delete a set,
+    // the tab pager - is recognised natively rather than in JS, and the pager's
+    // horizontal swipe and a row's swipe can arbitrate between them. A Modal is
+    // a separate window this does not reach, which is why Sheet has its own.
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         {/*
