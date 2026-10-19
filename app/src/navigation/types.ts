@@ -32,9 +32,12 @@ export type RootStackParamList = {
    * Same create-or-edit pattern as TodoEdit, plus:
    *   `type`  which kind of note to create (note, checklist, journal)
    *   `quick` quick capture: straight into the body, nothing else required
-   * Both are ignored when editing, since the row already knows what it is.
+   *   `prompt` a journal prompt to start a new entry from
+   * All are ignored when editing, since the row already knows what it is.
    */
-  NoteEdit: { id?: string; type?: 'note' | 'checklist' | 'journal'; quick?: boolean };
+  NoteEdit: { id?: string; type?: 'note' | 'checklist' | 'journal'; quick?: boolean; prompt?: string };
+  /** The notes the tabs hide: the Trash, or the Archive. */
+  NotesShelf: { shelf: 'trash' | 'archive' };
   FinanceList: undefined;
   TransactionEdit: { id?: string };
 

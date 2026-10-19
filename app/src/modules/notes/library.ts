@@ -117,25 +117,29 @@ export type NoteFilter = {
  * as typed, which is what you remember typing.
  */
 export function filterNotes(notes: readonly Note[], filter: NoteFilter): Note[] {
+  return notes.filter((note) => isLive(note) && matchesFilter(note, filter));
+}
+
+/**
+ * The search itself, whatever state the note is in - for the Trash and the
+ * Archive, which search their own notes. Everything else goes through
+ * filterNotes, which adds the live check.
+ */
+export function matchesFilter(note: Note, filter: NoteFilter): boolean {
   const needle = (filter.query ?? '').trim().toLowerCase();
   const tag = filter.tag ?? null;
   const color = filter.color ?? null;
 
-  return notes.filter((note) => {
-    if (!isLive(note)) return false;
-    if (tag && !note.tags.includes(tag)) return false;
-    if (color && readNoteColor(note.color)?.key !== color) return false;
-    if (!needle) return true;
+  if (tag && !note.tags.includes(tag)) return false;
+  if (color && readNoteColor(note.color)?.key !== color) return false;
+  if (!needle) return true;
 
-    return (
-      note.title.toLowerCase().includes(needle) ||
-      note.body.toLowerCase().includes(needle) ||
-      note.tags.some((t) => t.includes(needle)) ||
-      readChecklistItems(note.checklist_items).some((item) =>
-        item.text.toLowerCase().includes(needle),
-      )
-    );
-  });
+  return (
+    note.title.toLowerCase().includes(needle) ||
+    note.body.toLowerCase().includes(needle) ||
+    note.tags.some((t) => t.includes(needle)) ||
+    readChecklistItems(note.checklist_items).some((item) => item.text.toLowerCase().includes(needle))
+  );
 }
 
 /**

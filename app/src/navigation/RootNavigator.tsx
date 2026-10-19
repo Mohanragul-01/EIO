@@ -36,6 +36,7 @@ import { RoutineEditScreen } from '../modules/fitness/screens/RoutineEditScreen'
 import { WorkoutSessionScreen } from '../modules/fitness/screens/WorkoutSessionScreen';
 import { NoteEditScreen } from '../modules/notes/screens/NoteEditScreen';
 import { NotesListScreen } from '../modules/notes/screens/NotesListScreen';
+import { NotesShelfScreen } from '../modules/notes/screens/NotesShelfScreen';
 import { SubscriptionsListScreen } from '../modules/subscriptions/screens/SubscriptionsListScreen';
 import { TodoEditScreen } from '../modules/todo/screens/TodoEditScreen';
 import { TodoListScreen } from '../modules/todo/screens/TodoListScreen';
@@ -120,6 +121,7 @@ export function RootNavigator() {
         />
         <Stack.Screen name="NotesList" component={NotesListScreen} options={{ title: 'Notes' }} />
         <Stack.Screen name="NoteEdit" component={NoteEditScreen} />
+        <Stack.Screen name="NotesShelf" component={NotesShelfScreen} />
         <Stack.Screen
           name="FinanceList"
           component={FinanceListScreen}

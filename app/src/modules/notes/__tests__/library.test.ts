@@ -14,6 +14,7 @@ import {
   isArchived,
   isLive,
   isTrashed,
+  matchesFilter,
   overviewCounts,
   purgeCutoff,
   splitPinned,
@@ -192,6 +193,13 @@ describe('filterNotes', () => {
 
   it('returns everything for an empty filter', () => {
     expect(filterNotes(all, { query: '   ', tag: null, color: null })).toEqual(all);
+  });
+
+  it('searches the Trash and the Archive through matchesFilter, which skips the live check', () => {
+    const binned = { ...plan, deleted_at: '2026-10-10T00:00:00.000Z' };
+    expect(filterNotes([binned], { query: 'trains' })).toEqual([]);
+    expect(matchesFilter(binned, { query: 'trains' })).toBe(true);
+    expect(matchesFilter(binned, { query: 'milk' })).toBe(false);
   });
 });
 
