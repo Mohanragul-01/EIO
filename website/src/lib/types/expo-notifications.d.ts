@@ -44,7 +44,39 @@ declare module 'expo-notifications' {
 
   export function scheduleNotificationAsync(request: {
     identifier?: string;
-    content: { title: string; body: string; data?: Record<string, unknown> };
+    content: {
+      title: string;
+      body: string;
+      data?: Record<string, unknown>;
+      categoryIdentifier?: string;
+    };
     trigger: { type: SchedulableTriggerInputTypes; date: Date; channelId?: string };
   }): Promise<string>;
+
+  // Action buttons and the responses to them (core/notifications: categories
+  // and onResponse).
+  export function setNotificationCategoryAsync(
+    identifier: string,
+    actions: {
+      identifier: string;
+      buttonTitle: string;
+      options?: { opensAppToForeground?: boolean };
+    }[],
+  ): Promise<unknown>;
+
+  export const DEFAULT_ACTION_IDENTIFIER: string;
+
+  export type NotificationResponse = {
+    actionIdentifier: string;
+    notification: {
+      date: number;
+      request: { identifier: string; content: { data: Record<string, unknown> | null } };
+    };
+  };
+
+  export function addNotificationResponseReceivedListener(
+    listener: (response: NotificationResponse) => void,
+  ): { remove: () => void };
+  export function getLastNotificationResponseAsync(): Promise<NotificationResponse | null>;
+  export function clearLastNotificationResponseAsync(): Promise<void>;
 }

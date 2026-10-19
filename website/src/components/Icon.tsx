@@ -55,7 +55,13 @@ export type IconName =
   | 'repeat'
   | 'reset'
   | 'flag'
-  | 'sparkline';
+  | 'sparkline'
+  | 'bell'
+  | 'archive'
+  | 'external'
+  | 'more'
+  | 'arrowUp'
+  | 'arrowDown';
 
 /**
  * Path data per icon. Several use more than one subpath; they are joined with
@@ -109,6 +115,13 @@ const PATHS: Record<IconName, string> = {
   reset: 'M3 4v6h6 M4.4 15a9 9 0 1 0 1-7.5L3 10',
   flag: 'M5 21V4 M5 5h11l-2 3.5L16 12H5',
   sparkline: 'M3 17l5-6 4 3 5-8 4 5',
+
+  bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9 M10.3 21a1.9 1.9 0 0 0 3.4 0',
+  archive: 'M3 4h18v4H3z M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8 M10 12h4',
+  external: 'M15 3h6v6 M10 14L21 3 M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6',
+  more: 'M5 12h.01 M12 12h.01 M19 12h.01',
+  arrowUp: 'M12 19V5 M5 12l7-7 7 7',
+  arrowDown: 'M12 5v14 M19 12l-7 7-7-7',
 };
 
 /**

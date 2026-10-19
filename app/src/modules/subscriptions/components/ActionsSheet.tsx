@@ -17,21 +17,11 @@ import { Pressable, Text, View } from 'react-native';
 import { Sheet } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { spacing } from '../../../core/theme';
+import type { ActionKey } from '../actions';
 import { effectiveState } from '../lifecycle';
 import type { Subscription } from '../types';
 
-export type ActionKey =
-  | 'pay'
-  | 'keep'
-  | 'end_trial'
-  | 'pause'
-  | 'resume'
-  | 'cancel'
-  | 'restore'
-  | 'archive'
-  | 'open'
-  | 'edit'
-  | 'delete';
+export type { ActionKey };
 
 type ActionDef = { key: ActionKey; label: string; icon: keyof typeof Ionicons.glyphMap };
 

@@ -13,6 +13,20 @@ import { addCycle, cycleOf } from './cycles';
 import { effectiveState, trialEndsOn } from './lifecycle';
 import type { Subscription, SubscriptionInput } from './types';
 
+/** Every action a subscription can offer, on any screen or client. */
+export type ActionKey =
+  | 'pay'
+  | 'keep'
+  | 'end_trial'
+  | 'pause'
+  | 'resume'
+  | 'cancel'
+  | 'restore'
+  | 'archive'
+  | 'open'
+  | 'edit'
+  | 'delete';
+
 export type LifecyclePatch = Partial<
   Pick<
     SubscriptionInput,

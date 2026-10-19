@@ -23,7 +23,8 @@ import * as notesApi from '@app/modules/notes/api';
 import * as productsApi from '@app/modules/products/api';
 import { project, urgencyOf } from '@app/modules/products/types';
 import * as subsApi from '@app/modules/subscriptions/api';
-import { toMonthlyMinor } from '@app/modules/subscriptions/types';
+import { daysBetween, effectiveState, trialEndsOn } from '@app/modules/subscriptions/lifecycle';
+import { sections as subscriptionSections, summaryTotals } from '@app/modules/subscriptions/upcoming';
 import * as todoApi from '@app/modules/todo/api';
 
 import { Icon, type IconName } from '../components/Icon';
@@ -72,24 +73,39 @@ async function financeSummary() {
 
 async function subscriptionsSummary() {
   const rows = await subsApi.listSubscriptions();
-  const active = rows.filter((s) => s.is_active);
-  if (active.length === 0) return { text: 'Nothing tracked', tone: 'neutral' as const };
+  const today = todayISO();
+  const { sections } = subscriptionSections(rows, today);
+  if (sections.length === 0) return { text: 'Nothing tracked', tone: 'neutral' as const };
 
-  const overdue = active.filter((s) => daysUntil(s.next_due_date) < 0).length;
-  const dueSoon = active.filter((s) => {
-    const days = daysUntil(s.next_due_date);
-    return days >= 0 && days <= 7;
-  }).length;
+  const totals = summaryTotals(rows, today);
+  const perMonth = `${formatMoney(totals.perMonthMinor, { compact: true })} a month`;
 
-  const monthly = active.reduce(
-    (total, s) => total + toMonthlyMinor(s.amount_minor, s.billing_cycle),
-    0,
-  );
-  const perMonth = `${formatMoney(monthly, { compact: true })} a month`;
+  // In order of what costs money if ignored: overdue, a trial about to
+  // convert on its own, then what leaves this week.
+  const overdue = sections.find((s) => s.bucket === 'overdue');
+  if (overdue) return { text: `${overdue.count} overdue`, sub: perMonth, tone: 'bad' as const };
 
-  if (overdue > 0) return { text: `${overdue} overdue`, sub: perMonth, tone: 'bad' as const };
-  if (dueSoon > 0) return { text: `${dueSoon} due this week`, sub: perMonth, tone: 'warn' as const };
-  return { text: perMonth, sub: `${active.length} active`, tone: 'neutral' as const };
+  const trial = rows
+    .filter((s) => {
+      const state = effectiveState(s, today);
+      return state === 'trial_over' || (state === 'trial' && daysBetween(today, trialEndsOn(s)) <= 3);
+    })
+    .sort((a, b) => trialEndsOn(a).localeCompare(trialEndsOn(b)))[0];
+  if (trial) {
+    const days = daysBetween(today, trialEndsOn(trial));
+    const when = days < 0 ? 'is over' : days === 0 ? 'ends today' : days === 1 ? 'ends tomorrow' : `ends in ${days} days`;
+    return { text: `Trial ${when}`, sub: trial.name, tone: 'warn' as const };
+  }
+
+  const week = sections.find((s) => s.bucket === 'week');
+  if (week) {
+    return {
+      text: `${formatMoney(week.totalMinor, { compact: true })} this week`,
+      sub: `${week.count} renewing · ${perMonth}`,
+      tone: 'warn' as const,
+    };
+  }
+  return { text: perMonth, sub: `${totals.count} active`, tone: 'neutral' as const };
 }
 
 async function fitnessSummary() {
