@@ -1237,3 +1237,59 @@ export async function listSessionsBetween(start: string, end: string): Promise<W
   if (error) throw new Error(error.message);
   return data ?? [];
 }
+
+/**
+ * Every set of one exercise, with its session's date and bodyweight, for the
+ * exercise's page: charts, history and records.
+ */
+export async function listExerciseSets(
+  exerciseId: string,
+): Promise<
+  (SetFact & {
+    date: string;
+    bodyweight_kg: number | null;
+    band_id: string | null;
+    side: 'left' | 'right' | null;
+    rpe: number | null;
+  })[]
+> {
+  const ownerId = await getOwnerId();
+  const { data, error } = await supabase
+    .from('session_sets')
+    .select(FACT_COLUMNS + ', band_id, side, rpe, workout_sessions!inner(date, bodyweight_kg)')
+    .eq('user_id', ownerId)
+    .eq('exercise_id', exerciseId)
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(error.message);
+
+  type SessionRef = { date: string; bodyweight_kg: number | string | null };
+  type Row = Parameters<typeof toSetFact>[0] & {
+    band_id: string | null;
+    side: 'left' | 'right' | null;
+    rpe: number | null;
+    workout_sessions: SessionRef | SessionRef[];
+  };
+  return ((data ?? []) as unknown as Row[]).flatMap((row) => {
+    const session = Array.isArray(row.workout_sessions)
+      ? row.workout_sessions[0]
+      : row.workout_sessions;
+    if (!session?.date) return [];
+    const bodyweight = session.bodyweight_kg === null ? null : Number(session.bodyweight_kg);
+    return [
+      {
+        ...toSetFact(row),
+        date: session.date,
+        bodyweight_kg: Number.isFinite(bodyweight) ? bodyweight : null,
+        band_id: row.band_id,
+        side: row.side,
+        rpe: row.rpe,
+      },
+    ];
+  });
+}
+
+export async function getExercise(id: string): Promise<Exercise | null> {
+  const { data, error } = await supabase.from('exercises').select('*').eq('id', id).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
+}
