@@ -87,15 +87,15 @@ export function LogView({ mode, nav }: { mode: FitnessMode; nav: FitnessNav }) {
 
   const { data, loading, error, reload } = useAsync(load, `fitness-log-${limit}`);
 
+  // The month on the calendar, a week either side so the grid's borrowed days
+  // are marked too. Its own sessions also fill the day panel, so a day older
+  // than the list or the year still shows what the calendar marks.
   const loadMonth = useCallback(async () => {
     const { start, end } = monthBounds(year, month);
-    return trainingDays(await api.listSessionsBetween(shift(start, -7), shift(end, 7)));
+    const sessions = await api.listSessionsBetween(shift(start, -7), shift(end, 7));
+    return { sessions, days: trainingDays(sessions) };
   }, [year, month]);
-  // Keyed on the log's data too, so a session started or deleted marks the month.
-  const monthData = useAsync(
-    loadMonth,
-    `fitness-month-${year}-${month}-${data ? data.sessions.length : 0}`,
-  );
+  const monthData = useAsync(loadMonth, `fitness-month-${year}-${month}`);
 
   const routines = useMemo(
     () => (data?.routines ?? []).filter((r) => r.mode === mode),
@@ -179,7 +179,7 @@ export function LogView({ mode, nav }: { mode: FitnessMode; nav: FitnessNav }) {
     if (!ok) return;
     try {
       await api.deleteSession(session.id);
-      await reload();
+      await Promise.all([reload(), monthData.reload()]);
       toast.show({ message: `Workout on ${formatEventDate(session.date)} deleted` });
     } catch (e) {
       toast.show({ message: e instanceof Error ? e.message : 'Could not delete that workout' });
@@ -205,9 +205,7 @@ export function LogView({ mode, nav }: { mode: FitnessMode; nav: FitnessNav }) {
 
   const sessions = data?.sessions ?? [];
   const daySessions = selected
-    ? [...(data?.yearSessions ?? []), ...sessions].filter(
-        (s, i, all) => s.date === selected && all.findIndex((x) => x.id === s.id) === i,
-      )
+    ? (monthData.data?.sessions ?? []).filter((s) => s.date === selected)
     : [];
 
   return (
@@ -311,7 +309,7 @@ export function LogView({ mode, nav }: { mode: FitnessMode; nav: FitnessNav }) {
               year={year}
               month={month}
               onChangeMonth={(y, m) => setMonth({ year: y, month: m })}
-              days={monthData.data ?? {}}
+              days={monthData.data?.days ?? {}}
               selected={selected}
               onSelect={selectDay}
             />
