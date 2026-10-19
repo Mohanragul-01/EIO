@@ -41,6 +41,8 @@ import { WorkoutSessionScreen } from '../modules/fitness/screens/WorkoutSessionS
 import { NoteEditScreen } from '../modules/notes/screens/NoteEditScreen';
 import { NotesListScreen } from '../modules/notes/screens/NotesListScreen';
 import { SubscriptionsListScreen } from '../modules/subscriptions/screens/SubscriptionsListScreen';
+import { SubscriptionCatalogueScreen } from '../modules/subscriptions/screens/SubscriptionCatalogueScreen';
+import { SubscriptionDetailScreen } from '../modules/subscriptions/screens/SubscriptionDetailScreen';
 import { TodoEditScreen } from '../modules/todo/screens/TodoEditScreen';
 import { TodoListScreen } from '../modules/todo/screens/TodoListScreen';
 import type { RootStackParamList } from './types';
@@ -149,6 +151,10 @@ export function RootNavigator() {
           options={{ title: 'Subscriptions' }}
         />
         <Stack.Screen name="SubscriptionEdit" component={SubscriptionEditScreen} />
+        {/* Titles set by the screens: the subscription's name, and the
+            catalogue's own. */}
+        <Stack.Screen name="SubscriptionDetail" component={SubscriptionDetailScreen} />
+        <Stack.Screen name="SubscriptionCatalogue" component={SubscriptionCatalogueScreen} />
         <Stack.Screen
           name="FitnessList"
           component={FitnessListScreen}

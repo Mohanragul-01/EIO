@@ -27,33 +27,34 @@ export function useSubscription(id: string) {
 
   const { begin, isMounted } = useLatestRun();
 
-  const load = useCallback(async () => {
+  /** State is set only in the promise's callbacks: see useSubscriptions. */
+  const load = useCallback((): Promise<void> => {
     const isCurrent = begin();
-    setLoadError(null);
-    try {
-      const [sub, paid, changes, accountRows, savedSettings] = await Promise.all([
-        api.getSubscription(id),
-        api.listPayments(id).catch(() => [] as Payment[]),
-        api.listPriceChanges(id).catch(() => [] as PriceChange[]),
-        api.listAccounts().catch(() => [] as Account[]),
-        api.getReminderSettings().catch(() => DEFAULT_REMINDER_SETTINGS),
-      ]);
-      if (!isCurrent()) return;
-      setSubscription(sub);
-      setPayments(paid);
-      setPriceChanges(changes);
-      setAccounts(accountRows);
-      setSettings(savedSettings);
-    } catch (e) {
-      if (isCurrent()) setLoadError(errorText(e, 'Could not load this subscription'));
-    } finally {
-      if (isCurrent()) setLoading(false);
-    }
+    return Promise.all([
+      api.getSubscription(id),
+      api.listPayments(id).catch(() => [] as Payment[]),
+      api.listPriceChanges(id).catch(() => [] as PriceChange[]),
+      api.listAccounts().catch(() => [] as Account[]),
+      api.getReminderSettings().catch(() => DEFAULT_REMINDER_SETTINGS),
+    ])
+      .then(([sub, paid, changes, accountRows, savedSettings]) => {
+        if (!isCurrent()) return;
+        setLoadError(null);
+        setSubscription(sub);
+        setPayments(paid);
+        setPriceChanges(changes);
+        setAccounts(accountRows);
+        setSettings(savedSettings);
+      })
+      .catch((e: unknown) => {
+        if (isCurrent()) setLoadError(errorText(e, 'Could not load this subscription'));
+      })
+      .finally(() => {
+        if (isCurrent()) setLoading(false);
+      });
   }, [begin, id]);
 
   useEffect(() => {
-    // Starts a fetch rather than computing derived state - see useTodos.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 

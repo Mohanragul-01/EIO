@@ -49,7 +49,7 @@ export function readableOn(hex: string): string {
  * readable monogram in both themes. Picked by a hash of the name, so the same
  * subscription keeps the same colour on every screen and both clients.
  */
-const FALLBACKS = [
+export const TILE_COLOURS = [
   '#4F46E5',
   '#0E7490',
   '#047857',
@@ -67,7 +67,7 @@ export function fallbackColor(name: string): string {
   for (const char of name.trim().toLowerCase()) {
     hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   }
-  return FALLBACKS[hash % FALLBACKS.length];
+  return TILE_COLOURS[hash % TILE_COLOURS.length];
 }
 
 /** The tile colour: the row's own, else its catalogue entry's, else a fallback. */

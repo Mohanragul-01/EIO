@@ -42,44 +42,45 @@ export function useSubscriptions() {
 
   const { begin, isMounted } = useLatestRun();
 
-  const load = useCallback(
-    async (showSpinner = false) => {
-      const isCurrent = begin();
-      if (showSpinner) setRefreshing(true);
-      setError(null);
-
-      try {
-        // The list is required; the rest decorate it, and a Finance table
-        // that is not there yet (0008 not run) must not empty the list.
-        const [rows, accountRows, savedSettings, changes] = await Promise.all([
-          api.listSubscriptions(),
-          api.listAccounts().catch(() => [] as Account[]),
-          api.getReminderSettings().catch(() => DEFAULT_REMINDER_SETTINGS),
-          api.listRecentPriceChanges(addDaysISO(-INCREASE_BADGE_DAYS)).catch(() => [] as PriceChange[]),
-        ]);
+  /**
+   * Fetch, then apply. State is set only inside the promise's callbacks,
+   * which is what lets the mount effect below start it without setting state
+   * synchronously in an effect - and without suppressing the rule that says
+   * so.
+   */
+  const fetchAll = useCallback((): Promise<void> => {
+    const isCurrent = begin();
+    // The list is required; the rest decorate it, and a Finance table that is
+    // not there yet (0008 not run) must not empty the list.
+    return Promise.all([
+      api.listSubscriptions(),
+      api.listAccounts().catch(() => [] as Account[]),
+      api.getReminderSettings().catch(() => DEFAULT_REMINDER_SETTINGS),
+      api.listRecentPriceChanges(addDaysISO(-INCREASE_BADGE_DAYS)).catch(() => [] as PriceChange[]),
+    ])
+      .then(([rows, accountRows, savedSettings, changes]) => {
         if (!isCurrent()) return;
         setSubscriptions(rows);
         setAccounts(accountRows);
         setSettings(savedSettings);
         setPriceChanges(changes);
         setPaymentsVersion((v) => v + 1);
-      } catch (e) {
+        setError(null);
+      })
+      .catch((e: unknown) => {
         if (isCurrent()) setError(errorText(e, 'Something went wrong'));
-      } finally {
+      })
+      .finally(() => {
         if (isCurrent()) {
           setLoading(false);
           setRefreshing(false);
         }
-      }
-    },
-    [begin],
-  );
+      });
+  }, [begin]);
 
   useEffect(() => {
-    // Starts a fetch rather than computing derived state - see useTodos.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load();
-  }, [load]);
+    void fetchAll();
+  }, [fetchAll]);
 
   /**
    * Checked once per mount, WITHOUT asking: a prompt on opening a screen is
@@ -233,8 +234,11 @@ export function useSubscriptions() {
    * effect in each screen holds one of these forever, so it must not close over
    * a stale copy. See core/useStableCallback for the bug this prevents.
    */
-  const refresh = useStableCallback(() => load(true));
-  const reload = useStableCallback(() => load(false));
+  const refresh = useStableCallback(() => {
+    setRefreshing(true);
+    return fetchAll();
+  });
+  const reload = useStableCallback(() => fetchAll());
   const clearError = useCallback(() => setError(null), []);
 
   return {

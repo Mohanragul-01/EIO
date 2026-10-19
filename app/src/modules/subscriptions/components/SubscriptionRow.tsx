@@ -1,82 +1,150 @@
 /**
- * SubscriptionRow - one subscription, with an inline "renew" action.
+ * SubscriptionRow - one subscription: its tile, what it costs, when it next
+ * charges, and the one action that is due, if any.
  *
- * The renew button only appears when the renewal is actually near (or past).
- * Showing it on every row would train you to ignore it; showing it only when
- * it's actionable makes it mean something.
+ * Brand and urgency are kept apart, so they never fight: the tile carries the
+ * brand colour, and the countdown carries the urgency - in words ("2 days
+ * overdue"), with colour only reinforcing them.
+ *
+ * Tap opens the subscription; long-press opens its actions. No swipe: a row
+ * can sit in a scrolling list, and every action has a button elsewhere too.
+ * The inline action shows only when it is actionable - renewal near or past,
+ * or a trial that needs an answer - so it means something when it appears.
  */
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { GlassCard } from '../../../core/components';
-import { daysUntil, formatDueDate } from '../../../core/date';
-import { formatMoney } from '../../../core/money';
-import { radius, spacing } from '../../../core/theme';
-import { CYCLE_SUFFIX, type Subscription } from '../types';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
+import { radius, spacing } from '../../../core/theme';
+import { cycleLabel, cycleOf, cycleSuffix } from '../cycles';
+import { priceParts } from '../format';
+import {
+  countdown,
+  daysBetween,
+  effectiveState,
+  needsTrialDecision,
+  type Tone,
+} from '../lifecycle';
+import type { PriceStep } from '../prices';
+import { channelLabel, type Subscription } from '../types';
+import { BrandTile } from './BrandTile';
 
 type SubscriptionRowProps = {
   subscription: Subscription;
+  today: string;
+  accountName: string | null;
+  /** A price rise in the last 60 days, for the "↑" badge. */
+  rise?: PriceStep | null;
   onPress: () => void;
-  onRenew: () => void;
+  onLongPress: () => void;
+  onMarkPaid: () => void;
+  onDecideTrial: () => void;
 };
 
-export function SubscriptionRow({ subscription, onPress, onRenew }: SubscriptionRowProps) {
+export function SubscriptionRow({
+  subscription: sub,
+  today,
+  accountName,
+  rise,
+  onPress,
+  onLongPress,
+  onMarkPaid,
+  onDecideTrial,
+}: SubscriptionRowProps) {
   const styles = useStyles();
   const { colors } = useTheme();
-  const days = daysUntil(subscription.next_due_date);
-  const inactive = !subscription.is_active;
-  const overdue = !inactive && days < 0;
-  const dueSoon = !inactive && days >= 0 && days <= 7;
 
-  // One status color drives the dot, the date text and the border.
-  const statusColor = overdue
-    ? colors.danger
-    : dueSoon
-      ? colors.warning
-      : colors.textMuted;
+  const state = effectiveState(sub, today);
+  const cycle = cycleOf(sub);
+  const price = priceParts(sub);
+  const due = countdown(sub, today);
+  const toneColor: Record<Tone, string> = {
+    danger: colors.danger,
+    warning: colors.warning,
+    info: colors.info,
+    muted: colors.textMuted,
+  };
+
+  const charged = accountName ?? channelLabel(sub.charge_channel);
+  const secondLine =
+    state === 'trial' || state === 'trial_over'
+      ? `Trial · then ${price.main} ${cycleSuffix(cycle)}`
+      : [cycleLabel(cycle), charged].filter(Boolean).join(' · ');
+
+  const payable = state === 'active' && daysBetween(today, sub.next_due_date) <= 7;
+  const decide = needsTrialDecision(sub, today);
+
+  const label = [
+    sub.name,
+    `${price.main} ${cycleLabel(cycle).toLowerCase()}`,
+    price.converted,
+    due.text,
+    charged ? `charged to ${charged}` : null,
+    rise ? `price up ${rise.pct}%` : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   return (
-    <GlassCard
-      onPress={onPress}
-      style={[styles.card, inactive && styles.cardInactive]}
-    >
-      <View style={styles.row}>
-        <View style={styles.body}>
-          <View style={styles.titleRow}>
-            {!inactive ? <View style={[styles.dot, { backgroundColor: statusColor }]} /> : null}
-            <Text style={[styles.name, inactive && styles.nameInactive]} numberOfLines={1}>
-              {subscription.name}
+    <GlassCard style={styles.card} padded={false}>
+      <Pressable
+        onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={350}
+        style={({ pressed }) => [styles.body, pressed && styles.pressed]}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityHint="Opens it. Long-press for actions."
+      >
+        <BrandTile sub={sub} />
+
+        <View style={styles.middle}>
+          <View style={styles.nameRow}>
+            <Text style={styles.name} numberOfLines={1}>
+              {sub.name}
             </Text>
-            {inactive ? (
-              <View style={styles.cancelledChip}>
-                <Text style={styles.cancelledText}>Cancelled</Text>
+            {rise ? (
+              <View style={styles.rise}>
+                <Ionicons name="arrow-up" size={11} color={colors.warning} />
+                <Text style={styles.riseText}>{rise.pct}%</Text>
               </View>
             ) : null}
           </View>
-
-          <Text style={[styles.due, { color: statusColor }]}>
-            {inactive ? 'Not billing' : formatDueDate(subscription.next_due_date)}
+          <Text style={styles.secondary} numberOfLines={1}>
+            {secondLine}
           </Text>
         </View>
 
-        <View style={styles.priceBlock}>
-          <Text style={[styles.price, inactive && styles.nameInactive]}>
-            {formatMoney(subscription.amount_minor, { compact: true })}
+        <View style={styles.right}>
+          <Text style={styles.price}>{price.main}</Text>
+          {price.converted ? (
+            <Text style={styles.converted} numberOfLines={1}>
+              {price.converted}
+            </Text>
+          ) : null}
+          <Text style={[styles.countdown, { color: toneColor[due.tone] }]} numberOfLines={1}>
+            {due.text}
           </Text>
-          <Text style={styles.cycle}>{CYCLE_SUFFIX[subscription.billing_cycle]}</Text>
         </View>
-      </View>
+      </Pressable>
 
-      {(overdue || dueSoon) && !inactive ? (
+      {payable || decide ? (
         <Pressable
-          onPress={onRenew}
-          style={({ pressed }) => [styles.renew, pressed && styles.renewPressed]}
-          hitSlop={6}
+          onPress={decide ? onDecideTrial : onMarkPaid}
+          style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel={
+            decide ? `Keep or cancel the ${sub.name} trial` : `Mark ${sub.name} paid`
+          }
         >
-          <Ionicons name="checkmark-circle-outline" size={15} color={colors.primary} />
-          <Text style={styles.renewText}>Mark as paid</Text>
+          <Ionicons
+            name={decide ? 'help-circle-outline' : 'checkmark-circle-outline'}
+            size={16}
+            color={colors.primary}
+          />
+          <Text style={styles.actionText}>{decide ? 'Keep it or cancel?' : 'Mark paid'}</Text>
         </Pressable>
       ) : null}
     </GlassCard>
@@ -87,83 +155,84 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   card: {
     marginBottom: spacing.md,
   },
-  cardInactive: {
-    opacity: 0.55,
-  },
-  row: {
+  body: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+    minHeight: 72,
   },
-  body: {
+  pressed: {
+    opacity: 0.7,
+  },
+  middle: {
     flex: 1,
-    paddingRight: spacing.md,
+    minWidth: 0,
   },
-  titleRow: {
+  nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
   },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: radius.pill,
-  },
   name: {
     ...typography.title,
     fontSize: 15,
-    flexShrink: 1, // lets a long name truncate instead of pushing the chip out
+    flexShrink: 1,
   },
-  nameInactive: {
-    color: colors.textMuted,
-  },
-  cancelledChip: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
+  rise: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
     borderRadius: radius.sm,
-    backgroundColor: colors.glass,
     borderWidth: 1,
-    borderColor: colors.glassBorder,
+    borderColor: colors.warning,
   },
-  cancelledText: {
+  riseText: {
     ...typography.caption,
-    fontSize: 10,
+    ...typography.numeric,
+    fontSize: 10.5,
+    lineHeight: 14,
+    color: colors.warning,
   },
-  due: {
+  secondary: {
     ...typography.caption,
     fontSize: 12,
-    marginTop: 4,
+    marginTop: 3,
   },
-  priceBlock: {
+  right: {
     alignItems: 'flex-end',
+    maxWidth: '42%',
   },
   price: {
     ...typography.title,
+    ...typography.numeric,
     fontSize: 15,
-    fontVariant: ['tabular-nums'],
   },
-  cycle: {
+  converted: {
     ...typography.caption,
+    ...typography.numeric,
     fontSize: 11,
     color: colors.textFaint,
-    marginTop: 2,
   },
-  renew: {
+  countdown: {
+    ...typography.caption,
+    fontSize: 12,
+    marginTop: 3,
+  },
+  action: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    alignSelf: 'flex-start',
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
     borderTopWidth: 1,
     borderTopColor: colors.glassBorder,
-    width: '100%',
   },
-  renewPressed: {
-    opacity: 0.6,
-  },
-  renewText: {
+  actionText: {
     ...typography.caption,
-    fontSize: 12.5,
+    fontSize: 13,
     color: colors.primary,
   },
 }));
