@@ -11,6 +11,7 @@
  * reminders from the row the database returned - never from the input, which
  * for a partial update does not describe the whole row.
  */
+import { fromISODate, todayISO } from '../../core/date';
 import { removeEntry, recordEntry } from '../../core/ledger';
 import { registerResync } from '../../core/notifications';
 import { getOwnerId } from '../../core/session';
@@ -250,16 +251,43 @@ export async function markPaid(sub: Subscription, input: MarkPaidInput): Promise
 
 /**
  * Undo a Mark paid. The payment goes first: if removing it fails, nothing
- * else is touched and the error says so. Putting the date back first and then
- * failing to remove the payment would invite a second Mark paid - the phantom
- * expense the order above exists to prevent.
+ * else is touched. Putting the date back first and then failing to remove the
+ * payment would invite a second Mark paid - the phantom expense the order
+ * above exists to prevent.
+ *
+ * Either write can fail on a bad connection, and the error says which half
+ * happened: "could not undo" alone reads as "nothing changed", which after
+ * the first write is no longer true.
  */
 export async function undoMarkPaid(result: MarkPaidResult): Promise<Subscription> {
-  if (result.transactionId) await removeEntry(result.transactionId);
-  const restored = await updateSubscription(result.previous.id, snapshot(result.previous));
+  if (result.transactionId) {
+    try {
+      await removeEntry(result.transactionId);
+    } catch {
+      throw new Error(
+        'Could not undo: the payment is still in Finance and nothing changed. Try again.',
+      );
+    }
+  }
+  let restored: Subscription;
+  try {
+    restored = await updateSubscription(result.previous.id, snapshot(result.previous));
+  } catch (e) {
+    // Nothing was removed, so nothing is half-done: the plain error stands.
+    if (!result.transactionId) throw e;
+    throw new Error(
+      `Undo stopped halfway: the payment is out of Finance, but ${result.previous.name} is ` +
+        `still due ${shortDay(result.subscription.next_due_date)}. ` +
+        `Set it back to ${shortDay(result.previous.next_due_date)} in Edit.`,
+    );
+  }
   if (result.priceChangeId) await deletePriceChange(result.priceChangeId).catch(() => {});
   return restored;
 }
+
+/** "26 Oct": the day without the relative words, which read oddly mid-sentence. */
+const shortDay = (iso: string) =>
+  fromISODate(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 
 /* PRICE HISTORY ------------------------------------------------------------ */
 
@@ -278,7 +306,9 @@ async function recordPriceChange(
       old_amount_minor: sub.amount_minor,
       new_amount_minor: newAmountMinor,
       currency: sub.currency,
-      ...(effectiveOn ? { effective_on: effectiveOn } : {}),
+      // The phone's day: the column's default (current_date) is UTC, which
+      // is still yesterday in India until 05:30.
+      effective_on: effectiveOn ?? todayISO(),
     })
     .select('id')
     .single();
