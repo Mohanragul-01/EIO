@@ -15,6 +15,9 @@ import {
   type Exercise,
   type FitnessMode,
   type Profile,
+  type Progression,
+  type ProgressionMove,
+  type ProgressionStep,
   type Routine,
   type RoutineExercise,
   type SessionExercise,
@@ -903,4 +906,276 @@ export async function updateRoutineFromSession(
     );
     if (error) throw new Error(error.message);
   }
+}
+
+// LADDERS -------------------------------------------------------------------------
+
+export type Ladder = {
+  progression: Progression;
+  steps: ProgressionStep[];
+  moves: ProgressionMove[];
+};
+
+/** Every ladder with its rungs and moves, for the Skills tab. */
+export async function listLadders(): Promise<Ladder[]> {
+  const ownerId = await getOwnerId();
+  const [progressions, steps, moves] = await Promise.all([
+    supabase
+      .from('progressions')
+      .select('*')
+      .eq('user_id', ownerId)
+      .order('family', { ascending: true })
+      .order('position', { ascending: true }),
+    supabase
+      .from('progression_steps')
+      .select('*')
+      .eq('user_id', ownerId)
+      .order('position', { ascending: true }),
+    supabase
+      .from('progression_moves')
+      .select('*')
+      .eq('user_id', ownerId)
+      .order('date', { ascending: true })
+      .order('created_at', { ascending: true }),
+  ]);
+  for (const result of [progressions, steps, moves]) {
+    if (result.error) throw new Error(result.error.message);
+  }
+  return ((progressions.data ?? []) as Progression[]).map((progression) => ({
+    progression,
+    steps: ((steps.data ?? []) as ProgressionStep[]).filter(
+      (s) => s.progression_id === progression.id,
+    ),
+    moves: ((moves.data ?? []) as ProgressionMove[]).filter(
+      (m) => m.progression_id === progression.id,
+    ),
+  }));
+}
+
+export async function getLadder(id: string): Promise<Ladder | null> {
+  const all = await listLadders();
+  return all.find((l) => l.progression.id === id) ?? null;
+}
+
+export type RungInput = {
+  id?: string;
+  exercise_id: string;
+  goal_sets: number;
+  goal_reps: number | null;
+  goal_seconds: number | null;
+  goal_added_kg: number | null;
+  start_reps: number | null;
+  start_seconds: number | null;
+  cue: string;
+};
+
+/**
+ * Save a ladder and its rungs. Rungs keep their ids where they have one, so
+ * the moves and "mastered on" dates that point at them survive an edit; new
+ * ones are added, and rungs taken out are deleted (with their moves). A new
+ * ladder starts on its first rung.
+ */
+export async function saveLadder(
+  input: {
+    id?: string;
+    name: string;
+    family: Progression['family'];
+    level_up_rule: Progression['level_up_rule'];
+    notes: string;
+  },
+  rungs: RungInput[],
+): Promise<string> {
+  const ownerId = await getOwnerId();
+  let progressionId = input.id;
+
+  if (progressionId) {
+    const { error } = await supabase
+      .from('progressions')
+      .update({
+        name: input.name,
+        family: input.family,
+        level_up_rule: input.level_up_rule,
+        notes: input.notes,
+      })
+      .eq('id', progressionId);
+    if (error) throw new Error(error.message);
+  } else {
+    const { data, error } = await supabase
+      .from('progressions')
+      .insert({
+        name: input.name,
+        family: input.family,
+        level_up_rule: input.level_up_rule,
+        notes: input.notes,
+        user_id: ownerId,
+      })
+      .select('id')
+      .single();
+    if (error) throw new Error(error.message);
+    progressionId = (data as { id: string }).id;
+  }
+
+  const { data: existing, error: readError } = await supabase
+    .from('progression_steps')
+    .select('id')
+    .eq('progression_id', progressionId);
+  if (readError) throw new Error(readError.message);
+  const keep = new Set(rungs.flatMap((r) => (r.id ? [r.id] : [])));
+
+  const savedIds: string[] = [];
+  for (const [position, rung] of rungs.entries()) {
+    const { id, ...fields } = rung;
+    if (id) {
+      const { error } = await supabase
+        .from('progression_steps')
+        .update({ ...fields, position })
+        .eq('id', id);
+      if (error) throw new Error(error.message);
+      savedIds.push(id);
+    } else {
+      const { data, error } = await supabase
+        .from('progression_steps')
+        .insert({ ...fields, position, progression_id: progressionId, user_id: ownerId })
+        .select('id')
+        .single();
+      if (error) throw new Error(error.message);
+      savedIds.push((data as { id: string }).id);
+    }
+  }
+
+  const removed = (existing ?? [])
+    .map((r: { id: string }) => r.id)
+    .filter((id: string) => !keep.has(id));
+  if (removed.length > 0) {
+    const { error } = await supabase.from('progression_steps').delete().in('id', removed);
+    if (error) throw new Error(error.message);
+  }
+
+  // A ladder with no current rung (new, or its current rung was removed)
+  // starts on the first one.
+  const { data: progression, error: currentError } = await supabase
+    .from('progressions')
+    .select('current_step_id')
+    .eq('id', progressionId)
+    .single();
+  if (currentError) throw new Error(currentError.message);
+  if (!(progression as { current_step_id: string | null }).current_step_id && savedIds[0]) {
+    await moveLadder({ progressionId, fromStepId: null, toStepId: savedIds[0], kind: 'start' });
+  }
+  return progressionId;
+}
+
+/** Record a move on a ladder and make its target the current rung. */
+export async function moveLadder(input: {
+  progressionId: string;
+  fromStepId: string | null;
+  toStepId: string;
+  kind: ProgressionMove['kind'];
+  sessionId?: string | null;
+  date?: string;
+}): Promise<void> {
+  const ownerId = await getOwnerId();
+  const { error } = await supabase.from('progression_moves').insert({
+    progression_id: input.progressionId,
+    user_id: ownerId,
+    from_step_id: input.fromStepId,
+    to_step_id: input.toStepId,
+    kind: input.kind,
+    session_id: input.sessionId ?? null,
+    ...(input.date ? { date: input.date } : {}),
+  });
+  if (error) throw new Error(error.message);
+  const { error: updateError } = await supabase
+    .from('progressions')
+    .update({ current_step_id: input.toStepId })
+    .eq('id', input.progressionId);
+  if (updateError) throw new Error(updateError.message);
+}
+
+/** Take back the most recent move (for Undo): delete it and restore the rung it left. */
+export async function undoLadderMove(
+  progressionId: string,
+  previousStepId: string | null,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('progression_moves')
+    .select('id')
+    .eq('progression_id', progressionId)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (error) throw new Error(error.message);
+  const last = data?.[0] as { id: string } | undefined;
+  if (last) {
+    const { error: deleteError } = await supabase
+      .from('progression_moves')
+      .delete()
+      .eq('id', last.id);
+    if (deleteError) throw new Error(deleteError.message);
+  }
+  const { error: updateError } = await supabase
+    .from('progressions')
+    .update({ current_step_id: previousStepId })
+    .eq('id', progressionId);
+  if (updateError) throw new Error(updateError.message);
+}
+
+export async function setLadderPaused(id: string, paused: boolean): Promise<void> {
+  const { error } = await supabase
+    .from('progressions')
+    .update({ paused_at: paused ? new Date().toISOString() : null })
+    .eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteLadder(id: string): Promise<void> {
+  const { error } = await supabase.from('progressions').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Recent sessions' sets for each exercise, newest session first: what a
+ * ladder's progress ring and level-up check read.
+ */
+export async function recentSessionSets(
+  exerciseIds: string[],
+  sessionsPerExercise = 5,
+): Promise<Record<string, SetFact[][]>> {
+  if (exerciseIds.length === 0) return {};
+  const ownerId = await getOwnerId();
+  const { data, error } = await supabase
+    .from('session_sets')
+    .select(FACT_COLUMNS + ', workout_sessions!inner(date, created_at)')
+    .eq('user_id', ownerId)
+    .in('exercise_id', exerciseIds)
+    .order('created_at', { ascending: false })
+    .limit(400);
+  if (error) throw new Error(error.message);
+
+  type SessionRef = { date: string; created_at: string };
+  type Row = Parameters<typeof toSetFact>[0] & { workout_sessions: SessionRef | SessionRef[] };
+  type Group = { date: string; created: string; exerciseId: string; sets: SetFact[] };
+  const bySession = new Map<string, Group>();
+  for (const row of (data ?? []) as unknown as Row[]) {
+    const session = Array.isArray(row.workout_sessions)
+      ? row.workout_sessions[0]
+      : row.workout_sessions;
+    const key = row.exercise_id + ':' + row.session_id;
+    const entry: Group = bySession.get(key) ?? {
+      date: session?.date ?? '',
+      created: session?.created_at ?? '',
+      exerciseId: row.exercise_id,
+      sets: [],
+    };
+    entry.sets.push(toSetFact(row));
+    bySession.set(key, entry);
+  }
+
+  const out: Record<string, SetFact[][]> = {};
+  [...bySession.values()]
+    .sort((a, b) => b.date.localeCompare(a.date) || b.created.localeCompare(a.created))
+    .forEach((entry) => {
+      const list = (out[entry.exerciseId] ??= []);
+      if (list.length < sessionsPerExercise) list.push(entry.sets);
+    });
+  return out;
 }
