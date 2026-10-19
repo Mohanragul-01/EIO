@@ -137,3 +137,58 @@ export function goalLabel(step: ProgressionStep): string {
   const weight = step.goal_added_kg ? ` · +${step.goal_added_kg} kg` : '';
   return `${step.goal_sets} × ${each}${weight}`;
 }
+
+type LadderShape = { progression: Progression; steps: ProgressionStep[]; moves: ProgressionMove[] };
+
+export type LevelUpCandidate = {
+  progressionId: string;
+  name: string;
+  from: ProgressionStep;
+  to: ProgressionStep;
+};
+
+/**
+ * The ladders to ask "ready to move up?" about after a session: those whose
+ * current rung was trained in it, is not the top rung, is not paused, and
+ * meets the ladder's rule counting this session first. `history` is each
+ * exercise's EARLIER sessions, newest first.
+ */
+export function levelUpCandidates(
+  ladders: LadderShape[],
+  sessionSets: SetFact[],
+  history: Record<string, SetFact[][]>,
+): LevelUpCandidate[] {
+  return ladders.flatMap((ladder) => {
+    const { progression } = ladder;
+    if (progression.paused_at) return [];
+    const { next } = neighbours(ladder.steps, progression.current_step_id);
+    const current = ladder.steps.find((s) => s.id === progression.current_step_id);
+    if (!current || !next) return [];
+    const today = sessionSets.filter((s) => s.exercise_id === current.exercise_id);
+    if (today.length === 0) return [];
+    const sessions = [today, ...(history[current.exercise_id] ?? [])];
+    return readyToMoveUp(current, sessions, progression.level_up_rule)
+      ? [{ progressionId: progression.id, name: progression.name, from: current, to: next }]
+      : [];
+  });
+}
+
+/**
+ * What a routine slot that follows a ladder aims for on its current rung: the
+ * rung's goal as the top of the range and its restart point as the bottom.
+ */
+export function ladderSlotTarget(step: ProgressionStep): {
+  target_sets: number;
+  target_reps_min: number | null;
+  target_reps: number | null;
+  target_seconds_min: number | null;
+  target_seconds_max: number | null;
+} {
+  return {
+    target_sets: step.goal_sets,
+    target_reps_min: step.goal_reps !== null ? step.start_reps : null,
+    target_reps: step.goal_reps,
+    target_seconds_min: step.goal_seconds !== null ? step.start_seconds : null,
+    target_seconds_max: step.goal_seconds,
+  };
+}

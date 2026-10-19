@@ -155,7 +155,11 @@ export async function seedDefaultExercisesIfEmpty(): Promise<Exercise[]> {
 }
 
 export async function createExercise(
-  input: { name: string; muscle_group: string | null; tracking_type?: TrackingType } & ExerciseFields,
+  input: {
+    name: string;
+    muscle_group: string | null;
+    tracking_type?: TrackingType;
+  } & ExerciseFields,
 ): Promise<Exercise> {
   const ownerId = await getOwnerId();
   const { data, error } = await supabase
@@ -170,7 +174,11 @@ export async function createExercise(
 
 export async function updateExercise(
   id: string,
-  input: { name?: string; muscle_group?: string | null; tracking_type?: TrackingType } & ExerciseFields,
+  input: {
+    name?: string;
+    muscle_group?: string | null;
+    tracking_type?: TrackingType;
+  } & ExerciseFields,
 ): Promise<void> {
   const { error } = await supabase.from('exercises').update(input).eq('id', id);
   if (error) throw new Error(error.message);
@@ -222,10 +230,28 @@ export async function listRoutineExercises(routineId: string): Promise<RoutineEx
  * so a delete-then-insert is simpler than working out which moved, and cannot
  * leave a stale row behind.
  */
+export type RoutineSlotInput = {
+  exercise_id?: string | null;
+  progression_id?: string | null;
+  target_sets: number | null;
+  target_reps: number | null;
+  target_reps_min?: number | null;
+  target_seconds_min?: number | null;
+  target_seconds_max?: number | null;
+  rest_seconds?: number | null;
+  increment_kg?: number | null;
+  pair_group?: string | null;
+};
+
 export async function saveRoutine(
   /** `mode` is set when the routine is created and never changed by a save. */
   input: { id?: string; name: string; mode?: FitnessMode },
-  exercises: { exercise_id: string; target_sets: number | null; target_reps: number | null }[],
+  /**
+   * The slots, in order. Each is an exercise OR a ladder; the range, rest,
+   * increment and superset letter are optional, so a plain list of exercises
+   * with sets and reps (what the website sends) is still a valid routine.
+   */
+  exercises: RoutineSlotInput[],
 ): Promise<Routine> {
   const ownerId = await getOwnerId();
 
@@ -429,22 +455,24 @@ export async function listExerciseProgress(
     workout_sessions: { date: string } | { date: string }[] | null;
   };
 
-  return ((data ?? []) as Row[])
-    .map((row) => ({
-      // PostgREST returns an embedded row as an object for a to-one join, but
-      // the generated types can widen it to an array. Normalised here so the
-      // chart never has to care which shape arrived.
-      date: Array.isArray(row.workout_sessions)
-        ? row.workout_sessions[0]?.date
-        : row.workout_sessions?.date,
-      weight_kg: row.weight_kg,
-      reps: row.reps,
-    }))
-    // Dropped here rather than by the caller. `data` comes back as `any`, so
-    // nothing was type-checking the promise that every row has a date, and the
-    // declared return type was simply untrue for a row whose join came back
-    // empty. Filtering makes the signature honest at its source.
-    .filter((row): row is { date: string; weight_kg: number; reps: number } => !!row.date);
+  return (
+    ((data ?? []) as Row[])
+      .map((row) => ({
+        // PostgREST returns an embedded row as an object for a to-one join, but
+        // the generated types can widen it to an array. Normalised here so the
+        // chart never has to care which shape arrived.
+        date: Array.isArray(row.workout_sessions)
+          ? row.workout_sessions[0]?.date
+          : row.workout_sessions?.date,
+        weight_kg: row.weight_kg,
+        reps: row.reps,
+      }))
+      // Dropped here rather than by the caller. `data` comes back as `any`, so
+      // nothing was type-checking the promise that every row has a date, and the
+      // declared return type was simply untrue for a row whose join came back
+      // empty. Filtering makes the signature honest at its source.
+      .filter((row): row is { date: string; weight_kg: number; reps: number } => !!row.date)
+  );
 }
 
 /** Sets across recent sessions, for the home summary. */
@@ -502,7 +530,9 @@ export async function currentRungExercises(
   if (progressionIds.length === 0) return {};
   const { data, error } = await supabase
     .from('progressions')
-    .select('id, current_step_id, progression_steps!progression_steps_progression_id_fkey(id, exercise_id)')
+    .select(
+      'id, current_step_id, progression_steps!progression_steps_progression_id_fkey(id, exercise_id)',
+    )
     .in('id', progressionIds);
   if (error) throw new Error(error.message);
 
@@ -632,7 +662,9 @@ export async function addSessionExercise(input: {
 
 export async function updateSessionExercise(
   id: string,
-  patch: Partial<Pick<SessionExercise, 'position' | 'rest_seconds' | 'note' | 'superset_group' | 'exercise_id'>>,
+  patch: Partial<
+    Pick<SessionExercise, 'position' | 'rest_seconds' | 'note' | 'superset_group' | 'exercise_id'>
+  >,
 ): Promise<void> {
   const { error } = await supabase.from('session_exercises').update(patch).eq('id', id);
   if (error) throw new Error(error.message);
@@ -756,11 +788,15 @@ export async function listPreviousSets(
     workout_sessions: { date: string; created_at: string } | { date: string; created_at: string }[];
   };
   const rows = ((data ?? []) as Row[]).map((row) => {
-    const session = Array.isArray(row.workout_sessions) ? row.workout_sessions[0] : row.workout_sessions;
+    const session = Array.isArray(row.workout_sessions)
+      ? row.workout_sessions[0]
+      : row.workout_sessions;
     return { row, date: session?.date ?? '', sessionCreated: session?.created_at ?? '' };
   });
   // Newest session first: by date, then by when the session was created.
-  rows.sort((a, b) => b.date.localeCompare(a.date) || b.sessionCreated.localeCompare(a.sessionCreated));
+  rows.sort(
+    (a, b) => b.date.localeCompare(a.date) || b.sessionCreated.localeCompare(a.sessionCreated),
+  );
 
   const out: Record<string, { date: string; sets: SetFact[] }> = {};
   const lastSession: Record<string, string> = {};
@@ -768,7 +804,10 @@ export async function listPreviousSets(
     const exerciseId = row.exercise_id;
     lastSession[exerciseId] ??= row.session_id;
     if (lastSession[exerciseId] !== row.session_id) continue;
-    (out[exerciseId] ??= { date, sets: [] }).sets.push({ ...toSetFact(row), created_at: row.created_at });
+    (out[exerciseId] ??= { date, sets: [] }).sets.push({
+      ...toSetFact(row),
+      created_at: row.created_at,
+    });
   }
   for (const entry of Object.values(out)) {
     entry.sets.sort((a, b) => a.created_at.localeCompare(b.created_at));
@@ -800,7 +839,12 @@ export async function saveBand(input: {
   const { data, error } = input.id
     ? await supabase
         .from('bands')
-        .update({ label: input.label, color: input.color, approx_kg: input.approx_kg, position: input.position })
+        .update({
+          label: input.label,
+          color: input.color,
+          approx_kg: input.approx_kg,
+          position: input.position,
+        })
         .eq('id', input.id)
         .select()
         .single()

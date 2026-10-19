@@ -6,6 +6,8 @@
 import type { SetFact } from '../load';
 import {
   goalProgress,
+  ladderSlotTarget,
+  levelUpCandidates,
   meetsGoal,
   neighbours,
   readyToMoveUp,
@@ -33,7 +35,12 @@ function step(id: string, position: number, goal: Partial<ProgressionStep> = {})
   };
 }
 
-function move(kind: ProgressionMove['kind'], from: string | null, to: string, date: string): ProgressionMove {
+function move(
+  kind: ProgressionMove['kind'],
+  from: string | null,
+  to: string,
+  date: string,
+): ProgressionMove {
   return {
     id: `${kind}-${to}-${date}`,
     progression_id: 'p',
@@ -70,7 +77,12 @@ const steps = [step('a', 0), step('b', 1), step('c', 2), step('d', 3)];
 
 describe('rungStates', () => {
   it('a fresh ladder with no current rung has everything locked', () => {
-    expect(rungStates(steps, null, []).map((r) => r.state)).toEqual(['locked', 'locked', 'locked', 'locked']);
+    expect(rungStates(steps, null, []).map((r) => r.state)).toEqual([
+      'locked',
+      'locked',
+      'locked',
+      'locked',
+    ]);
   });
 
   it('rungs before the current one are mastered, with the date you moved up from them', () => {
@@ -108,7 +120,11 @@ describe('rungStates', () => {
   });
 
   it('orders rungs by position, whatever order they arrive in', () => {
-    expect(rungStates([steps[2], steps[0], steps[1]], null, []).map((r) => r.step.id)).toEqual(['a', 'b', 'c']);
+    expect(rungStates([steps[2], steps[0], steps[1]], null, []).map((r) => r.step.id)).toEqual([
+      'a',
+      'b',
+      'c',
+    ]);
   });
 });
 
@@ -116,9 +132,24 @@ describe('meetsGoal', () => {
   const rung = step('b', 1, { goal_sets: 3, goal_reps: 8 });
 
   it('needs the goal number of sets at the goal reps', () => {
-    expect(meetsGoal(rung, [8, 8, 8].map((reps) => set('ex-b', { reps })))).toBe(true);
-    expect(meetsGoal(rung, [8, 8, 7].map((reps) => set('ex-b', { reps })))).toBe(false);
-    expect(meetsGoal(rung, [10, 9, 8, 3].map((reps) => set('ex-b', { reps })))).toBe(true);
+    expect(
+      meetsGoal(
+        rung,
+        [8, 8, 8].map((reps) => set('ex-b', { reps })),
+      ),
+    ).toBe(true);
+    expect(
+      meetsGoal(
+        rung,
+        [8, 8, 7].map((reps) => set('ex-b', { reps })),
+      ),
+    ).toBe(false);
+    expect(
+      meetsGoal(
+        rung,
+        [10, 9, 8, 3].map((reps) => set('ex-b', { reps })),
+      ),
+    ).toBe(true);
   });
 
   it('ignores warm-ups, unclean sets, assisted sets and other exercises', () => {
@@ -135,8 +166,18 @@ describe('meetsGoal', () => {
 
   it('holds count seconds', () => {
     const hold = step('h', 0, { goal_reps: null, goal_seconds: 30, goal_sets: 2 });
-    expect(meetsGoal(hold, [30, 31].map((s) => set('ex-h', { duration_seconds: s })))).toBe(true);
-    expect(meetsGoal(hold, [30, 29].map((s) => set('ex-h', { duration_seconds: s })))).toBe(false);
+    expect(
+      meetsGoal(
+        hold,
+        [30, 31].map((s) => set('ex-h', { duration_seconds: s })),
+      ),
+    ).toBe(true);
+    expect(
+      meetsGoal(
+        hold,
+        [30, 29].map((s) => set('ex-h', { duration_seconds: s })),
+      ),
+    ).toBe(false);
   });
 
   it('a weighted goal needs the added weight too', () => {
@@ -177,13 +218,33 @@ describe('goalProgress', () => {
   const rung = step('b', 1, { goal_sets: 3, goal_reps: 8 });
 
   it('is the average share of the goal across the best goal-number of sets', () => {
-    expect(goalProgress(rung, [8, 8, 8].map((reps) => set('ex-b', { reps })))).toBe(1);
-    expect(goalProgress(rung, [8, 6, 4].map((reps) => set('ex-b', { reps })))).toBeCloseTo(0.75);
-    expect(goalProgress(rung, [8].map((reps) => set('ex-b', { reps })))).toBeCloseTo(1 / 3);
+    expect(
+      goalProgress(
+        rung,
+        [8, 8, 8].map((reps) => set('ex-b', { reps })),
+      ),
+    ).toBe(1);
+    expect(
+      goalProgress(
+        rung,
+        [8, 6, 4].map((reps) => set('ex-b', { reps })),
+      ),
+    ).toBeCloseTo(0.75);
+    expect(
+      goalProgress(
+        rung,
+        [8].map((reps) => set('ex-b', { reps })),
+      ),
+    ).toBeCloseTo(1 / 3);
   });
 
   it('caps each set at the goal, so one huge set cannot fill the ring', () => {
-    expect(goalProgress(rung, [30].map((reps) => set('ex-b', { reps })))).toBeCloseTo(1 / 3);
+    expect(
+      goalProgress(
+        rung,
+        [30].map((reps) => set('ex-b', { reps })),
+      ),
+    ).toBeCloseTo(1 / 3);
   });
 
   it('is 0 with nothing logged', () => {
@@ -201,5 +262,81 @@ describe('labels and neighbours', () => {
     expect(neighbours(steps, 'a').previous).toBeNull();
     expect(neighbours(steps, 'd').next).toBeNull();
     expect(neighbours(steps, null)).toEqual({ previous: null, next: steps[0] });
+  });
+});
+
+describe('levelUpCandidates', () => {
+  const ladder = (current: string | null, paused = false) => ({
+    progression: {
+      id: 'p',
+      user_id: 'u',
+      name: 'Pull-up',
+      family: 'pull' as const,
+      current_step_id: current,
+      position: 0,
+      level_up_rule: 'one' as const,
+      paused_at: paused ? '2026-10-01T00:00:00Z' : null,
+      notes: '',
+      created_at: '',
+      updated_at: '',
+    },
+    steps: [step('a', 0, { goal_sets: 1, goal_reps: 8 }), step('b', 1)],
+    moves: [],
+  });
+  const met = [set('ex-a', { reps: 8 })];
+
+  it('offers the next rung when this session met the current one', () => {
+    expect(levelUpCandidates([ladder('a')], met, {})).toEqual([
+      {
+        progressionId: 'p',
+        name: 'Pull-up',
+        from: expect.objectContaining({ id: 'a' }),
+        to: expect.objectContaining({ id: 'b' }),
+      },
+    ]);
+  });
+
+  it('says nothing when the rung was not trained today', () => {
+    expect(levelUpCandidates([ladder('a')], [set('ex-other', { reps: 20 })], {})).toEqual([]);
+  });
+
+  it('says nothing on the top rung, or on a paused ladder', () => {
+    expect(
+      levelUpCandidates(
+        [ladder('b')],
+        [set('ex-b', { reps: 20 }), set('ex-b', { reps: 20 }), set('ex-b', { reps: 20 })],
+        {},
+      ),
+    ).toEqual([]);
+    expect(levelUpCandidates([ladder('a', true)], met, {})).toEqual([]);
+  });
+
+  it('counts earlier sessions for two-of-three', () => {
+    const strict = {
+      ...ladder('a'),
+      progression: { ...ladder('a').progression, level_up_rule: 'two_of_three' as const },
+    };
+    expect(levelUpCandidates([strict], met, {})).toEqual([]);
+    expect(levelUpCandidates([strict], met, { 'ex-a': [met] })).toHaveLength(1);
+  });
+});
+
+describe('ladderSlotTarget', () => {
+  it('a ladder slot aims for the rung: restart point up to the goal', () => {
+    expect(ladderSlotTarget(step('a', 0, { goal_sets: 3, goal_reps: 8, start_reps: 5 }))).toEqual({
+      target_sets: 3,
+      target_reps_min: 5,
+      target_reps: 8,
+      target_seconds_min: null,
+      target_seconds_max: null,
+    });
+  });
+
+  it('holds aim in seconds', () => {
+    expect(
+      ladderSlotTarget(
+        step('h', 0, { goal_sets: 3, goal_reps: null, goal_seconds: 30, start_seconds: 10 }),
+      ),
+    ).toMatchObject({ target_seconds_min: 10, target_seconds_max: 30, target_reps: null });
   });
 });

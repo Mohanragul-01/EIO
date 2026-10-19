@@ -23,6 +23,7 @@ import * as api from './api';
 import { initialDrafts, newDraft, type DraftRow } from './blocks';
 import { toSetFact, workingVolume, type SetFact } from './load';
 import { matchPrevious } from './previous';
+import { ladderSlotTarget } from './progression';
 import { sessionRecords, type RecordHit } from './records';
 import {
   commitDraft,
@@ -88,7 +89,11 @@ export function useWorkoutSession(sessionId: string) {
   const [bands, setBands] = useState<Band[]>([]);
   const [baseline, setBaseline] = useState<Record<string, SetFact[]>>({});
   const [previous, setPrevious] = useState<Previous>({});
-  const [slots, setSlots] = useState<RoutineExercise[]>([]);
+  /**
+   * The routine's target for each exercise in the session. A ladder slot is
+   * keyed by its current rung's exercise, with the rung's range as target.
+   */
+  const [slotsByExercise, setSlotsByExercise] = useState<Record<string, RoutineExercise>>({});
   const [state, dispatch] = useReducer(sessionReducer, { blocks: [] });
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState(false);
@@ -110,14 +115,6 @@ export function useWorkoutSession(sessionId: string) {
   const exercisesById = useMemo(
     () => Object.fromEntries(exercises.map((e) => [e.id, e])) as Record<string, Exercise>,
     [exercises],
-  );
-
-  const slotsByExercise = useMemo(
-    () =>
-      Object.fromEntries(
-        slots.flatMap((slot) => (slot.exercise_id ? [[slot.exercise_id, slot]] : [])),
-      ) as Record<string, RoutineExercise>,
-    [slots],
   );
 
   const load = useCallback(async () => {
@@ -174,13 +171,30 @@ export function useWorkoutSession(sessionId: string) {
       const slotMap = Object.fromEntries(
         slotRows.flatMap((slot) => (slot.exercise_id ? [[slot.exercise_id, slot]] : [])),
       ) as Record<string, RoutineExercise>;
+      // Ladder slots aim at their current rung: its restart point up to its goal.
+      if (slotRows.some((slot) => slot.progression_id)) {
+        const ladders = await api.listLadders().catch(() => []);
+        for (const slot of slotRows) {
+          const ladder = ladders.find((l) => l.progression.id === slot.progression_id);
+          const rung = ladder?.steps.find((st) => st.id === ladder.progression.current_step_id);
+          if (!rung || slotMap[rung.exercise_id]) continue;
+          const target = ladderSlotTarget(rung);
+          slotMap[rung.exercise_id] = {
+            ...slot,
+            exercise_id: rung.exercise_id,
+            ...target,
+            target_sets: slot.target_sets ?? target.target_sets,
+          };
+        }
+        if (!isCurrent()) return;
+      }
 
       setSession(found);
       setExercises(exerciseRows);
       setBands(bandRows);
       setBaseline(baselineRows);
       setPrevious(previousRows);
-      setSlots(slotRows);
+      setSlotsByExercise(slotMap);
       dispatch({
         type: 'load',
         blocks: allBlocks.map((row) =>

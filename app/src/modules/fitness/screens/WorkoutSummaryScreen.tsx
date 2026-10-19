@@ -21,7 +21,9 @@ import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
+import { success } from '../../../core/haptics';
 import { toSetFact, type SetFact } from '../load';
+import { levelUpCandidates } from '../progression';
 import type { RecordHit } from '../records';
 import {
   compareToLast,
@@ -71,6 +73,11 @@ export function WorkoutSummaryScreen() {
   const [slots, setSlots] = useState<RoutineExercise[]>([]);
   const [routineName, setRoutineName] = useState<string | null>(null);
   const [routineDecided, setRoutineDecided] = useState(false);
+  const [ladders, setLadders] = useState<api.Ladder[]>([]);
+  /** Each rung exercise's EARLIER sessions, newest first, for the level-up rule. */
+  const [ladderHistory, setLadderHistory] = useState<Record<string, SetFact[][]>>({});
+  /** Ladders answered on this screen, by "Move up" or "Not yet". */
+  const [answered, setAnswered] = useState<string[]>([]);
   const [updating, setUpdating] = useState(false);
 
   const session = w.session;
@@ -91,7 +98,22 @@ export function WorkoutSummaryScreen() {
           session.routine_id ? api.listRoutineExercises(session.routine_id) : Promise.resolve([]),
           session.routine_id ? api.listRoutines() : Promise.resolve([]),
         ]);
+        // Ladders whose current rung might have been trained today.
+        const ladderRows = await api.listLadders().catch(() => [] as api.Ladder[]);
+        const rungExercises = ladderRows.flatMap((l) => {
+          const rung = l.steps.find((st) => st.id === l.progression.current_step_id);
+          return rung ? [rung.exercise_id] : [];
+        });
+        const recent = await api.recentSessionSets(rungExercises, 4).catch(() => ({}));
+        const earlier = Object.fromEntries(
+          Object.entries(recent as Record<string, SetFact[][]>).map(([id, sessions]) => [
+            id,
+            sessions.filter((sets) => sets[0]?.session_id !== session.id),
+          ]),
+        );
         if (!active) return;
+        setLadders(ladderRows);
+        setLadderHistory(earlier);
         setOrdinal(n);
         setLastSets(last);
         setSlots(routineSlots);
@@ -151,6 +173,14 @@ export function WorkoutSummaryScreen() {
     () => Object.fromEntries(Object.values(w.exercisesById).map((e) => [e.id, e.name])),
     [w.exercisesById],
   );
+  const levelUps = useMemo(
+    () =>
+      levelUpCandidates(ladders, sets, ladderHistory).filter(
+        (c) => !answered.includes(c.progressionId),
+      ),
+    [ladders, sets, ladderHistory, answered],
+  );
+
   const deviationLines = session?.routine_id ? describeDeviation(deviation, names) : [];
   const canUpdate = deviation.added.length > 0 || deviation.setCounts.length > 0;
 
@@ -229,6 +259,65 @@ export function WorkoutSummaryScreen() {
             </GlassCard>
           </FadeInView>
         ) : null}
+
+        {levelUps.map((candidate) => (
+          <FadeInView key={candidate.progressionId} delay={80}>
+            <GlassCard style={[styles.card, styles.levelUp]}>
+              <View style={styles.line}>
+                <Ionicons name="arrow-up-circle" size={22} color={colors.accentCyan} />
+                <View style={styles.lineText}>
+                  <Text style={styles.lineTitle}>
+                    {candidate.name}: ready for {names[candidate.to.exercise_id] ?? 'the next rung'}
+                    ?
+                  </Text>
+                  <Text style={styles.lineDetail}>
+                    You met the goal for {names[candidate.from.exercise_id] ?? 'this rung'}. Moving
+                    up is your call.
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.actions}>
+                <Button
+                  label="Move up"
+                  icon="arrow-up"
+                  onPress={async () => {
+                    try {
+                      await api.moveLadder({
+                        progressionId: candidate.progressionId,
+                        fromStepId: candidate.from.id,
+                        toStepId: candidate.to.id,
+                        kind: 'up',
+                        sessionId: session.id,
+                      });
+                      success();
+                      setAnswered((a) => [...a, candidate.progressionId]);
+                      toast.show({
+                        message: `Moved up to ${names[candidate.to.exercise_id] ?? 'the next rung'}`,
+                        actionLabel: 'Undo',
+                        onAction: () =>
+                          void api
+                            .undoLadderMove(candidate.progressionId, candidate.from.id)
+                            .then(() =>
+                              setAnswered((a) => a.filter((id) => id !== candidate.progressionId)),
+                            )
+                            .catch(() => toast.show({ message: 'Could not undo that' })),
+                      });
+                    } catch (e) {
+                      toast.show({ message: e instanceof Error ? e.message : 'Could not move up' });
+                    }
+                  }}
+                  style={styles.action}
+                />
+                <Button
+                  label="Not yet"
+                  variant="glass"
+                  onPress={() => setAnswered((a) => [...a, candidate.progressionId])}
+                  style={styles.action}
+                />
+              </View>
+            </GlassCard>
+          </FadeInView>
+        ))}
 
         {comparisons.length > 0 ? (
           <FadeInView delay={100}>
@@ -366,4 +455,5 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   actions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
   action: { flex: 1 },
   done: { marginTop: spacing.xl, marginBottom: spacing.sm },
+  levelUp: { borderColor: colors.accentCyan, borderWidth: 1 },
 }));
