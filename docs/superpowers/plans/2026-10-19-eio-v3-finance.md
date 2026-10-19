@@ -123,3 +123,14 @@ Rebuilt FinancePage on the shared logic: period switch with custom start, quick-
 - Ruling: **no source/capture column in 0022** — the link opens a form the person confirms, so a captured entry is an ordinary entry — cost if wrong: a later inbox (stage 1) adds the column then.
 - Ruling: **deleting an entry is undoable** (re-inserted with its id), not confirmed — it is reversible, so §2 says undo — cost if wrong: none.
 - Ruling: **calendar tint uses `accentRose` (the existing "out" colour) in four alpha steps relative to the month's median spending day**, always with the amount printed — cost if wrong: colour only.
+
+### Rulings made while building
+
+- Ruling: **the capture route is keyed by its params** (`getId` on `FinanceCapture`) — React Navigation 7 sends a second link for the focused route to the open form and replaces its params under already-filled fields, losing one of two automations fired by the same payment; keyed, a different link opens its own form and an identical one lands on the form already showing it — cost if wrong: two identical links in a row open one form (which is the dedupe you want).
+- Ruling: **the add form uses a Finance-only four-column category grid (58dp tiles), not core's CategoryPicker** — core's chips are about 36dp tall, under the 48dp target; core is left alone for the other modules — cost if wrong: two pickers that look different.
+- Ruling: **an Undo for a delete made on the edit screen reaches the Finance screens through `changes.ts`**, a module-level listener, rather than an app-root context — the list reloads on focus before the Undo, so without a nudge a restored entry stayed missing; a provider would mean editing App.tsx for one module — cost if wrong: one more tiny pub/sub in the codebase.
+- Ruling: **editing cannot turn an entry into a transfer or back** — that is a delete plus an insert, two statements, and an interruption between them loses or duplicates money; delete and re-add instead — cost if wrong: two steps for a rare correction.
+- Ruling: **the website confirms "Save & add another" inside the dialog**, not with a toast — a toast draws behind an open dialog — cost if wrong: none.
+- Ruling: **calendar amounts print in the full text colour on both clients** — the secondary colour over the darkest tint measured about 3.4:1 (light) and 3.8:1 (dark) — cost if wrong: slightly heavier small figures.
+- Ruling: **the 1000-row paging fix is applied to Finance's reads only** — other modules' unbounded reads may share the cap; they are not Finance's to change (reported) — cost if wrong: another module silently truncates past 1000 rows.
+- Ruling: **`useTransactions.ts` is removed**, replaced by `useFinance.ts`; nothing else imported it — cost if wrong: none.
