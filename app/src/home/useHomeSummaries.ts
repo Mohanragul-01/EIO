@@ -115,8 +115,11 @@ async function fitnessSummary(): Promise<string> {
 }
 
 async function bucketSummary(): Promise<string> {
-  const { total, done, freeLeft } = await bucketApi.overview();
+  const { total, done, freeLeft, nowCount } = await bucketApi.overview();
   if (total === 0) return 'Nothing yet';
+
+  // What you said you are doing next beats everything else on the line.
+  if (nowCount > 0) return `${nowCount} on Now · ${freeLeft} free`;
 
   // The free ones are the actionable fact: what could you do this weekend
   // without spending anything. The total is just context for it.

@@ -1144,3 +1144,183 @@ table.data tbody tr.cm-group-row:hover { background: var(--surface-2); }
 
 .sub-catalogue { max-height: 340px; overflow-y: auto; margin: 0 calc(-1 * var(--space-sm)); }
 .sub-catalogue .list-row { width: 100%; background: transparent; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+/* B-LIST ------------------------------------------------------------------- */
+/*
+ * The B-List page: the list beside a rail that holds the choosing (Pick for
+ * me, the Now shelf), the Lived timeline with its year cards, and the item
+ * dialog's plan and memory fields. Everything is prefixed bl- so it cannot
+ * collide with another page's styles.
+ */
+
+.bl-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-xl); align-items: start; }
+.bl-layout.with-rail { grid-template-columns: minmax(0, 1fr) 320px; }
+.bl-main { min-width: 0; }
+.bl-rail { display: flex; flex-direction: column; gap: var(--space-lg); position: sticky; top: var(--space-lg); }
+
+/* Narrow windows put the rail above the list: choosing comes first. */
+@media (max-width: 1180px) {
+  .bl-layout.with-rail { grid-template-columns: minmax(0, 1fr); }
+  .bl-rail { position: static; order: -1; }
+}
+
+.bl-small { font-size: var(--text-xs); }
+.bl-accent { color: var(--accent-amber); }
+
+/* A category glyph on a small tile, as section headings and picks show it. */
+.bl-glyph {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.bl-section-head { gap: var(--space-sm); margin-bottom: 8px; }
+.bl-want { background: var(--primary-soft); color: var(--primary); }
+
+/* Pick for me */
+.bl-card { display: flex; flex-direction: column; gap: var(--space-sm); }
+.bl-card-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  text-align: left;
+}
+.bl-card-toggle .grow { display: flex; flex-direction: column; }
+.bl-card-title { font-size: var(--text-sm); font-weight: 600; color: var(--text); }
+.bl-card-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--radius-sm); }
+
+.bl-pick { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; border-top: 1px solid var(--border); }
+.bl-pick:first-child { border-top: 0; }
+.bl-pick-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 4px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.bl-pick-main:hover { background: var(--surface-2); }
+.bl-pick-main:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.bl-pick-title { font-size: 13px; }
+.bl-pick-actions { display: flex; gap: 6px; padding-left: 34px; }
+
+/* The Now shelf */
+.bl-now { display: flex; flex-direction: column; gap: var(--space-sm); }
+.bl-now-head { padding: 0 2px; }
+.bl-now-card { overflow: hidden; }
+.bl-now-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: var(--space-md);
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.bl-now-body:hover { background: var(--surface-2); }
+.bl-now-body:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.bl-now-category { gap: 5px; font-size: var(--text-xs); color: var(--text-muted); min-width: 0; }
+.bl-now-title { font-size: var(--text-sm); font-weight: 550; }
+.bl-now-target { gap: 5px; font-size: var(--text-xs); color: var(--text-secondary); }
+
+/* A passed target: neutral, never red. A date that slipped is a fact with a
+   way forward. */
+.bl-move {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px var(--space-md);
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  text-align: left;
+}
+.bl-move:hover { color: var(--text); background: var(--surface-3); }
+.bl-passed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.bl-move-option { width: 100%; text-align: left; color: var(--text); font-size: var(--text-sm); }
+
+/* The Lived timeline */
+.bl-year { display: flex; flex-direction: column; gap: var(--space-md); }
+.bl-year-card { display: flex; flex-direction: column; gap: var(--space-md); }
+.bl-year-title { font-size: var(--text-md); font-weight: 600; }
+.bl-year-count { font-size: var(--text-2xl); font-weight: 700; letter-spacing: -0.02em; margin-right: 4px; }
+.bl-year-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-lg);
+  align-items: start;
+}
+.bl-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.bl-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.bl-tile-number { font-size: var(--text-md); font-weight: 600; }
+.bl-tile-label { gap: 4px; font-size: var(--text-2xs); color: var(--text-muted); }
+.bl-strip { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; }
+.bl-strip-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.bl-strip-fill { display: block; width: 100%; height: 22px; border-radius: 4px; }
+.bl-strip-label { font-size: var(--text-2xs); color: var(--text-faint); }
+.bl-top { gap: 6px; font-size: var(--text-xs); color: var(--text-secondary); min-width: 0; }
+
+.bl-month { display: flex; flex-direction: column; gap: 6px; }
+.bl-month-head { gap: var(--space-sm); }
+.bl-lived-row { width: 100%; align-items: flex-start; text-align: left; color: var(--text); }
+.bl-lived-title { font-size: 13px; }
+.bl-date-col { display: flex; flex-direction: column; align-items: center; width: 34px; flex-shrink: 0; }
+.bl-date-day { font-size: var(--text-md); font-weight: 600; line-height: 1.1; }
+.bl-date-month { font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+
+/* The item dialog's fields */
+.bl-period { display: flex; flex-direction: column; gap: var(--space-sm); }
+.bl-period-year { max-width: 160px; }
+.bl-months .chip:disabled { opacity: 0.4; cursor: not-allowed; }
+.bl-date { max-width: 200px; }
+.bl-when { font-size: var(--text-sm); margin-top: -4px; }
+.bl-step { padding: 4px 6px; }
+.bl-step .grow { font-size: 13px; }
+.bl-money { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); }
+.bl-money-line { font-size: var(--text-sm); color: var(--text); }
+.bl-someday { display: flex; flex-direction: column; gap: var(--space-md); }
+.bl-delete { margin-right: auto; color: var(--danger); }
+.bl-delete:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger); }
+.bl-category-input { position: relative; }
+.bl-category-input .input { padding-left: 32px; width: 100%; }
+.bl-category-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+
+/* The done bar sits where the toast does; the page never shows both. */
+.bl-done-dock { z-index: 51; }
