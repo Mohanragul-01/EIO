@@ -6,8 +6,7 @@
  */
 import { getOwnerId } from '../../core/session';
 import { supabase } from '../../core/supabase';
-import { todayISO } from '../../core/date';
-import type { BucketInput, BucketItem, BucketStep, Cost, DoneState } from './types';
+import type { BucketInput, BucketItem, BucketStep, Cost } from './types';
 
 const TABLE = 'bucket_items';
 const STEPS = 'bucket_steps';
@@ -64,34 +63,23 @@ export async function listItems(): Promise<BucketItem[]> {
 }
 
 /**
- * Tick or untick an item.
+ * Change any of an item's fields.
  *
- * `done_on` is written here rather than by a trigger, so the date is the day
- * you pressed it on your device rather than whatever UTC day the server was
- * having. Unticking clears it: a date for something not done is a loose end
- * that would later read as fact.
+ * A tick goes through here too, as a whole DoneState (done, the day, and how
+ * precisely the day is known) built by the caller from its own device's
+ * today - not by a trigger, so the date is the day you pressed it rather than
+ * whatever UTC day the server was having - and so Undo can put a backdated
+ * date back exactly.
  */
-export async function setDone(id: string, isDone: boolean): Promise<void> {
-  const { error } = await supabase
-    .from(TABLE)
-    .update({ is_done: isDone, done_on: isDone ? todayISO() : null })
-    .eq('id', id);
-
-  if (error) throw new Error(error.message);
-}
-
-/**
- * Write a whole done state - the tick, its date and how precisely the date is
- * known - in one update, so Undo can restore a backdated date exactly.
- */
-export async function setDoneState(id: string, state: DoneState): Promise<void> {
-  await patchItem(id, state);
-}
-
-/** Change any of an item's fields. */
 export async function patchItem(id: string, patch: ItemPatch): Promise<void> {
   const { error } = await supabase.from(TABLE).update(patch).eq('id', id);
-  if (error) throw new Error(error.message);
+  if (error) {
+    // Renaming onto an existing title in the same category, said plainly.
+    if (error.message.includes('duplicate')) {
+      throw new Error('That is already on the list in this category.');
+    }
+    throw new Error(error.message);
+  }
 }
 
 /**
@@ -122,11 +110,6 @@ export async function createItem(input: BucketInput & ItemPatch): Promise<Bucket
     throw new Error(error.message);
   }
   return data;
-}
-
-export async function updateItem(id: string, input: Partial<BucketInput>): Promise<void> {
-  const { error } = await supabase.from(TABLE).update(input).eq('id', id);
-  if (error) throw new Error(error.message);
 }
 
 /** Deletes the item and, by cascade, its steps. Screens say so first. */

@@ -106,8 +106,17 @@ async function fitnessSummary() {
 }
 
 async function bucketSummary() {
-  const { total, done, freeLeft } = await bucketApi.overview();
+  const { total, done, freeLeft, nowCount } = await bucketApi.overview();
   if (total === 0) return { text: 'Nothing yet', tone: 'neutral' as const };
+
+  // What you said you are doing next leads, as on the phone's tile.
+  if (nowCount > 0) {
+    return {
+      text: `${nowCount} on Now`,
+      sub: `${freeLeft} free · ${done} of ${total} done`,
+      tone: 'ok' as const,
+    };
+  }
 
   // The free ones are the actionable fact: what you could do this weekend
   // without spending anything. The total is context for it.
