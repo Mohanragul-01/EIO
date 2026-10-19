@@ -117,7 +117,12 @@ export function planReminders(
         date: fireAt,
         title: module.name,
         body: 'Nothing logged yet today.',
-        data: { moduleId: module.id },
+        // route/params: what the app-wide router opens on a tap.
+        data: {
+          moduleId: module.id,
+          route: 'CustomModuleList',
+          params: { moduleId: module.id },
+        },
       });
     }
   }
@@ -150,7 +155,12 @@ export function planReminders(
         date: fireAt,
         title: (title && formatFieldValue(title, record.data[title.key])) || module.name,
         body: `${reminderField.label.trim()}: ${when}`,
-        data: { moduleId: module.id, recordId: record.id },
+        data: {
+          moduleId: module.id,
+          recordId: record.id,
+          route: 'CustomRecordEdit',
+          params: { moduleId: module.id, recordId: record.id },
+        },
       });
     });
   }

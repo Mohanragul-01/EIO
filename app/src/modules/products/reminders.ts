@@ -34,7 +34,8 @@ export type PlannedReminder = {
   date: Date;
   title: string;
   body: string;
-  data: { productId: string };
+  /** route/params: what the app-wide router opens on a tap. */
+  data: { productId: string; route: 'ProductDetail'; params: { productId: string } };
 };
 
 /**
@@ -67,7 +68,11 @@ export function planReminders(outlooks: Outlook[], now: Date): PlannedReminder[]
     if (outlook.lifecycle !== 'in_use' || !projection.emptyOn) return;
 
     const ids = reminderIdsFor(product.id);
-    const data = { productId: product.id };
+    const data = {
+      productId: product.id,
+      route: 'ProductDetail' as const,
+      params: { productId: product.id },
+    };
 
     if (reorderOn && !spare) {
       const date = morningOf(reorderOn);

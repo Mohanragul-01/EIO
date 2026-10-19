@@ -62,7 +62,12 @@ describe('planReminders', () => {
     expect(plan[0].title).toBe('Time to reorder Whey');
     expect(plan[0].body).toBe('About 7 days left at your pace, empty around 17 Jan.');
     expect(plan[1].title).toBe('Whey is about empty');
-    expect(plan[0].data).toEqual({ productId: 'a' });
+    // A tap opens the product (the app-wide router reads route/params).
+    expect(plan[0].data).toEqual({
+      productId: 'a',
+      route: 'ProductDetail',
+      params: { productId: 'a' },
+    });
   });
 
   it("uses the product's own lead time", () => {

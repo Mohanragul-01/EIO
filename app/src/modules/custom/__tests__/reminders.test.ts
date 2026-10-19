@@ -82,7 +82,12 @@ describe('nudges', () => {
   });
 
   it('carries the module id, for a tap to open it one day', () => {
-    expect(planReminders(module, [], [], NOW)[0].data).toEqual({ moduleId: 'm1' });
+    // A tap opens the module's list (the app-wide router reads route/params).
+    expect(planReminders(module, [], [], NOW)[0].data).toEqual({
+      moduleId: 'm1',
+      route: 'CustomModuleList',
+      params: { moduleId: 'm1' },
+    });
   });
 });
 
@@ -100,7 +105,13 @@ describe('date-field reminders', () => {
     expect(reminder.date.getHours()).toBe(9);
     expect(reminder.title).toBe('Fern');
     expect(reminder.body).toBe('Water next on: today');
-    expect(reminder.data).toEqual({ moduleId: 'm1', recordId: 'r1' });
+    // A tap opens the entry the date belongs to.
+    expect(reminder.data).toEqual({
+      moduleId: 'm1',
+      recordId: 'r1',
+      route: 'CustomRecordEdit',
+      params: { moduleId: 'm1', recordId: 'r1' },
+    });
   });
 
   it('reminds days before, at the nudge time when there is one', () => {
