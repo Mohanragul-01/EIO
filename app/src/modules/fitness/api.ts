@@ -11,6 +11,7 @@ import { toSetFact, type SetFact } from './load';
 import {
   DEFAULT_EXERCISES,
   type Band,
+  type BodyMeasurement,
   type BodyMetric,
   type Exercise,
   type FitnessMode,
@@ -1393,4 +1394,38 @@ export async function saveSessionAsRoutine(sessionId: string, name: string): Pro
     };
   });
   return saveRoutine({ name, mode: source.mode }, slots);
+}
+
+// BODY MEASUREMENTS -----------------------------------------------------------------
+
+export async function listMeasurements(): Promise<BodyMeasurement[]> {
+  const ownerId = await getOwnerId();
+  const { data, error } = await supabase
+    .from('body_measurements')
+    .select('*')
+    .eq('user_id', ownerId)
+    .order('date', { ascending: false })
+    .limit(400);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+/**
+ * Record measurements for a day. Only the sites given are written, so adding
+ * a waist measurement later in the day keeps the chest taken in the morning.
+ */
+export async function saveMeasurement(
+  date: string,
+  values: Partial<Record<string, number>>,
+): Promise<void> {
+  const ownerId = await getOwnerId();
+  const { error } = await supabase
+    .from('body_measurements')
+    .upsert({ user_id: ownerId, date, ...values }, { onConflict: 'user_id,date' });
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteMeasurement(id: string): Promise<void> {
+  const { error } = await supabase.from('body_measurements').delete().eq('id', id);
+  if (error) throw new Error(error.message);
 }

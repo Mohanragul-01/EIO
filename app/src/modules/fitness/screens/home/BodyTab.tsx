@@ -14,6 +14,7 @@ import { FadeInView, FormScroll, GlassCard } from '../../../../core/components';
 import { useTheme } from '../../../../core/ThemeContext';
 import { formatEventDate, todayISO } from '../../../../core/date';
 import { bmiLabel } from '../../types';
+import { Measurements } from '../../components/Measurements';
 import { useBody } from '../../useFitness';
 import { ErrorBanner, useHomeStyles } from './styles';
 
@@ -140,9 +141,13 @@ export function BodyTab() {
           </GlassCard>
         </FadeInView>
 
+        <FadeInView delay={80}>
+          <Measurements />
+        </FadeInView>
+
         {metrics.length > 0 ? (
           <FadeInView delay={100}>
-            <Text style={styles.sectionLabel}>History</Text>
+            <Text style={styles.sectionLabel}>Weigh-ins</Text>
             {metrics.map((metric) => (
               <GlassCard key={metric.id} style={styles.row}>
                 <View style={styles.rowInner}>
@@ -152,9 +157,9 @@ export function BodyTab() {
                   </View>
                   <Pressable
                     onPress={() => void removeWeight(metric.id)}
-                    hitSlop={10}
                     accessibilityRole="button"
-                    accessibilityLabel="Delete this weigh-in"
+                    accessibilityLabel={`Delete the weigh-in on ${formatEventDate(metric.date)}`}
+                    style={styles.rowMenu}
                   >
                     <Ionicons name="close" size={16} color={colors.textMuted} />
                   </Pressable>
