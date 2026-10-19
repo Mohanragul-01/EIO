@@ -303,3 +303,22 @@ describe('onResponse', () => {
     expect(required).not.toHaveBeenCalled();
   });
 });
+
+describe('permissionState', () => {
+  it('reports without ever prompting', async () => {
+    // Opening a screen that shows "reminders are off" must not itself ask:
+    // asking belongs to the moment you turn a reminder on.
+    const native = nativeMock(false);
+    const core = load(native);
+
+    await expect(core.permissionState()).resolves.toBe('denied');
+    expect(native.requestPermissionsAsync).not.toHaveBeenCalled();
+  });
+
+  it('reports granted, and unsupported in Expo Go', async () => {
+    await expect(load(nativeMock(true)).permissionState()).resolves.toBe('granted');
+    const { core, required } = loadInExpoGo();
+    await expect(core.permissionState()).resolves.toBe('unsupported');
+    expect(required).not.toHaveBeenCalled();
+  });
+});

@@ -188,6 +188,19 @@ export async function ensurePermission(): Promise<PermissionState> {
   }
 }
 
+/**
+ * Where permission stands, WITHOUT asking. For a screen that wants to say
+ * "reminders are off" on open: asking there would be the launch-time prompt
+ * ensurePermission() exists to avoid. Not yet asked reads as 'denied' - in
+ * both cases nothing will fire - and a tap on that notice calls
+ * ensurePermission(), which asks if it still can.
+ */
+export async function permissionState(): Promise<PermissionState> {
+  const mod = loadNotifications();
+  if (!mod) return 'unsupported';
+  return (await isGranted(mod)) ? 'granted' : 'denied';
+}
+
 /** Whether reminders can fire right now, without asking. */
 async function isGranted(mod: Notifications): Promise<boolean> {
   try {

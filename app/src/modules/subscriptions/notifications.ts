@@ -22,7 +22,7 @@ import {
 } from './reminders';
 import type { ReminderSettings, Subscription } from './types';
 
-export { ensurePermission, type PermissionState } from '../../core/notifications';
+export { ensurePermission, permissionState, type PermissionState } from '../../core/notifications';
 export { reminderId } from './reminders';
 
 /** The channel these have always used, kept so a phone that already has it
