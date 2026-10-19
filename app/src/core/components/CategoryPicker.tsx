@@ -43,6 +43,9 @@ export function CategoryPicker({ label, options, value, onChange, style }: Categ
             <Pressable
               key={option.key}
               onPress={() => onChange(option.key)}
+              // 40dp tall plus 4 all round: a 48dp target, and with the grid's
+              // 8dp gap neighbouring targets meet without overlapping.
+              hitSlop={4}
               style={({ pressed }) => [
                 styles.chip,
                 // Tinted with the category's own colour, so the picker teaches
@@ -86,8 +89,8 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    minHeight: 40,
     paddingHorizontal: spacing.md,
-    paddingVertical: 9,
     borderRadius: radius.pill,
     backgroundColor: colors.glass,
     borderWidth: 1,
