@@ -103,7 +103,7 @@ const DUE_LABEL: Record<DueBucket, string> = {
 function dueBucket(todo: Todo, today: string): DueBucket {
   if (!todo.due_date) return 'none';
   const days = daysBetween(today, todo.due_date);
-  if (days < 0) return todo.is_done ? 'today' : 'overdue';
+  if (days < 0) return 'overdue';
   if (days === 0) return 'today';
   if (days === 1) return 'tomorrow';
   if (days <= 7) return 'week';
@@ -294,7 +294,9 @@ export function TodoPage() {
         const addDate = bucket === 'today' ? today : bucket === 'tomorrow' ? addDays(today, 1) : null;
         return {
           id: bucket,
-          title: DUE_LABEL[bucket],
+          // With completed tasks showing, the past holds finished work too,
+          // and "Overdue" would call it late.
+          title: bucket === 'overdue' && status !== 'open' ? 'Earlier' : DUE_LABEL[bucket],
           todos: inBucket.filter(matches),
           total: inBucket.length,
           overdue: inBucket.filter(isOverdue).length,
@@ -317,7 +319,7 @@ export function TodoPage() {
           draggable: false,
         };
       });
-  }, [board, groupBy, matches, isOverdue, today, openNew]);
+  }, [board, groupBy, matches, isOverdue, today, openNew, status]);
 
   const shownCount = columns.reduce((total, c) => total + c.todos.length, 0);
 

@@ -165,9 +165,11 @@ export function useToday() {
           setState((s) => ({
             ...s,
             open: s.open.filter((t) => t.id !== todo.id),
+            // The Undo path passes the row as it was before the tick (open),
+            // so it goes back as a closed copy.
             closedToday: s.closedToday.some((t) => t.id === todo.id)
               ? s.closedToday
-              : [todo, ...s.closedToday],
+              : [todo.is_done ? todo : closedCopy(todo, 'done'), ...s.closedToday],
           }));
           setError(e instanceof Error ? e.message : 'Could not reopen the task');
         }
@@ -179,16 +181,20 @@ export function useToday() {
 
   /**
    * Move tasks to another day (or none) - one task from its menu, or the
-   * whole Overdue section at once. Those moved past today leave the view.
+   * whole Overdue section at once. Those moved past today leave the view, and
+   * those moved back into it (an Undo) return, so the list is rebuilt from
+   * the given rows rather than only edited in place.
    */
   const reschedule = useCallback(
     async (tasks: Todo[], dueDate: string | null): Promise<boolean> => {
       const ids = new Set(tasks.map((t) => t.id));
+      const inView = (t: Todo, today: string) => t.due_date !== null && t.due_date <= today;
       setState((s) => ({
         ...s,
-        open: s.open
-          .map((t) => (ids.has(t.id) ? { ...t, due_date: dueDate } : t))
-          .filter((t) => t.due_date !== null && t.due_date <= s.today),
+        open: [
+          ...s.open.filter((t) => !ids.has(t.id)),
+          ...tasks.map((t) => ({ ...t, due_date: dueDate })),
+        ].filter((t) => inView(t, s.today)),
       }));
       try {
         await api.rescheduleTasks([...ids], dueDate);
@@ -197,7 +203,7 @@ export function useToday() {
         if (isMounted()) {
           setState((s) => ({
             ...s,
-            open: [...s.open.filter((t) => !ids.has(t.id)), ...tasks],
+            open: [...s.open.filter((t) => !ids.has(t.id)), ...tasks].filter((t) => inView(t, s.today)),
           }));
           setError(e instanceof Error ? e.message : 'Could not move the tasks');
         }

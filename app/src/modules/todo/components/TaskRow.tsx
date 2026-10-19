@@ -83,7 +83,9 @@ export function TaskRow({
           : null
         : dueLabel(todo.due_date, todo.due_time, today);
 
-  const checklistDone = todo.checklist.filter((item) => item.done).length;
+  // `?? []` and `?? ''` guard a row read before migration 0020 has run.
+  const checklist = todo.checklist ?? [];
+  const checklistDone = checklist.filter((item) => item.done).length;
   const rule = todo.is_repeat ? shortRule(ruleOf(todo)) : null;
   const streakCount = streak && streak.current >= 2 ? streak.current : null;
   // Muted text is too faint on the completed tint; closed rows use textSecondary.
@@ -95,7 +97,7 @@ export function TaskRow({
     closed && outcome ? OUTCOME_WORD[outcome] : null,
     date ? (overdue ? `overdue, ${date}` : date) : null,
     rule ? `repeats ${rule}` : null,
-    todo.checklist.length > 0 ? `${checklistDone} of ${todo.checklist.length} checked` : null,
+    checklist.length > 0 ? `${checklistDone} of ${checklist.length} checked` : null,
     streakCount ? `${streakCount} in a row` : null,
     closed ? null : `${PRIORITY_LABEL[todo.priority]} priority`,
   ]
@@ -188,16 +190,16 @@ export function TaskRow({
               </View>
             ) : null}
 
-            {todo.checklist.length > 0 ? (
+            {checklist.length > 0 ? (
               <View style={styles.metaItem}>
                 <Ionicons name="list-outline" size={12} color={metaColor} />
                 <Text style={[styles.metaText, styles.numeric, { color: metaColor }]}>
-                  {checklistDone}/{todo.checklist.length}
+                  {checklistDone}/{checklist.length}
                 </Text>
               </View>
             ) : null}
 
-            {todo.notes.trim() ? (
+            {(todo.notes ?? '').trim() ? (
               <Ionicons name="document-text-outline" size={12} color={metaColor} />
             ) : null}
 
