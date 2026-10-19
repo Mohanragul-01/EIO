@@ -19,7 +19,7 @@ import { Pressable, Text, View, type GestureResponderEvent, type LayoutChangeEve
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Stop } from 'react-native-svg';
 
 import { GlassCard } from '../../../core/components';
-import { todayISO, fromISODate } from '../../../core/date';
+import { todayISO } from '../../../core/date';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { radius, spacing } from '../../../core/theme';
 import { dateFieldOf } from '../entryDate';
@@ -28,11 +28,13 @@ import {
   buildSeries,
   CHART_RANGES,
   CHART_RANGE_LABEL,
+  describeChart as describe,
+  pointLabel,
   rangeStartISO,
   type ChartRange,
   type SeriesPoint,
 } from '../trend';
-import type { ChartBucket, CustomField, CustomModule, CustomRecord } from '../types';
+import type { CustomField, CustomModule, CustomRecord } from '../types';
 
 const CHART_HEIGHT = 132;
 const PAD_Y = 10;
@@ -44,26 +46,6 @@ type TrendCardProps = {
   records: CustomRecord[];
   accent: string;
 };
-
-/** What one point stands for, in words: "12 Oct", "Week of 12 Oct", "Oct 2026". */
-function pointLabel(date: string, bucket: ChartBucket): string {
-  const day = fromISODate(date);
-  if (bucket === 'month') {
-    return day.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
-  }
-  const short = day.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-  return bucket === 'week' ? `Week of ${short}` : short;
-}
-
-/** "Daily total", "Weekly average", "Each entry". */
-function describe(module: CustomModule): string {
-  const per = { day: 'Daily', week: 'Weekly', month: 'Monthly' } as const;
-  const base =
-    module.chart_bucket === 'entry'
-      ? 'Each entry'
-      : `${per[module.chart_bucket]} ${module.chart_agg === 'average' ? 'average' : 'total'}`;
-  return module.chart_window ? `${base} · ${module.chart_window}-point average` : base;
-}
 
 export function TrendCard({ module, field, fields, records, accent }: TrendCardProps) {
   const styles = useStyles();

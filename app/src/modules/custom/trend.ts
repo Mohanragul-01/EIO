@@ -15,6 +15,7 @@
  *   - The smoothed line is a TRAILING moving average that averages whatever
  *     exists at the start, so it begins with the data instead of N points in.
  */
+import { fromISODate } from '../../core/date';
 import { addDaysTo, dateFieldOf, entryDateOf, monthStartISO, weekStartISO } from './entryDate';
 import { isEmptyValue, numericValue, readableAs } from './format';
 import {
@@ -179,6 +180,54 @@ export function sparklineFor(
 
   if (series.length < 2) return null;
   return series.map((point) => point.smooth ?? point.value);
+}
+
+/**
+ * A sparkline's SVG path in a width x height box, with two pixels of padding
+ * so the stroke is never clipped. Pure, so the phone (react-native-svg) and
+ * the website (a plain <svg>) draw exactly the same line.
+ */
+export function sparkPath(values: number[], width: number, height: number): string {
+  const pad = 2;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  // A flat line sits in the middle rather than on the floor.
+  const span = max - min || 1;
+  const step = values.length > 1 ? (width - pad * 2) / (values.length - 1) : 0;
+  return values
+    .map((value, index) => {
+      const x = pad + index * step;
+      const y = max === min ? height / 2 : pad + (1 - (value - min) / span) * (height - pad * 2);
+      return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .join(' ');
+}
+
+/** What one point stands for, in words: "12 Oct", "Week of 12 Oct", "Oct 2026". */
+export function pointLabel(date: string, bucket: ChartBucket): string {
+  const day = fromISODate(date);
+  if (bucket === 'month') {
+    return day.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  }
+  const short = day.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return bucket === 'week' ? `Week of ${short}` : short;
+}
+
+const PER: Record<Exclude<ChartBucket, 'entry'>, string> = {
+  day: 'Daily',
+  week: 'Weekly',
+  month: 'Monthly',
+};
+
+/** The chart's caption: "Daily total", "Weekly average · 7-point average". */
+export function describeChart(
+  module: Pick<CustomModule, 'chart_bucket' | 'chart_agg' | 'chart_window'>,
+): string {
+  const base =
+    module.chart_bucket === 'entry'
+      ? 'Each entry'
+      : `${PER[module.chart_bucket]} ${module.chart_agg === 'average' ? 'average' : 'total'}`;
+  return module.chart_window ? `${base} · ${module.chart_window}-point average` : base;
 }
 
 /** The chart's range choices, and the day each one starts on. */

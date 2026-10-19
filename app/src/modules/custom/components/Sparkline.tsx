@@ -10,28 +10,13 @@ import React, { useState } from 'react';
 import { View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
+import { sparkPath } from '../trend';
+
 type SparklineProps = {
   values: number[];
   color: string;
   height?: number;
 };
-
-/** Points to a path in a box, with a pixel of padding so the stroke is not clipped. */
-export function sparkPath(values: number[], width: number, height: number): string {
-  const pad = 2;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  // A flat line sits in the middle rather than on the floor.
-  const span = max - min || 1;
-  const step = values.length > 1 ? (width - pad * 2) / (values.length - 1) : 0;
-  return values
-    .map((value, index) => {
-      const x = pad + index * step;
-      const y = max === min ? height / 2 : pad + (1 - (value - min) / span) * (height - pad * 2);
-      return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
-    })
-    .join(' ');
-}
 
 export function Sparkline({ values, color, height = 22 }: SparklineProps) {
   const [width, setWidth] = useState(0);

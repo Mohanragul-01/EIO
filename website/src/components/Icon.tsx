@@ -55,7 +55,10 @@ export type IconName =
   | 'repeat'
   | 'reset'
   | 'flag'
-  | 'sparkline';
+  | 'sparkline'
+  | 'star'
+  | 'starFilled'
+  | 'bell';
 
 /**
  * Path data per icon. Several use more than one subpath; they are joined with
@@ -109,6 +112,11 @@ const PATHS: Record<IconName, string> = {
   reset: 'M3 4v6h6 M4.4 15a9 9 0 1 0 1-7.5L3 10',
   flag: 'M5 21V4 M5 5h11l-2 3.5L16 12H5',
   sparkline: 'M3 17l5-6 4 3 5-8 4 5',
+  // One star drawn twice: stroked for an empty slot, filled for a given one,
+  // so a rating reads by shape as well as by colour.
+  star: 'M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z',
+  starFilled: 'M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z',
+  bell: 'M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z M10 20.5a2 2 0 0 0 4 0',
 };
 
 /**
@@ -117,7 +125,7 @@ const PATHS: Record<IconName, string> = {
  * A play triangle drawn as an outline at 16px is mostly hole, and a hairline
  * one is hard to hit visually next to solid text.
  */
-const FILLED: IconName[] = ['play', 'pause'];
+const FILLED: IconName[] = ['play', 'pause', 'starFilled'];
 
 export function Icon({
   name,

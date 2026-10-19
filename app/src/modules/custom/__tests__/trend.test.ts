@@ -7,7 +7,16 @@
  * the same day everywhere in the app. Runs in America/New_York, so the week
  * buckets cross a daylight-saving change.
  */
-import { buildSeries, chartFieldOf, movingAverage, rangeStartISO, sparklineFor } from '../trend';
+import {
+  buildSeries,
+  chartFieldOf,
+  describeChart,
+  movingAverage,
+  pointLabel,
+  rangeStartISO,
+  sparkPath,
+  sparklineFor,
+} from '../trend';
 import { makeField, makeModule, makeRecord } from '../testing';
 
 const when = makeField({ key: 'when', type: 'date', position: 0 });
@@ -184,5 +193,31 @@ describe('rangeStartISO', () => {
     expect(rangeStartISO('3m', '2026-10-19')).toBe('2026-07-20');
     expect(rangeStartISO('1y', '2026-10-19')).toBe('2025-10-19');
     expect(rangeStartISO('all', '2026-10-19')).toBeNull();
+  });
+});
+
+describe('sparkPath', () => {
+  it('spans the box, highest point at the top, with room for the stroke', () => {
+    expect(sparkPath([0, 10], 100, 20)).toBe('M2.0 18.0 L98.0 2.0');
+  });
+
+  it('draws a flat line through the middle rather than along the floor', () => {
+    expect(sparkPath([5, 5, 5], 100, 20)).toBe('M2.0 10.0 L50.0 10.0 L98.0 10.0');
+  });
+});
+
+describe('chart wording', () => {
+  it('says what a point is', () => {
+    expect(describeChart(makeModule({ chart_bucket: 'day', chart_agg: 'sum' }))).toBe('Daily total');
+    expect(describeChart(makeModule({ chart_bucket: 'week', chart_agg: 'average' }))).toBe('Weekly average');
+    expect(describeChart(makeModule({ chart_bucket: 'entry' }))).toBe('Each entry');
+    expect(describeChart(makeModule({ chart_bucket: 'month', chart_window: 3 }))).toBe(
+      'Monthly total · 3-point average',
+    );
+  });
+
+  it('names a week by its first day', () => {
+    expect(pointLabel('2026-10-19', 'week').startsWith('Week of ')).toBe(true);
+    expect(pointLabel('2026-10-19', 'day')).not.toContain('Week');
   });
 });
