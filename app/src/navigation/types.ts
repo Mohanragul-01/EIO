@@ -63,6 +63,8 @@ export type RootStackParamList = {
   /** One ladder: its rungs, where you are, and moving up or back. */
   Ladder: { progressionId: string };
   LadderEdit: { progressionId?: string };
+  /** The bar loaded for a weight, and your plates. */
+  PlateCalculator: { targetKg?: number } | undefined;
 
   //  User-created modules
   // Three screens serve EVERY module you build, however many you create.

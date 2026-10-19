@@ -38,6 +38,7 @@ import { WorkoutSummaryScreen } from '../modules/fitness/screens/WorkoutSummaryS
 import { BandsScreen } from '../modules/fitness/screens/BandsScreen';
 import { LadderScreen } from '../modules/fitness/screens/LadderScreen';
 import { LadderEditScreen } from '../modules/fitness/screens/LadderEditScreen';
+import { PlateCalculatorScreen } from '../modules/fitness/screens/PlateCalculatorScreen';
 import { NoteEditScreen } from '../modules/notes/screens/NoteEditScreen';
 import { NotesListScreen } from '../modules/notes/screens/NotesListScreen';
 import { SubscriptionsListScreen } from '../modules/subscriptions/screens/SubscriptionsListScreen';
@@ -163,6 +164,11 @@ export function RootNavigator() {
         <Stack.Screen name="Bands" component={BandsScreen} options={{ title: 'Bands' }} />
         <Stack.Screen name="Ladder" component={LadderScreen} />
         <Stack.Screen name="LadderEdit" component={LadderEditScreen} />
+        <Stack.Screen
+          name="PlateCalculator"
+          component={PlateCalculatorScreen}
+          options={{ title: 'Plates' }}
+        />
 
         {/* Three screens covering every module you create. Their titles are
             set at runtime from the module's own data, so none are declared
@@ -191,15 +197,15 @@ const useStyles = makeStyles(({ colors }) => ({
  */
 function makeNavigationTheme(colors: ThemeColors, isDark: boolean): NavTheme {
   return {
-  dark: isDark,
-  colors: {
-    primary: colors.primary,
-    background: colors.background,
-    card: colors.background,
-    text: colors.text,
-    border: colors.glassBorder,
-    notification: colors.primary,
-  },
+    dark: isDark,
+    colors: {
+      primary: colors.primary,
+      background: colors.background,
+      card: colors.background,
+      text: colors.text,
+      border: colors.glassBorder,
+      notification: colors.primary,
+    },
     fonts: {
       regular: { fontFamily: fonts.regular, fontWeight: '400' },
       medium: { fontFamily: fonts.medium, fontWeight: '500' },

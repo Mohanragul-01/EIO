@@ -44,9 +44,11 @@ import { PickerSheet } from '../components/PickerSheet';
 import { REST_BAR_HEIGHT, RestBar } from '../components/RestBar';
 import { BlockMenu, LoadSheet, RestSheet, SetTypeSheet } from '../components/SessionSheets';
 import { visibleInMode } from '../mode';
+import { warmupSets } from '../plates';
 import { primaryRecord } from '../records';
 import { adjustRest, startRest, type RestState } from '../restTimer';
 import { formatDuration, normaliseMuscle, type SetType } from '../types';
+import { usePlateInventory } from '../usePlateInventory';
 import { useWorkoutSession } from '../useWorkoutSession';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'WorkoutSession'>;
@@ -65,6 +67,7 @@ export function WorkoutSessionScreen() {
   const { sessionId } = useRoute<Route>().params;
   const toast = useToast();
   const w = useWorkoutSession(sessionId);
+  const { inventory } = usePlateInventory();
 
   const [picking, setPicking] = useState(false);
   const [rest, setRestState] = useState<RestState>(null);
@@ -200,6 +203,19 @@ export function WorkoutSessionScreen() {
           .map((s) => s.duration_seconds ?? 0),
       )
     : 0;
+
+  /** A block's working weight: the first working row's typed, saved or ghost weight. */
+  const workingWeight = (block: (typeof w.blocks)[number]): number | null => {
+    const index = block.rows.findIndex((r) =>
+      r.kind === 'saved' ? r.set.set_type !== 'warmup' : r.draft.set_type !== 'warmup',
+    );
+    if (index < 0) return null;
+    const row = block.rows[index];
+    const typed =
+      row.kind === 'saved' ? row.set.weight_kg : Number(row.draft.weight.replace(',', '.')) || null;
+    const value = typed || w.ghostFor(block, index).weight;
+    return value && value > 0 ? value : null;
+  };
 
   const restExerciseName = rest ? (w.exercisesById[rest.exerciseId]?.name ?? '') : '';
 
@@ -445,13 +461,42 @@ export function WorkoutSessionScreen() {
             },
             {
               key: 'warmup',
-              label: 'Add a warm-up set',
+              label: 'Add warm-up sets',
               icon: 'flame-outline',
               onPress: () => {
-                w.addRow(menuForBlock.id, 'warmup', 0);
                 setBlockMenu(null);
+                const work = workingWeight(menuForBlock);
+                const exercise = w.exercisesById[menuForBlock.exerciseId];
+                const sets =
+                  exercise?.load_mode === 'external' && work ? warmupSets(work, inventory) : [];
+                if (sets.length === 0) {
+                  w.addRow(menuForBlock.id, 'warmup', 0);
+                  return;
+                }
+                // 40, 60 and 80 percent of the working weight, on plates you own.
+                sets.forEach((set, i) =>
+                  w.addRow(menuForBlock.id, 'warmup', i, {
+                    weight: String(set.kg),
+                    reps: String(set.reps),
+                  }),
+                );
               },
             },
+            ...(w.exercisesById[menuForBlock.exerciseId]?.load_mode === 'external' &&
+            w.exercisesById[menuForBlock.exerciseId]?.tracking_type === 'reps'
+              ? [
+                  {
+                    key: 'plates',
+                    label: 'Plate calculator',
+                    icon: 'barbell-outline' as const,
+                    onPress: () => {
+                      setBlockMenu(null);
+                      const work = workingWeight(menuForBlock);
+                      navigation.navigate('PlateCalculator', work ? { targetKg: work } : undefined);
+                    },
+                  },
+                ]
+              : []),
             {
               key: 'rest',
               label: 'Rest time',

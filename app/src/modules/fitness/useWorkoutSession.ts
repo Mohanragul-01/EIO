@@ -471,16 +471,24 @@ export function useWorkoutSession(sessionId: string) {
     [sessionId, fail, load, isMounted],
   );
 
-  /** Add a row; a one-sided exercise gets a left and a right. */
+  /**
+   * Add a row (with starting values, if given); a one-sided exercise gets a
+   * left and a right.
+   */
   const addRow = useCallback(
-    (blockId: string, setType: SetType = 'normal', index?: number) => {
+    (
+      blockId: string,
+      setType: SetType = 'normal',
+      index?: number,
+      values: Partial<Omit<DraftRow, 'key' | 'set_type' | 'side'>> = {},
+    ) => {
       const block = stateRef.current.blocks.find((b) => b.id === blockId);
       const sides =
         block && exercisesById[block.exerciseId]?.is_unilateral
           ? (['left', 'right'] as const)
           : [null];
       sides.forEach((side, i) => {
-        const draft = { ...newDraft(blockId, setType), side };
+        const draft = { ...newDraft(blockId, setType), ...values, side };
         dispatch({
           type: 'addRow',
           blockId,
