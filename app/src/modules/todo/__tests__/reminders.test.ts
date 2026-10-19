@@ -78,6 +78,7 @@ function task(overrides: Partial<Todo>): Todo {
     repeat_nth: null,
     repeat_from: 'due',
     series_id: null,
+    scheduled_for: null,
     completed_at: null,
     outcome: null,
     notes: '',
@@ -251,5 +252,46 @@ describe('scheduling through core', () => {
         category: 'task_reminder',
       }),
     );
+  });
+});
+
+describe('a snooze survives the launch resync (found in review)', () => {
+  const scheduledIds = () => core.schedule.mock.calls.map((call) => (call[0] as { id: string }).id);
+  const snoozedTask = task({ id: 'abc', due_time: '07:00:00' });
+
+  it('rebuildAll puts a pending snooze back after clearing every task- reminder', async () => {
+    // Snoozed at 7:00 for 7:30; the app opens at 7:10 and resyncs.
+    const at7 = new Date(2026, 9, 19, 7, 0);
+    await snooze('task-abc', { title: 'Call the bank', body: 'Due 7 am', data: { taskId: 'abc' } }, at7);
+    core.schedule.mockClear();
+
+    await rebuildAll([snoozedTask], '2026-10-19', new Date(2026, 9, 19, 7, 10));
+
+    expect(core.cancelPrefix).toHaveBeenCalledWith('task-');
+    expect(core.schedule).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'task-abc', date: new Date(2026, 9, 19, 7, 30) }),
+    );
+  });
+
+  it('forgets a snooze that has passed, or whose task is no longer open', async () => {
+    const at7 = new Date(2026, 9, 19, 7, 0);
+    await snooze('task-abc', { title: 't', body: 'b', data: { taskId: 'abc' } }, at7);
+    core.schedule.mockClear();
+
+    await rebuildAll([snoozedTask], '2026-10-19', new Date(2026, 9, 19, 8, 0));
+    await rebuildAll([], '2026-10-19', new Date(2026, 9, 19, 7, 10));
+
+    expect(scheduledIds()).not.toContain('task-abc');
+  });
+
+  it('a write to the task (an edit, a tick) ends its snooze', async () => {
+    const at7 = new Date(2026, 9, 19, 7, 0);
+    await snooze('task-abc', { title: 't', body: 'b', data: { taskId: 'abc' } }, at7);
+    await syncReminders([task({ id: 'abc', is_done: true })], at7);
+    core.schedule.mockClear();
+
+    await rebuildAll([snoozedTask], '2026-10-19', new Date(2026, 9, 19, 7, 10));
+
+    expect(scheduledIds()).not.toContain('task-abc');
   });
 });

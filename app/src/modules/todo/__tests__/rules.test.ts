@@ -13,6 +13,7 @@ import {
   isSchedulePoint,
   nextDueDate,
   ordinal,
+  projectedDates,
   ruleOf,
   shortRule,
   stepOnce,
@@ -349,5 +350,41 @@ describe('words', () => {
       '3 days after done',
     );
     expect(shortRule({ frequency: 'daily', from: 'completion' })).toBe('A day after done');
+  });
+});
+
+describe('projectedDates', () => {
+  it('starts after today for an overdue repeat, never on days already past', () => {
+    expect(projectedDates('2026-10-01', 'daily', '2026-10-19', '2026-10-22')).toEqual([
+      '2026-10-20',
+      '2026-10-21',
+      '2026-10-22',
+    ]);
+  });
+
+  it('starts after the due date of one not yet due, and runs to the end however far', () => {
+    const dates = projectedDates('2026-10-25', 'daily', '2026-10-19', '2027-03-31');
+    expect(dates[0]).toBe('2026-10-26');
+    expect(dates[dates.length - 1]).toBe('2027-03-31');
+    expect(dates).toHaveLength(157);
+  });
+
+  it('keeps the schedule for weekdays and month ends', () => {
+    expect(
+      projectedDates('2026-10-19', { frequency: 'weekly', weekdays: [1, 4] }, '2026-10-19', '2026-10-31'),
+    ).toEqual(['2026-10-22', '2026-10-26', '2026-10-29']);
+    expect(
+      projectedDates('2026-01-31', { frequency: 'monthly', anchorDay: 31 }, '2026-01-31', '2026-04-30'),
+    ).toEqual(['2026-02-28', '2026-03-31', '2026-04-30']);
+  });
+
+  it('assumes on-time completion for a from-completion rule', () => {
+    expect(
+      projectedDates('2026-10-19', { frequency: 'daily', every: 3, from: 'completion' }, '2026-10-19', '2026-10-28'),
+    ).toEqual(['2026-10-22', '2026-10-25', '2026-10-28']);
+  });
+
+  it('is empty when the window ends before the next one', () => {
+    expect(projectedDates('2026-10-19', 'yearly', '2026-10-19', '2026-12-31')).toEqual([]);
   });
 });

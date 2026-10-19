@@ -23,7 +23,7 @@
  */
 import { ruleOf, stepOnce } from './recurrence';
 import { localDayOf } from './today';
-import { outcomeOf, seriesKey, type Outcome, type Todo } from './types';
+import { outcomeOf, scheduleBase, seriesKey, type Outcome, type Todo } from './types';
 
 /** The columns a history needs; see api.listSeriesHistory. */
 export type HistoryRow = Pick<
@@ -31,6 +31,7 @@ export type HistoryRow = Pick<
   | 'id'
   | 'series_id'
   | 'due_date'
+  | 'scheduled_for'
   | 'completed_at'
   | 'updated_at'
   | 'outcome'
@@ -56,11 +57,16 @@ export function closedDay(row: Pick<HistoryRow, 'completed_at' | 'updated_at'>):
   return localDayOf(row.completed_at ?? row.updated_at);
 }
 
-/** Done before the next date on its own schedule. */
+/**
+ * Done before the next date on its own schedule - counted from the day it was
+ * SCHEDULED for, so moving a daily task to tomorrow and doing it then is still
+ * a missed day, while moving a weekly one within its week is not.
+ */
 export function isKept(row: HistoryRow): boolean {
   if (outcomeOf(row) !== 'done') return false;
-  if (!row.due_date) return true;
-  return closedDay(row) < stepOnce(row.due_date, ruleOf(row));
+  const base = scheduleBase(row);
+  if (!base) return true;
+  return closedDay(row) < stepOnce(base, ruleOf(row));
 }
 
 function byDueThenClosed(a: HistoryRow, b: HistoryRow): number {
@@ -74,7 +80,18 @@ function byDueThenClosed(a: HistoryRow, b: HistoryRow): number {
 
 export function streakFor(
   closed: readonly HistoryRow[],
-  open: Pick<HistoryRow, 'due_date' | 'frequency' | 'repeat_every' | 'repeat_weekdays' | 'repeat_anchor_day' | 'repeat_nth' | 'repeat_from'> | null,
+  open:
+    | (Pick<
+        HistoryRow,
+        | 'due_date'
+        | 'frequency'
+        | 'repeat_every'
+        | 'repeat_weekdays'
+        | 'repeat_anchor_day'
+        | 'repeat_nth'
+        | 'repeat_from'
+      > & { scheduled_for?: string | null })
+    | null,
   today: string,
 ): StreakStats {
   let run = 0;
@@ -99,7 +116,8 @@ export function streakFor(
 
   // The live occurrence's window already over: the routine slipped today or
   // earlier, and a late tick will not undo that.
-  const lapsed = open?.due_date ? today >= stepOnce(open.due_date, ruleOf(open)) : false;
+  const openBase = open ? (open.scheduled_for ?? open.due_date) : null;
+  const lapsed = open && openBase ? today >= stepOnce(openBase, ruleOf(open)) : false;
 
   return { current: lapsed ? 0 : run, best, done, skipped };
 }

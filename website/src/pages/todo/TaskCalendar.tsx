@@ -14,7 +14,7 @@ import { useCallback, useMemo, useState } from 'react';
 
 import { monthBounds } from '@app/core/date';
 import * as api from '@app/modules/todo/api';
-import { ruleOf, upcomingDates, WEEKDAY_SHORT, weekdayOf } from '@app/modules/todo/recurrence';
+import { projectedDates, ruleOf, WEEKDAY_SHORT, weekdayOf } from '@app/modules/todo/recurrence';
 import { compareForDay, formatTime } from '@app/modules/todo/today';
 import { PRIORITY_LABEL, type Todo } from '@app/modules/todo/types';
 
@@ -69,11 +69,10 @@ export function TaskCalendar({
     for (const todo of open) {
       if (!todo.due_date) continue;
       put(todo.due_date, { todo, kind: 'open' });
-      if (todo.is_repeat && todo.due_date <= end) {
-        // Enough steps to cross a month of a daily repeat; later ones are
-        // outside the month and dropped by put().
-        for (const date of upcomingDates(todo.due_date, ruleOf(todo), 64).slice(1)) {
-          if (date > end) break;
+      if (todo.is_repeat) {
+        // From after today for an overdue repeat (it rolls past today when
+        // done), to the end of the month however far ahead it is.
+        for (const date of projectedDates(todo.due_date, ruleOf(todo), today, end)) {
           put(date, { todo, kind: 'projected' });
         }
       }
@@ -88,7 +87,7 @@ export function TaskCalendar({
       });
     }
     return days;
-  }, [open, closed.data, start, end]);
+  }, [open, closed.data, start, end, today]);
 
   const renderDay = (day: CalendarDay) => {
     const entries = byDay.get(day.iso) ?? [];

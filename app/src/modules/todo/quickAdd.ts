@@ -179,8 +179,13 @@ type Matcher = {
   read: (m: RegExpExecArray, ctx: QuickAddContext) => Value | null;
 };
 
+/**
+ * Anchored at the scan position and required to end at a word boundary. The
+ * pattern is wrapped first: appended to "a|b", END would bind to b alone and
+ * "weekdaysfoo" would read as "weekdays".
+ */
 function sticky(source: string): RegExp {
-  return new RegExp(source + END, 'y');
+  return new RegExp(`(?:${source})${END}`, 'y');
 }
 
 function pad(n: number): string {
@@ -193,12 +198,18 @@ function isoOf(y: number, m: number, d: number): string | null {
   return `${y}-${pad(m)}-${pad(d)}`;
 }
 
-/** A day and month with no year: this year, or next year once this one's has passed. */
+/**
+ * A day and month with no year: the next time it comes round, this year
+ * included. Looks up to eight years ahead, which finds the next 29 February
+ * and gives up on days that never exist (31 April).
+ */
 function nextDayMonth(day: number, month: number, today: string): string | null {
   const year = Number(today.slice(0, 4));
-  const thisYear = isoOf(year, month, day);
-  if (thisYear && thisYear >= today) return thisYear;
-  return isoOf(year + 1, month, day) ?? (thisYear ? null : isoOf(year + 4 - (year % 4), month, day));
+  for (let y = year; y <= year + 8; y++) {
+    const candidate = isoOf(y, month, day);
+    if (candidate && candidate >= today) return candidate;
+  }
+  return null;
 }
 
 function withYear(day: number, month: number, yearText: string | undefined, today: string): string | null {
@@ -209,6 +220,11 @@ function withYear(day: number, month: number, yearText: string | undefined, toda
 
 function count(word: string): number {
   return NUMBER_WORDS[word] ?? Number(word);
+}
+
+/** The database allows every 1-366; anything else is not a repeat but words. */
+function validEvery(n: number): boolean {
+  return Number.isInteger(n) && n >= 1 && n <= 366;
 }
 
 const date = (d: string | null): Value | null => (d ? { kind: 'date', date: d } : null);
@@ -244,7 +260,10 @@ const MATCHERS: Matcher[] = [
     // "every! 3 days" and "after 3 days" both count from completion (Todoist's
     // every! and "after"). The number may be a word: "every! two weeks".
     regex: sticky(`(?:every!|after) (\\d{1,3}|a|an|one|two|three|four|five|six) ${UNIT}`),
-    read: (m) => repeat({ frequency: UNIT_WORDS[m[2]], every: count(m[1]), from: 'completion' }),
+    read: (m) =>
+      validEvery(count(m[1]))
+        ? repeat({ frequency: UNIT_WORDS[m[2]], every: count(m[1]), from: 'completion' })
+        : null,
   },
   {
     kind: 'repeat',
@@ -259,7 +278,8 @@ const MATCHERS: Matcher[] = [
   {
     kind: 'repeat',
     regex: sticky(`every (\\d{1,3}) ${UNIT}`),
-    read: (m) => repeat({ frequency: UNIT_WORDS[m[2]], every: Number(m[1]) }),
+    read: (m) =>
+      validEvery(Number(m[1])) ? repeat({ frequency: UNIT_WORDS[m[2]], every: Number(m[1]) }) : null,
   },
   {
     kind: 'repeat',
@@ -372,7 +392,13 @@ const MATCHERS: Matcher[] = [
   {
     kind: 'date',
     // DAY FIRST: 19/10 is 19 October. 10/13 is not a date and stays text.
-    regex: sticky('(\\d{1,2})[/-](\\d{1,2})(?:[/-](\\d{4}|\\d{2}))?'),
+    regex: sticky('(\\d{1,2})/(\\d{1,2})(?:/(\\d{4}|\\d{2}))?'),
+    read: (m, ctx) => date(withYear(Number(m[1]), Number(m[2]), m[3], ctx.today)),
+  },
+  {
+    kind: 'date',
+    // A dash only with a year: "chapters 3-4" and "2-3 sets" are ranges.
+    regex: sticky('(\\d{1,2})-(\\d{1,2})-(\\d{4}|\\d{2})'),
     read: (m, ctx) => date(withYear(Number(m[1]), Number(m[2]), m[3], ctx.today)),
   },
   {
@@ -566,11 +592,16 @@ export function parseQuickAdd(text: string, ctx: QuickAddContext): QuickAddResul
   // task moves on to its next day and takes the morning. A typed date keeps
   // its day - "today 7am" at noon is a late task, not tomorrow's - and a later
   // day takes the morning reading.
+  //
+  // A REPEAT is different: its time is a standing time for every occurrence,
+  // so it must not depend on when the line was typed ("standup every weekday
+  // at 9:30" typed at noon is not 21:30 forever). An ambiguous hour on a
+  // repeat takes the morning reading, and the chip says so; "pm" says evening.
   let dueTime: string | null = null;
   if (time) {
     const { minute } = time;
     const readings =
-      time.ambiguous && time.hour !== 12 ? [time.hour, time.hour + 12] : [time.hour];
+      time.ambiguous && time.hour !== 12 && !repeatRule ? [time.hour, time.hour + 12] : [time.hour];
     let hour = readings[0];
     if (dueDate === ctx.today) {
       const ahead = readings.find((h) => h * 60 + minute > ctx.nowMinutes);

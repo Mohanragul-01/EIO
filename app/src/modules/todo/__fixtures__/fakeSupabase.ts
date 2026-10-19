@@ -36,6 +36,7 @@ const TODO_DEFAULTS: Row = {
   repeat_nth: null,
   repeat_from: 'due',
   series_id: null,
+  scheduled_for: null,
   completed_at: null,
   outcome: null,
   notes: '',
@@ -268,6 +269,16 @@ export function createFakeSupabase() {
     client,
     rows: (table = 'todos') => clone(tables[table] ?? []),
     calls,
+    /**
+     * Change a row in place WITHOUT moving updated_at - the database as a
+     * migration backfill or another client left it, rather than a write
+     * through the API under test.
+     */
+    patch(id: string, values: Row, table = 'todos') {
+      const row = (tables[table] ?? []).find((r) => r.id === id);
+      if (!row) throw new Error(`fakeSupabase: no row ${id}`);
+      Object.assign(row, clone(values));
+    },
     /** The next `op` on `table` resolves with this error instead of running. */
     failNext(table: string, op: 'insert' | 'update' | 'delete', message = 'network down') {
       failures.push({ table, op, message });

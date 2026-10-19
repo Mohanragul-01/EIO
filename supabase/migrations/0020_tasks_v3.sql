@@ -17,7 +17,9 @@
 --   3. Reopening a completed repeat left its successor open beside it, because
 --      nothing linked one occurrence to the next. series_id does.
 --
--- Depends on 0001 (todos), 0009 (frequency, is_repeat) and 0013 (position).
+-- Depends on 0001 (todos), 0009 (frequency, is_repeat) and 0013 (position,
+-- and reorder_todos, which this replaces with a version that skips rows
+-- already in place).
 -- ============================================================================
 
 -- TIME AND REMINDER ---------------------------------------------------------
@@ -84,6 +86,16 @@ alter table public.todos
 -- cascade into the rest of the history.
 alter table public.todos
   add column if not exists series_id uuid;
+
+-- The date on the schedule this occurrence stands for. Rescheduling one moves
+-- due_date and leaves this, so the next occurrence is stepped from the
+-- schedule rather than from wherever this one was moved: October's "every 2
+-- months on the 15th" moved to 3 November still brings the next on 15
+-- December, and 1 November pulled back to 28 October does not bring 1
+-- November straight back. Null on v2 rows the backfill below cannot reach;
+-- the app then uses due_date.
+alter table public.todos
+  add column if not exists scheduled_for date;
 
 -- COMPLETION ------------------------------------------------------------------
 
@@ -175,6 +187,39 @@ where t.id = grouped.id
   -- harmless but would move its updated_at for nothing.
   and grouped.root <> t.id;
 
+-- Open repeats are on the schedule where they are due. Only open ones: a
+-- closed occurrence is never stepped from again, and the app reads a null
+-- scheduled_for as its due date anyway.
+update public.todos
+set scheduled_for = due_date
+where is_repeat
+  and not is_done
+  and due_date is not null
+  and scheduled_for is null;
+
+-- REORDERING TOUCHES ONLY WHAT MOVED ------------------------------------------
+-- 0013's reorder_todos renumbered every row of a column on every drag, and the
+-- updated_at trigger then marked each one as edited. Tasks v3 reads "never
+-- edited" (created_at = updated_at) to decide that reopening a repeat may
+-- remove the occurrence it created, so a single drag on the website made
+-- every successor in the column look hand-edited, and an Undo then left the
+-- routine open twice. Same signature, same result for the order; rows already
+-- in place are simply not written.
+create or replace function public.reorder_todos(p_ids uuid[])
+returns void
+language sql
+security invoker
+as $$
+  update public.todos t
+  set position = new_order.rank
+  from unnest(p_ids) with ordinality as new_order(id, rank)
+  where t.id = new_order.id
+    and t.position is distinct from new_order.rank;
+$$;
+
+comment on function public.reorder_todos(uuid[]) is
+  'Renumber tasks to match the given id order, writing only rows whose position changes. RLS-scoped to the caller.';
+
 -- INDEXES ---------------------------------------------------------------------
 
 -- A routine's history, in date order: streaks, the history calendar, and
@@ -191,6 +236,8 @@ comment on column public.todos.repeat_anchor_day is
   'Day of the month a monthly/yearly repeat is meant to fall on; clamped when it lands, never overwritten. 31 = last day.';
 comment on column public.todos.series_id is
   'Shared by every occurrence of a routine. Null on the first occurrence; the key is coalesce(series_id, id).';
+comment on column public.todos.scheduled_for is
+  'The date on the schedule this occurrence stands for; a reschedule moves due_date only. Null means due_date.';
 comment on column public.todos.outcome is
   'How a closed row was closed: done, skipped, wont_do. Null while open; null on a done v2 row means done.';
 

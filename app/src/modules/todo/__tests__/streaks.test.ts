@@ -30,6 +30,7 @@ function occ(due: string | null, closed: string, overrides: Partial<HistoryRow> 
     repeat_anchor_day: null,
     repeat_nth: null,
     repeat_from: 'due',
+    scheduled_for: null,
     ...overrides,
   };
 }
@@ -164,5 +165,16 @@ describe('grouping and history days', () => {
 
   it('reads the closed day locally, falling back to the last edit', () => {
     expect(closedDay({ completed_at: null, updated_at: at('2026-10-09') })).toBe('2026-10-09');
+  });
+});
+
+describe('a moved occurrence is judged by the day it was scheduled for', () => {
+  it('a daily task moved to the next day and done then was not kept', () => {
+    expect(isKept(occ('2026-10-11', '2026-10-11', { scheduled_for: '2026-10-10' }))).toBe(false);
+  });
+
+  it('a weekly task moved within its week and done then was kept', () => {
+    const weekly = { frequency: 'weekly' as const, repeat_weekdays: [1], scheduled_for: '2026-10-12' };
+    expect(isKept(occ('2026-10-14', '2026-10-14', weekly))).toBe(true);
   });
 });

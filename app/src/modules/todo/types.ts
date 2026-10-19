@@ -71,6 +71,12 @@ export type Todo = {
    * use seriesKey() rather than reading this directly.
    */
   series_id: string | null;
+  /**
+   * The date on the schedule this occurrence stands for. Rescheduling moves
+   * due_date and leaves this, so the next occurrence steps from here and the
+   * routine keeps its rhythm (see scheduleBase). Null on rows from v2.
+   */
+  scheduled_for: string | null;
   /** When it was closed. Null while open, and on rows closed by v2 before 0020. */
   completed_at: string | null;
   /** Null while open. Null on a done row means 'done' (v2 never set it). */
@@ -101,6 +107,8 @@ export type TodoInput = {
   repeat_anchor_day?: number | null;
   repeat_nth?: number | null;
   repeat_from?: RepeatFrom;
+  /** Settled by normalizeInput: a full edit puts the schedule where the due date is. */
+  scheduled_for?: string | null;
   notes?: string;
   checklist?: ChecklistItem[];
 };
@@ -111,6 +119,17 @@ export type TodoInput = {
  */
 export function seriesKey(todo: Pick<Todo, 'id' | 'series_id'>): string {
   return todo.series_id ?? todo.id;
+}
+
+/**
+ * Where the schedule says an occurrence is - the base the next one is stepped
+ * from. A rescheduled occurrence keeps its scheduled date, so moving
+ * October's "every 2 months on the 15th" to 3 November still brings the next
+ * one on 15 December, and pulling 1 November back to 28 October does not
+ * bring 1 November straight back. Rows from v2 have only a due date.
+ */
+export function scheduleBase(todo: Pick<Todo, 'due_date' | 'scheduled_for'>): string | null {
+  return todo.scheduled_for ?? todo.due_date;
 }
 
 /** How a closed row was closed, reading v2's done rows (no outcome) as done. */

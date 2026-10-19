@@ -289,3 +289,103 @@ describe('reminders follow the writes', () => {
     });
   });
 });
+
+describe('found in review', () => {
+  const row = (id: string) => mockDb.rows().find((r) => r.id === id) as unknown as Todo;
+
+  it('completing the same occurrence twice creates one successor, not two', async () => {
+    // Done on the reminder, then a tick on the stale row in the app.
+    const task = await repeatingTask();
+    await api.completeTask(task);
+    const second = await api.completeTask(task);
+
+    expect(second).toBeNull();
+    expect(openRows()).toHaveLength(1);
+  });
+
+  it('an occurrence moved to another day comes back to its schedule', async () => {
+    // Every 2 months on the 15th; October's moved to 3 November.
+    const task = await repeatingTask({ frequency: 'monthly', repeat_every: 2, due_date: '2026-10-15' });
+    expect(task.scheduled_for).toBe('2026-10-15');
+    await api.rescheduleTasks([task.id], '2026-11-03');
+
+    const next = (await api.completeTask(row(task.id))) as Todo;
+
+    expect(next.due_date).toBe('2026-12-15');
+    expect(next.scheduled_for).toBe('2026-12-15');
+  });
+
+  it('an occurrence pulled earlier does not come straight back', async () => {
+    const task = await repeatingTask({ frequency: 'monthly', due_date: '2026-11-01' });
+    await api.rescheduleTasks([task.id], '2026-10-19');
+
+    const next = (await api.completeTask(row(task.id))) as Todo;
+
+    expect(next.due_date).toBe('2026-12-01');
+  });
+
+  it('a yearly occurrence moved into the next month stays a December routine', async () => {
+    const task = await repeatingTask({ frequency: 'yearly', due_date: '2026-12-31' });
+    await api.rescheduleTasks([task.id], '2027-01-02');
+
+    const next = (await api.completeTask(row(task.id))) as Todo;
+
+    expect(next.due_date).toBe('2027-12-31');
+  });
+
+  it('reopening leaves a same-named routine of another frequency alone', async () => {
+    // Migration 0020 joins v2 rows into series by title, so a daily and a
+    // weekly "Water the plants" can share a key.
+    const daily = await repeatingTask();
+    const weekly = await repeatingTask({ frequency: 'weekly' });
+    mockDb.patch(weekly.id, { series_id: daily.id });
+
+    await api.completeTask(daily);
+    await api.reopenTask(daily.id);
+
+    expect(openRows().map((r) => r.id).sort()).toEqual([daily.id, weekly.id].sort());
+  });
+
+  it('dragging to another frequency re-settles the rule for the new unit', async () => {
+    const task = await repeatingTask({
+      frequency: 'weekly',
+      due_date: '2026-10-22',
+      repeat_weekdays: [1, 4],
+    });
+
+    await api.setFrequency(task.id, 'monthly', task.due_date);
+
+    expect(row(task.id)).toMatchObject({
+      frequency: 'monthly',
+      repeat_weekdays: null,
+      repeat_anchor_day: 22,
+      repeat_nth: null,
+      due_date: '2026-10-22',
+    });
+  });
+
+  it('returns the newest history, oldest first, when there is more than a page of it', async () => {
+    // Supabase caps a response at 1000 rows; asking oldest-first dropped the
+    // newest, which are the ones a streak is made of.
+    const root = await repeatingTask();
+    let last = '';
+    for (let i = 0; i < 1003; i++) {
+      const day = new Date(2023, 0, 1 + i);
+      last = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+      const occurrence = await api.createTodo({
+        title: 'Water the plants',
+        due_date: last,
+        priority: 'normal',
+        frequency: 'daily',
+        is_repeat: false,
+      });
+      mockDb.patch(occurrence.id, { series_id: root.id, is_done: true, outcome: 'done' });
+    }
+
+    const history = await api.listSeriesHistory([root.id]);
+
+    expect(history).toHaveLength(1000);
+    expect(history[history.length - 1].due_date).toBe(last);
+    expect((history[0].due_date ?? '') < (history[1].due_date ?? '')).toBe(true);
+  });
+});

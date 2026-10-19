@@ -46,6 +46,7 @@ function task(id: string, overrides: Partial<Todo> = {}): Todo {
     repeat_nth: null,
     repeat_from: 'due',
     series_id: null,
+    scheduled_for: null,
     completed_at: null,
     outcome: null,
     notes: '',

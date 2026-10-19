@@ -169,7 +169,9 @@ export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
       const reopened: Todo = { ...todo, is_done: false, outcome: null, completed_at: null };
       let indexOf: () => number = () => -1;
       if (status === 'done') indexOf = takeOut(todo);
-      else setTodos((current) => restore(current, reopened, current.length).sort(byPosition));
+      // A copy before sorting: restore() hands back the state array itself
+      // when the row is already there, and sort() works in place.
+      else setTodos((current) => [...restore(current, reopened, current.length)].sort(byPosition));
       try {
         const { removed } = await api.reopenTask(todo.id);
         if (isMounted() && removed.length > 0) {

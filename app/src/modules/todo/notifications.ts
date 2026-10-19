@@ -201,12 +201,59 @@ async function scheduleTask(todo: Todo, now: Date): Promise<void> {
   });
 }
 
+/* SNOOZES ------------------------------------------------------------------- */
+
+/**
+ * Pending snoozes, task id -> when, kept on the device.
+ *
+ * A snooze reuses the reminder's id, and the launch resync begins by clearing
+ * every task- reminder before rebuilding from the database - where a snooze
+ * does not exist. Without a record of it, opening the app between a snooze
+ * and its alarm silently cancelled the alarm. rebuildAll puts back the ones
+ * still ahead for tasks still open.
+ */
+const SNOOZE_KEY = 'eio.tasks.snoozes';
+
+async function loadSnoozes(): Promise<Record<string, number>> {
+  try {
+    const raw = await AsyncStorage.getItem(SNOOZE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : {};
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveSnoozes(snoozes: Record<string, number>): Promise<void> {
+  try {
+    await AsyncStorage.setItem(SNOOZE_KEY, JSON.stringify(snoozes));
+  } catch {
+    // A lost record costs one snooze at worst, never the task.
+  }
+}
+
+/** Forget the snoozes of these tasks: any write to a task supersedes its snooze. */
+async function forgetSnoozes(taskIds: readonly string[]): Promise<void> {
+  if (taskIds.length === 0) return;
+  const snoozes = await loadSnoozes();
+  let changed = false;
+  for (const id of taskIds) {
+    if (id in snoozes) {
+      delete snoozes[id];
+      changed = true;
+    }
+  }
+  if (changed) await saveSnoozes(snoozes);
+}
+
 /**
  * Bring each row's reminder in line with the row: cancel whatever is there,
  * then schedule again if the row still wants one. A closed row ends up with
- * none. Never throws (core's functions do not).
+ * none, and an edited one loses a pending snooze (its time may have moved).
+ * Never throws (core's functions do not).
  */
 export async function syncReminders(rows: readonly Todo[], now: Date = new Date()): Promise<void> {
+  await forgetSnoozes(rows.map((row) => row.id));
   for (const row of rows) {
     await cancel(reminderId(row.id));
     await scheduleTask(row, now);
@@ -214,6 +261,7 @@ export async function syncReminders(rows: readonly Todo[], now: Date = new Date(
 }
 
 export async function cancelReminders(ids: readonly string[]): Promise<void> {
+  await forgetSnoozes(ids);
   for (const id of ids) await cancel(reminderId(id));
 }
 
@@ -247,19 +295,51 @@ export async function scheduleDigests(
 export async function rebuildAll(open: readonly Todo[], today: string, now: Date = new Date()): Promise<void> {
   await cancelPrefix(REMINDER_PREFIX);
   for (const row of open) await scheduleTask(row, now);
+
+  // Snoozes still ahead, for tasks still open, go back under their task's id
+  // (after the regular reminder, which for a snoozed task has already fired).
+  const snoozes = await loadSnoozes();
+  const kept: Record<string, number> = {};
+  for (const row of open) {
+    const at = snoozes[row.id];
+    if (typeof at !== 'number' || at <= now.getTime()) continue;
+    kept[row.id] = at;
+    await ensureCategory();
+    await schedule({
+      id: reminderId(row.id),
+      date: new Date(at),
+      title: row.title,
+      body: reminderBody(row),
+      data: { taskId: row.id },
+      channel: TASK_CHANNEL,
+      category: REMINDER_CATEGORY,
+    });
+  }
+  await saveSnoozes(kept);
+
   await scheduleDigests(open, await loadDigestSettings(), today, now);
 }
 
-/** Show the same reminder again in SNOOZE_MINUTES, under the same id. */
+/**
+ * Show the same reminder again in SNOOZE_MINUTES, under the same id. Recorded
+ * first, then scheduled: whichever order a resync running at the same moment
+ * takes, the snooze ends up scheduled (see SNOOZES).
+ */
 export async function snooze(
   notificationId: string,
   content: { title: string | null; body: string | null; data: Record<string, unknown> },
   now: Date = new Date(),
 ): Promise<boolean> {
+  const at = new Date(now.getTime() + SNOOZE_MINUTES * 60_000);
+  const taskId = typeof content.data.taskId === 'string' ? content.data.taskId : null;
+  if (taskId) {
+    const snoozes = await loadSnoozes();
+    await saveSnoozes({ ...snoozes, [taskId]: at.getTime() });
+  }
   await ensureCategory();
   return schedule({
     id: notificationId,
-    date: new Date(now.getTime() + SNOOZE_MINUTES * 60_000),
+    date: at,
     title: content.title ?? 'Task',
     body: content.body ?? '',
     data: content.data,

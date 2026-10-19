@@ -14,7 +14,9 @@ import type { TodoInput } from './types';
 
 export function normalizeInput(input: TodoInput, today: string): TodoInput {
   const title = input.title.trim();
-  if (!input.is_repeat) return { ...input, title };
+  // A full edit sets the schedule where the due date now is; only a
+  // reschedule (a partial write of due_date) leaves the two apart.
+  if (!input.is_repeat) return { ...input, title, scheduled_for: input.due_date };
 
   const every = Math.max(1, Math.floor(input.repeat_every ?? 1));
   const from = input.repeat_from ?? 'due';
@@ -54,6 +56,7 @@ export function normalizeInput(input: TodoInput, today: string): TodoInput {
 
   const rule = toRule({ frequency: input.frequency, every, weekdays, anchorDay, nth, from });
 
+  const dueDate = input.due_date ?? firstDueDate(rule, today);
   return {
     ...input,
     title,
@@ -62,7 +65,28 @@ export function normalizeInput(input: TodoInput, today: string): TodoInput {
     repeat_weekdays: weekdays,
     repeat_anchor_day: anchorDay,
     repeat_nth: nth,
-    due_date: input.due_date ?? firstDueDate(rule, today),
+    due_date: dueDate,
+    scheduled_for: dueDate,
+  };
+}
+
+/**
+ * The rule columns for a task moved to another frequency on the board, from
+ * its due date: the weekday for weekly, the day of the month for monthly and
+ * yearly, nothing for daily. Without this a weekly Mon/Thu task dragged to
+ * Monthly kept its weekdays and no anchor day, and drifted at month end.
+ */
+export function ruleColumnsFor(
+  frequency: TodoInput['frequency'],
+  dueDate: string | null,
+  today: string,
+): Pick<TodoInput, 'repeat_weekdays' | 'repeat_anchor_day' | 'repeat_nth'> {
+  const base = dueDate ?? today;
+  return {
+    repeat_weekdays: frequency === 'weekly' ? [weekdayOf(base)] : null,
+    repeat_anchor_day:
+      frequency === 'monthly' || frequency === 'yearly' ? Number(base.slice(8, 10)) : null,
+    repeat_nth: null,
   };
 }
 

@@ -27,7 +27,7 @@ import { supabase } from '../../core/supabase';
 import { getOwnerId } from '../../core/session';
 import { todayISO } from '../../core/date';
 import { registerResync } from '../../core/notifications';
-import { normalizeInput, resetChecklist } from './input';
+import { normalizeInput, resetChecklist, ruleColumnsFor } from './input';
 import {
   cancelDigests,
   cancelReminders,
@@ -42,6 +42,7 @@ import { localDayStartISO } from './today';
 import {
   nextDueDate,
   ruleOf,
+  scheduleBase,
   seriesKey,
   type Frequency,
   type Outcome,
@@ -80,7 +81,10 @@ registerResync('tasks', async () => {
 
 /** The columns a series history needs - small, since a daily routine has hundreds. */
 const HISTORY_COLUMNS =
-  'id, series_id, due_date, completed_at, updated_at, outcome, is_done, frequency, repeat_every, repeat_weekdays, repeat_anchor_day, repeat_nth, repeat_from';
+  'id, series_id, due_date, scheduled_for, completed_at, updated_at, outcome, is_done, frequency, repeat_every, repeat_weekdays, repeat_anchor_day, repeat_nth, repeat_from';
+
+/** Supabase returns at most this many rows per request (its default max_rows). */
+const PAGE = 1000;
 
 /**
  * Open tasks in one frequency tab.
@@ -232,8 +236,13 @@ export async function listClosedBetween(start: string, end: string): Promise<Tod
  * the per-routine history are computed from.
  *
  * The first occurrence of a series has no series_id - its key IS its id - so
- * the match is on either column. Bounded, though generously: years of a daily
- * routine.
+ * the match is on either column.
+ *
+ * NEWEST FIRST, THEN REVERSED. Supabase caps a response at 1000 rows whatever
+ * limit is asked for, and a list screen asks for every routine's history at
+ * once - five daily routines pass 1000 in about 200 days. Asked oldest-first,
+ * the cap dropped the most recent rows, which are exactly the ones a current
+ * streak is made of.
  */
 export async function listSeriesHistory(keys: string[]): Promise<Todo[]> {
   if (keys.length === 0) return [];
@@ -246,11 +255,11 @@ export async function listSeriesHistory(keys: string[]): Promise<Todo[]> {
     .eq('user_id', ownerId)
     .eq('is_done', true)
     .or(`series_id.in.(${list}),id.in.(${list})`)
-    .order('due_date', { ascending: true })
-    .limit(3000);
+    .order('due_date', { ascending: false })
+    .limit(PAGE);
 
   if (error) throw new Error(error.message);
-  return (data ?? []) as unknown as Todo[];
+  return ((data ?? []) as unknown as Todo[]).reverse();
 }
 
 /**
@@ -275,13 +284,22 @@ export async function reorderTodos(orderedIds: string[]): Promise<void> {
 /**
  * Move a task to a different frequency.
  *
- * Separate from updateTodo because the board changes one column and nothing
- * else, and because a drag between columns must not touch the due date - a
- * weekly task dragged to Monthly is still due when it was due; only how often
- * it recurs has changed.
+ * Separate from updateTodo because a drag between columns must not touch the
+ * due date - a weekly task dragged to Monthly is still due when it was due;
+ * only how often it recurs has changed. The rule columns are re-settled for
+ * the new unit from that date (a weekday for weekly, a day of the month for
+ * monthly), or a weekly Mon/Thu task would arrive in Monthly with weekdays and
+ * no anchor, and drift at month end.
  */
-export async function setFrequency(id: string, frequency: Frequency): Promise<void> {
-  const { error } = await supabase.from(TABLE).update({ frequency }).eq('id', id);
+export async function setFrequency(
+  id: string,
+  frequency: Frequency,
+  dueDate: string | null = null,
+): Promise<void> {
+  const { error } = await supabase
+    .from(TABLE)
+    .update({ frequency, ...ruleColumnsFor(frequency, dueDate, todayISO()) })
+    .eq('id', id);
   if (error) throw new Error(error.message);
 }
 
@@ -369,11 +387,17 @@ export async function completeTask(
   todo: Todo,
   outcome: Exclude<Outcome, 'wont_do'> = 'done',
 ): Promise<Todo | null> {
-  const { error } = await supabase
+  // Only an OPEN row is closed. Done on a reminder and then a tick on the
+  // stale row in the app would otherwise close it twice and create two
+  // successors - one routine, open twice.
+  const { data: closed, error } = await supabase
     .from(TABLE)
     .update({ is_done: true, outcome, completed_at: new Date().toISOString() })
-    .eq('id', todo.id);
+    .eq('id', todo.id)
+    .eq('is_done', false)
+    .select('id');
   if (error) throw new Error(error.message);
+  if (!closed || closed.length === 0) return null;
 
   if (!todo.is_repeat) {
     remind([], [todo.id]);
@@ -382,6 +406,9 @@ export async function completeTask(
 
   const ownerId = await getOwnerId();
   const today = todayISO();
+  // Stepped from where the schedule put this occurrence, not from where it
+  // was moved to (scheduleBase).
+  const next = nextDueDate(scheduleBase(todo), ruleOf(todo), { today, completedOn: today });
 
   const { data, error: insertError } = await supabase
     .from(TABLE)
@@ -390,7 +417,8 @@ export async function completeTask(
       title: todo.title,
       frequency: todo.frequency,
       is_repeat: true,
-      due_date: nextDueDate(todo.due_date, ruleOf(todo), { today, completedOn: today }),
+      due_date: next,
+      scheduled_for: next,
       due_time: todo.due_time,
       reminder_offset_min: todo.reminder_offset_min,
       repeat_every: todo.repeat_every,
@@ -437,7 +465,8 @@ export async function wontDoTask(todo: Todo): Promise<void> {
   const { error } = await supabase
     .from(TABLE)
     .update({ is_done: true, outcome: 'wont_do', completed_at: new Date().toISOString() })
-    .eq('id', todo.id);
+    .eq('id', todo.id)
+    .eq('is_done', false);
   if (error) throw new Error(error.message);
   remind([], [todo.id]);
 }
@@ -480,6 +509,10 @@ export async function reopenTask(id: string): Promise<{ reopened: Todo; removed:
     .select('id, created_at, updated_at')
     .eq('is_done', false)
     .neq('id', row.id)
+    // Same frequency too: migration 0020 joined v2 rows into series by title,
+    // so a daily and a weekly routine of the same name can share a key, and
+    // undoing a tick on one must not end the other.
+    .eq('frequency', row.frequency)
     .or(`series_id.eq.${key},id.eq.${key}`);
   if (findError) throw new Error(findError.message);
 

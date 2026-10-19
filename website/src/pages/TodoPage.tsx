@@ -425,11 +425,21 @@ export function TodoPage() {
     const original = serverBoard;
     const movedColumn = original ? columnOf(activeId, original) !== column : false;
 
+    // Dropped where it started: nothing to write. Renumbering anyway would
+    // mark every task in the column as edited (see reorder_todos in 0020).
+    if (!movedColumn && nextItems === items && original && original[column] === items) {
+      setPending(null);
+      return;
+    }
+
     setActionError(null);
     try {
       // Frequency first: the row has to belong to the column before the
       // column's order is written.
-      if (movedColumn) await api.setFrequency(activeId, column);
+      if (movedColumn) {
+        const moving = items.find((t) => t.id === activeId);
+        await api.setFrequency(activeId, column, moving?.due_date ?? null);
+      }
       await api.reorderTodos(nextItems.map((t) => t.id));
       if (movedColumn && original) {
         const previous = columnOf(activeId, original);

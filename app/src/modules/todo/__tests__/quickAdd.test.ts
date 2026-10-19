@@ -98,7 +98,6 @@ describe('numeric dates are day first', () => {
     expect(dateOf('x 19/10')).toBe('2026-10-19');
     expect(dateOf('x 05/11')).toBe('2026-11-05');
     expect(dateOf('x 5/11')).toBe('2026-11-05');
-    expect(dateOf('x 19-10')).toBe('2026-10-19');
   });
 
   it('takes a two- or four-digit year', () => {
@@ -127,6 +126,14 @@ describe('numeric dates are day first', () => {
 
   it('a 29 February with no year waits for a leap year', () => {
     expect(dateOf('x 29/02')).toBe('2028-02-29');
+    // Even when this year's has already passed.
+    expect(dateOf('x 29/2', { today: '2028-03-10' })).toBe('2032-02-29');
+  });
+
+  it('reads a dash only with a year, so a range stays a range', () => {
+    expect(parse('Read chapters 3-4').dueDate).toBeNull();
+    expect(parse('Do 2-3 sets').title).toBe('Do 2-3 sets');
+    expect(dateOf('x 19-10-2026')).toBe('2026-10-19');
   });
 
   it('does not read a dotted pair as a date without a year', () => {
@@ -287,6 +294,7 @@ describe('repeats', () => {
     expect(parse('x every last fri').repeat).toMatchObject({ nth: -1, weekdays: [5] });
     expect(parse('x every last day').repeat).toMatchObject({ frequency: 'monthly', anchorDay: 31 });
     expect(parse('x every 32nd').repeat).toBeNull();
+    expect(parse('x every 0th').repeat).toBeNull();
   });
 
   it('from completion: every! and after', () => {
@@ -296,6 +304,7 @@ describe('repeats', () => {
       from: 'completion',
     });
     expect(parse('x after 10 days').repeat).toMatchObject({ every: 10, from: 'completion' });
+    expect(parse('x after 0 days').repeat).toBeNull();
     expect(parse('x every! week').repeat).toMatchObject({ frequency: 'weekly', from: 'completion' });
     expect(parse('x after two weeks').repeat).toMatchObject({ frequency: 'weekly', every: 2 });
     // "after" with no number is just a word.
@@ -427,5 +436,39 @@ describe('toTodoInput', () => {
       priority: 'normal',
       is_repeat: false,
     });
+  });
+});
+
+describe('found in review', () => {
+  it('needs a word boundary after every alternative, not only the last', () => {
+    // "weekdaysfoo" is not "weekdays".
+    expect(parse('weekdaysfoo bar').repeat).toBeNull();
+    expect(parse('weekendsfoo bar').repeat).toBeNull();
+    expect(parse('x tomorrowish').dueDate).toBeNull();
+    expect(parse('p1x').priority).toBeNull();
+  });
+
+  it('refuses a repeat count the database would refuse (1-366)', () => {
+    expect(parse('x every 400 days').repeat).toBeNull();
+    expect(parse('x every 0 days').repeat).toBeNull();
+    expect(parse('x every! 999 days').repeat).toBeNull();
+    expect(parse('x every 366 days').repeat).toMatchObject({ every: 366 });
+  });
+
+  it("gives a repeat's ambiguous hour the morning reading, whenever it is typed", () => {
+    // At noon, "at 9:30" would be 21:30 by the one-off rule - and every
+    // occurrence of a daily standup would inherit it.
+    expect(parse('Standup every weekday at 9:30')).toMatchObject({
+      dueTime: '09:30:00',
+      dueDate: '2026-10-20',
+    });
+    expect(parse('Gym every day at 6')).toMatchObject({ dueTime: '06:00:00', dueDate: '2026-10-20' });
+    // Still ahead today: today.
+    expect(parse('Gym every day at 6', { nowMinutes: 5 * 60 })).toMatchObject({
+      dueTime: '06:00:00',
+      dueDate: '2026-10-19',
+    });
+    // An explicit pm is kept.
+    expect(parse('Gym every day at 6pm').dueTime).toBe('18:00:00');
   });
 });

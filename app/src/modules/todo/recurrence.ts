@@ -268,6 +268,37 @@ export function nextDueDate(
   return next;
 }
 
+/** The next date after `date`: on the schedule, or the interval for a from-completion rule. */
+export function nextAfter(date: string, input: RuleInput): string {
+  const rule = toRule(input);
+  return rule.from === 'completion' ? intervalAfter(date, rule) : stepOnce(date, rule);
+}
+
+/**
+ * Where a repeat's FUTURE occurrences fall, up to and including `until`, for
+ * a calendar. Starts after the open occurrence: after its due date if that is
+ * still ahead, otherwise after today, since an overdue one rolls past today
+ * when it is done - so no projection lands on a day already gone. Assumes
+ * each is done on time, the only honest guess.
+ */
+export function projectedDates(
+  dueDate: string,
+  input: RuleInput,
+  today: string,
+  until: string,
+): string[] {
+  const rule = toRule(input);
+  const from = dueDate > today ? dueDate : today;
+  const dates: string[] = [];
+  let date = rule.from === 'completion' ? intervalAfter(from, rule) : nextDueDate(dueDate, rule, { today: from });
+  // Bounded twice: by `until`, and by a count no real window reaches.
+  while (date <= until && dates.length < 1500) {
+    dates.push(date);
+    date = nextAfter(date, rule);
+  }
+  return dates;
+}
+
 /**
  * The first due date a repeating task should get when it has none: today if
  * today is on the schedule, otherwise the next date that is. Quick add uses it
