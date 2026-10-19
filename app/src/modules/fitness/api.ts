@@ -1242,9 +1242,7 @@ export async function listSessionsBetween(start: string, end: string): Promise<W
  * Every set of one exercise, with its session's date and bodyweight, for the
  * exercise's page: charts, history and records.
  */
-export async function listExerciseSets(
-  exerciseId: string,
-): Promise<
+export async function listExerciseSets(exerciseId: string): Promise<
   (SetFact & {
     date: string;
     bodyweight_kg: number | null;
@@ -1292,4 +1290,107 @@ export async function getExercise(id: string): Promise<Exercise | null> {
   const { data, error } = await supabase.from('exercises').select('*').eq('id', id).maybeSingle();
   if (error) throw new Error(error.message);
   return data;
+}
+
+// REPEAT AND SAVE AS ROUTINE ------------------------------------------------------
+
+/**
+ * Start a new session today laid out like a past one: same exercises in the
+ * same order, rest and supersets. Its ghost values then come from that past
+ * session, the most recent time each exercise was done.
+ */
+export async function repeatSession(fromSessionId: string): Promise<WorkoutSession> {
+  const source = await getSession(fromSessionId);
+  if (!source) throw new Error('That workout no longer exists.');
+  const ownerId = await getOwnerId();
+  const today = new Date();
+  const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(
+    today.getDate(),
+  ).padStart(2, '0')}`;
+
+  const [blocks, sets, bodyweight] = await Promise.all([
+    listSessionExercises(fromSessionId),
+    listSessionSets(fromSessionId),
+    bodyweightOn(date),
+  ]);
+
+  const { data: session, error } = await supabase
+    .from('workout_sessions')
+    .insert({
+      user_id: ownerId,
+      date,
+      mode: source.mode,
+      routine_id: source.routine_id,
+      notes: '',
+      started_at: new Date().toISOString(),
+      bodyweight_kg: bodyweight,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+
+  // Blocks from the source's rows, plus any exercise v2 logged without one.
+  const order = [...blocks].sort((a, b) => a.position - b.position);
+  const seen = new Set(order.map((b) => b.exercise_id));
+  const extra = [...sets]
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+    .filter((s) => (seen.has(s.exercise_id) ? false : (seen.add(s.exercise_id), true)));
+  const rows = [
+    ...order.map((b) => ({
+      exercise_id: b.exercise_id,
+      rest_seconds: b.rest_seconds,
+      superset_group: b.superset_group,
+    })),
+    ...extra.map((s) => ({ exercise_id: s.exercise_id, rest_seconds: null, superset_group: null })),
+  ].map((row, position) => ({
+    ...row,
+    position,
+    note: '',
+    session_id: session.id,
+    user_id: ownerId,
+  }));
+  if (rows.length > 0) {
+    const { error: blockError } = await supabase.from('session_exercises').insert(rows);
+    if (blockError) throw new Error(blockError.message);
+  }
+  return session;
+}
+
+/**
+ * Make a routine from a session: its exercises in order, each with the
+ * number of working sets done and the range of reps (or seconds) achieved,
+ * its rest and superset letter.
+ */
+export async function saveSessionAsRoutine(sessionId: string, name: string): Promise<Routine> {
+  const source = await getSession(sessionId);
+  if (!source) throw new Error('That workout no longer exists.');
+  const [blocks, sets] = await Promise.all([
+    listSessionExercises(sessionId),
+    listSessionSets(sessionId),
+  ]);
+  const order = [...blocks].sort((a, b) => a.position - b.position);
+  const ids = order.map((b) => b.exercise_id);
+  for (const s of [...sets].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
+    if (!ids.includes(s.exercise_id)) ids.push(s.exercise_id);
+  }
+
+  const slots: RoutineSlotInput[] = ids.map((exerciseId) => {
+    const block = order.find((b) => b.exercise_id === exerciseId);
+    const work = sets.filter(
+      (s) => s.exercise_id === exerciseId && (s.set_type ?? 'normal') !== 'warmup',
+    );
+    const reps = work.flatMap((s) => (s.reps && s.reps > 0 ? [s.reps] : []));
+    const seconds = work.flatMap((s) => (s.duration_seconds ? [s.duration_seconds] : []));
+    return {
+      exercise_id: exerciseId,
+      target_sets: work.length > 0 ? work.length : null,
+      target_reps_min: reps.length ? Math.min(...reps) : null,
+      target_reps: reps.length ? Math.max(...reps) : null,
+      target_seconds_min: seconds.length ? Math.min(...seconds) : null,
+      target_seconds_max: seconds.length ? Math.max(...seconds) : null,
+      rest_seconds: block?.rest_seconds ?? null,
+      pair_group: block?.superset_group ?? null,
+    };
+  });
+  return saveRoutine({ name, mode: source.mode }, slots);
 }

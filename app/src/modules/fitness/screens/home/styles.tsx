@@ -45,6 +45,13 @@ export const useHomeStyles = makeStyles(({ colors, typography }) => ({
     opacity: 0.4,
   },
   fill: { flex: 1 },
+  rowMenu: {
+    width: 48,
+    height: 48,
+    marginRight: -spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   subToggle: {
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.md,

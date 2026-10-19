@@ -19,13 +19,22 @@ import {
   View,
 } from 'react-native';
 
-import { Button, EmptyState, FadeInView, GlassCard } from '../../../../core/components';
+import {
+  Button,
+  EmptyState,
+  FadeInView,
+  GlassCard,
+  Sheet,
+  TextField,
+  useToast,
+} from '../../../../core/components';
 import { useTheme } from '../../../../core/ThemeContext';
 import { formatEventDate, todayISO, addDaysISO } from '../../../../core/date';
 import { motion } from '../../../../core/theme';
 import * as api from '../../api';
 import { MODE_LABEL } from '../../mode';
 import { PickerSheet } from '../../components/PickerSheet';
+import { BlockMenu } from '../../components/SessionSheets';
 import { TrainingCalendar } from '../../components/TrainingCalendar';
 import { WeekStrip } from '../../components/WeekStrip';
 import { type FitnessMode, type Routine, type WorkoutSession } from '../../types';
@@ -44,6 +53,11 @@ export function LogTab() {
   const { mode } = useFitnessMode();
   const [starting, setStarting] = useState(false);
   const [routineChoices, setRoutineChoices] = useState<Routine[] | null>(null);
+  /** The logged session whose menu is open, and the one being saved as a routine. */
+  const [rowMenu, setRowMenu] = useState<WorkoutSession | null>(null);
+  const [saveAs, setSaveAs] = useState<WorkoutSession | null>(null);
+  const [routineName, setRoutineName] = useState('');
+  const toast = useToast();
   /** The day a pending 'choose a routine' will be logged against. */
   const [pendingDate, setPendingDate] = useState(todayISO());
 
@@ -224,12 +238,117 @@ export function LogTab() {
                   routineId: item.routine_id,
                 })
               }
+              onMenu={() => setRowMenu(item)}
             />
           </FadeInView>
         )}
       />
 
       {error ? <ErrorBanner message={error} /> : null}
+
+      {rowMenu ? (
+        <BlockMenu
+          visible
+          exerciseName={formatEventDate(rowMenu.date)}
+          onClose={() => setRowMenu(null)}
+          actions={[
+            {
+              key: 'repeat',
+              label: 'Repeat it today',
+              icon: 'repeat',
+              onPress: async () => {
+                const source = rowMenu;
+                setRowMenu(null);
+                try {
+                  const session = await api.repeatSession(source.id);
+                  navigation.navigate('WorkoutSession', {
+                    sessionId: session.id,
+                    routineId: session.routine_id,
+                  });
+                } catch (e) {
+                  toast.show({ message: e instanceof Error ? e.message : 'Could not repeat it' });
+                }
+              },
+            },
+            {
+              key: 'routine',
+              label: 'Save as a routine',
+              icon: 'list-outline',
+              onPress: () => {
+                setRoutineName('');
+                setSaveAs(rowMenu);
+                setRowMenu(null);
+              },
+            },
+            {
+              key: 'delete',
+              label: 'Delete workout',
+              icon: 'trash-outline',
+              danger: true,
+              onPress: () => {
+                const target = rowMenu;
+                setRowMenu(null);
+                Alert.alert(
+                  'Delete this workout',
+                  'Every set in it is deleted too. This cannot be undone.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await api.deleteSession(target.id);
+                          reload();
+                        } catch (e) {
+                          toast.show({
+                            message: e instanceof Error ? e.message : 'Could not delete',
+                          });
+                        }
+                      },
+                    },
+                  ],
+                );
+              },
+            },
+          ]}
+        />
+      ) : null}
+
+      {saveAs ? (
+        <Sheet
+          visible
+          title="Save as a routine"
+          subtitle={`From ${formatEventDate(saveAs.date)}: its exercises, sets and rep ranges`}
+          onClose={() => setSaveAs(null)}
+          footer={
+            <Button
+              label="Save routine"
+              disabled={!routineName.trim()}
+              onPress={async () => {
+                const source = saveAs;
+                const name = routineName.trim();
+                setSaveAs(null);
+                try {
+                  await api.saveSessionAsRoutine(source.id, name);
+                  toast.show({ message: `Saved "${name}" to Routines` });
+                } catch (e) {
+                  toast.show({ message: e instanceof Error ? e.message : 'Could not save it' });
+                }
+              }}
+            />
+          }
+        >
+          <TextField
+            label="Name"
+            value={routineName}
+            onChangeText={setRoutineName}
+            placeholder="Push day, Day A"
+            autoFocus
+            maxLength={60}
+          />
+        </Sheet>
+      ) : null}
 
       <PickerSheet
         visible={routineChoices !== null}
@@ -278,7 +397,15 @@ export function LogTab() {
   );
 }
 
-function SessionRow({ session, onPress }: { session: WorkoutSession; onPress: () => void }) {
+function SessionRow({
+  session,
+  onPress,
+  onMenu,
+}: {
+  session: WorkoutSession;
+  onPress: () => void;
+  onMenu: () => void;
+}) {
   const styles = useHomeStyles();
   const { colors } = useTheme();
   // The mode is marked by icon and accent together, and spoken, never by
@@ -310,7 +437,14 @@ function SessionRow({ session, onPress }: { session: WorkoutSession; onPress: ()
             </Text>
           ) : null}
         </View>
-        <Ionicons name="chevron-forward" size={16} color={colors.textFaint} />
+        <Pressable
+          onPress={onMenu}
+          accessibilityRole="button"
+          accessibilityLabel={`More for the workout on ${formatEventDate(session.date)}`}
+          style={styles.rowMenu}
+        >
+          <Ionicons name="ellipsis-vertical" size={18} color={colors.textSecondary} />
+        </Pressable>
       </View>
     </GlassCard>
   );

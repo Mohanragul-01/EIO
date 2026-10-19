@@ -54,7 +54,10 @@ describe('ticking', () => {
   it('a tick marks the draft pending, and the save replaces it in place', () => {
     const a = draft({ reps: '8' });
     const b = draft();
-    let s = state([{ kind: 'draft', key: a.key, draft: a }, { kind: 'draft', key: b.key, draft: b }]);
+    let s = state([
+      { kind: 'draft', key: a.key, draft: a },
+      { kind: 'draft', key: b.key, draft: b },
+    ]);
 
     s = sessionReducer(s, { type: 'tickStart', blockId: 'b1', key: a.key });
     expect(rowsOf(s)[0].kind).toBe('pending');
@@ -84,7 +87,11 @@ describe('unticking', () => {
   it('turns the saved row back into a draft with its values, in the same place', () => {
     const before = draft();
     let s = state([
-      { kind: 'saved', key: 'k1', set: savedSet('s1', { reps: 10, weight_kg: 62.5, set_type: 'failure' }) },
+      {
+        kind: 'saved',
+        key: 'k1',
+        set: savedSet('s1', { reps: 10, weight_kg: 62.5, set_type: 'failure' }),
+      },
       { kind: 'draft', key: before.key, draft: before },
     ]);
     s = sessionReducer(s, { type: 'untick', blockId: 'b1', key: 'k1' });
@@ -117,7 +124,12 @@ describe('removing and undoing', () => {
   it('restoring past the end appends', () => {
     const a = draft();
     let s = state([]);
-    s = sessionReducer(s, { type: 'restoreRow', blockId: 'b1', row: { kind: 'draft', key: a.key, draft: a }, index: 5 });
+    s = sessionReducer(s, {
+      type: 'restoreRow',
+      blockId: 'b1',
+      row: { kind: 'draft', key: a.key, draft: a },
+      index: 5,
+    });
     expect(rowsOf(s)).toHaveLength(1);
   });
 });
@@ -126,9 +138,17 @@ describe('editing', () => {
   it('updates a draft field without touching other rows', () => {
     const a = draft();
     const b = draft();
-    const before = state([{ kind: 'draft', key: a.key, draft: a }, { kind: 'draft', key: b.key, draft: b }]);
+    const before = state([
+      { kind: 'draft', key: a.key, draft: a },
+      { kind: 'draft', key: b.key, draft: b },
+    ]);
     const untouched = rowsOf(before)[1];
-    const after = sessionReducer(before, { type: 'updateDraft', blockId: 'b1', key: a.key, patch: { reps: '9' } });
+    const after = sessionReducer(before, {
+      type: 'updateDraft',
+      blockId: 'b1',
+      key: a.key,
+      patch: { reps: '9' },
+    });
     expect(rowsOf(after)[0]).toMatchObject({ draft: { reps: '9' } });
     expect(rowsOf(after)[1]).toBe(untouched);
   });
@@ -141,7 +161,12 @@ describe('editing', () => {
 
   it('moves a block, and refuses to move past either end', () => {
     let s: SessionUiState = {
-      blocks: ['a', 'b', 'c'].map((id) => ({ id, exerciseId: id, sessionExercise: null, rows: [] })),
+      blocks: ['a', 'b', 'c'].map((id) => ({
+        id,
+        exerciseId: id,
+        sessionExercise: null,
+        rows: [],
+      })),
     };
     s = sessionReducer(s, { type: 'moveBlock', blockId: 'c', delta: -1 });
     expect(s.blocks.map((b) => b.id)).toEqual(['a', 'c', 'b']);
@@ -164,21 +189,33 @@ describe('commitDraft', () => {
   });
 
   it('fills empty cells from the ghost values, so a set can be logged without typing', () => {
-    const result = commitDraft(draft(), { reps: 10, seconds: null, weight: 60, assist: null }, external);
+    const result = commitDraft(
+      draft(),
+      { reps: 10, seconds: null, weight: 60, assist: null },
+      external,
+    );
     expect(result).toMatchObject({ ok: true, values: { reps: 10, weight_kg: 60 } });
   });
 
   it('says what is missing when there is no value and no ghost', () => {
-    expect(commitDraft(draft(), noGhost, external)).toEqual({ ok: false, reason: 'Enter the reps first' });
-    expect(commitDraft(draft(), noGhost, plank)).toEqual({ ok: false, reason: 'Enter the seconds first' });
+    expect(commitDraft(draft(), noGhost, external)).toEqual({
+      ok: false,
+      reason: 'Enter the reps first',
+    });
+    expect(commitDraft(draft(), noGhost, plank)).toEqual({
+      ok: false,
+      reason: 'Enter the seconds first',
+    });
   });
 
   it('allows 0 reps only on a failure set', () => {
     expect(commitDraft(draft({ reps: '0' }), noGhost, external).ok).toBe(false);
-    expect(commitDraft(draft({ reps: '0', set_type: 'failure' }), noGhost, external)).toMatchObject({
-      ok: true,
-      values: { reps: 0 },
-    });
+    expect(commitDraft(draft({ reps: '0', set_type: 'failure' }), noGhost, external)).toMatchObject(
+      {
+        ok: true,
+        values: { reps: 0 },
+      },
+    );
   });
 
   it('rejects nonsense', () => {
@@ -199,7 +236,9 @@ describe('commitDraft', () => {
       ok: true,
       values: { assist_kg: 20 },
     });
-    expect(commitDraft(draft({ reps: '6', weight: '40', assist: '20' }), noGhost, external)).toMatchObject({
+    expect(
+      commitDraft(draft({ reps: '6', weight: '40', assist: '20' }), noGhost, external),
+    ).toMatchObject({
       ok: true,
       values: { assist_kg: null },
     });
@@ -230,7 +269,17 @@ describe('ghostValues', () => {
 
   it('takes the routine target reps, and the weight from last time', () => {
     expect(
-      ghostValues({ exercise: pullUp, previous, slot: { target_reps: 12, target_reps_min: 8, target_seconds_min: null, target_seconds_max: null }, rowType: 'normal' }),
+      ghostValues({
+        exercise: pullUp,
+        previous,
+        slot: {
+          target_reps: 12,
+          target_reps_min: 8,
+          target_seconds_min: null,
+          target_seconds_max: null,
+        },
+        rowType: 'normal',
+      }),
     ).toEqual({ reps: 8, seconds: null, weight: 10, assist: null });
   });
 
@@ -245,16 +294,56 @@ describe('ghostValues', () => {
 
   it('a warm-up never takes the working target', () => {
     expect(
-      ghostValues({ exercise: pullUp, previous: null, slot: { target_reps: 12, target_reps_min: null, target_seconds_min: null, target_seconds_max: null }, rowType: 'warmup' }),
+      ghostValues({
+        exercise: pullUp,
+        previous: null,
+        slot: {
+          target_reps: 12,
+          target_reps_min: null,
+          target_seconds_min: null,
+          target_seconds_max: null,
+        },
+        rowType: 'warmup',
+      }),
     ).toEqual({ reps: null, seconds: null, weight: null, assist: null });
   });
 
   it('nothing to go on gives nothing', () => {
-    expect(ghostValues({ exercise: pullUp, previous: null, slot: null, rowType: 'normal' })).toEqual({
+    expect(
+      ghostValues({ exercise: pullUp, previous: null, slot: null, rowType: 'normal' }),
+    ).toEqual({
       reps: null,
       seconds: null,
       weight: null,
       assist: null,
     });
+  });
+});
+
+describe('block order and replacement', () => {
+  const blocks = (ids: string[]): SessionUiState => ({
+    blocks: ids.map((id) => ({ id, exerciseId: id, sessionExercise: null, rows: [] })),
+  });
+
+  it('reorders blocks to a given order, ignoring unknown ids', () => {
+    const s = sessionReducer(blocks(['a', 'b', 'c']), {
+      type: 'reorderBlocks',
+      ids: ['c', 'a', 'x', 'b'],
+    });
+    expect(s.blocks.map((b) => b.id)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('keeps blocks the order leaves out, at the end', () => {
+    const s = sessionReducer(blocks(['a', 'b', 'c']), { type: 'reorderBlocks', ids: ['b'] });
+    expect(s.blocks.map((b) => b.id)).toEqual(['b', 'a', 'c']);
+  });
+
+  it('replaces a block in place', () => {
+    const s = sessionReducer(blocks(['a', 'b']), {
+      type: 'replaceBlock',
+      blockId: 'a',
+      block: { id: 'a', exerciseId: 'z', sessionExercise: null, rows: [] },
+    });
+    expect(s.blocks.map((b) => b.exerciseId)).toEqual(['z', 'b']);
   });
 });

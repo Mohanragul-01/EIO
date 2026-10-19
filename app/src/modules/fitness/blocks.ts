@@ -113,3 +113,59 @@ export function initialDrafts(input: {
     input.savedSets.length === 0 ? structure : structure.slice(input.savedSets.length);
   return remaining.map((type) => newDraft(input.blockKey, type));
 }
+
+type SupersetBlock = { id: string; supersetGroup: string | null; rows: { done: boolean }[] };
+
+/**
+ * Where to go after ticking a set, and whether to rest first.
+ *
+ * In a superset you alternate (A1, A2, A1, A2...) and rest only after the
+ * last exercise of a round, so ticking moves on to the partner's next set
+ * with no rest timer. Outside a superset you rest after every set and stay
+ * on the same exercise. A partner that has run out of sets drops out of the
+ * rotation, and what is left continues with rest between sets.
+ */
+export function supersetNext(
+  blocks: SupersetBlock[],
+  blockId: string,
+  rowIndex: number,
+): { nextBlockId: string | null; nextRowIndex: number | null; restAfter: boolean } {
+  void rowIndex; // The ticked row is already marked done in `blocks`.
+  const block = blocks.find((b) => b.id === blockId);
+  const firstUndone = (b: SupersetBlock) => b.rows.findIndex((r) => !r.done);
+  const none = { nextBlockId: null, nextRowIndex: null, restAfter: true };
+  if (!block) return none;
+
+  if (!block.supersetGroup) {
+    const i = firstUndone(block);
+    return i < 0 ? none : { nextBlockId: block.id, nextRowIndex: i, restAfter: true };
+  }
+
+  const group = blocks.filter((b) => b.supersetGroup === block.supersetGroup);
+  const k = group.findIndex((b) => b.id === blockId);
+  // Still in this round: the next exercise along with a set to do.
+  for (let j = k + 1; j < group.length; j++) {
+    const i = firstUndone(group[j]);
+    if (i >= 0) return { nextBlockId: group[j].id, nextRowIndex: i, restAfter: false };
+  }
+  // End of the round: rest, then start the next one from the top.
+  for (const b of group) {
+    const i = firstUndone(b);
+    if (i >= 0) return { nextBlockId: b.id, nextRowIndex: i, restAfter: true };
+  }
+  return none;
+}
+
+/** "A1", "A2", "B1"... for blocks in supersets, in order. */
+export function supersetLabels(
+  blocks: { id: string; supersetGroup: string | null }[],
+): Record<string, string> {
+  const counts: Record<string, number> = {};
+  const out: Record<string, string> = {};
+  for (const b of blocks) {
+    if (!b.supersetGroup) continue;
+    counts[b.supersetGroup] = (counts[b.supersetGroup] ?? 0) + 1;
+    out[b.id] = `${b.supersetGroup}${counts[b.supersetGroup]}`;
+  }
+  return out;
+}

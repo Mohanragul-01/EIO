@@ -35,6 +35,8 @@ type Props = {
   bandsById: Record<string, Band>;
   records: Record<string, RecordHit[]>;
   restSeconds: number;
+  /** "A1", "A2" when the block is in a superset. */
+  supersetLabel?: string | null;
   /** Why today's ghost numbers differ from last time, e.g. "+2.5 kg · every set hit 12". */
   targetReason?: string | null;
   previousFor: (index: number) => SetFact | null;
@@ -71,10 +73,32 @@ export function ExerciseBlock(props: Props) {
   const bodyweight = exercise?.load_mode === 'bodyweight';
   const labels = setLabels(block.rows.map((row) => ({ set_type: typeOf(row) })));
   const name = exercise?.name ?? 'Exercise';
+  const groupColour = (letter: string) =>
+    ({
+      A: colors.accentIndigo,
+      B: colors.accentAmber,
+      C: colors.accentEmerald,
+      D: colors.accentRose,
+    })[letter] ?? colors.accentCyan;
 
   return (
     <GlassCard style={styles.card} padded={false}>
+      {props.supersetLabel ? (
+        // The group's bar down the left edge; the letter beside the name says
+        // the same thing in words.
+        <View
+          style={[styles.supersetBar, { backgroundColor: groupColour(props.supersetLabel[0]) }]}
+        />
+      ) : null}
       <View style={styles.head}>
+        {props.supersetLabel ? (
+          <Text
+            style={[styles.supersetTag, { color: groupColour(props.supersetLabel[0]) }]}
+            accessibilityLabel={`Superset ${props.supersetLabel}`}
+          >
+            {props.supersetLabel}
+          </Text>
+        ) : null}
         <Pressable
           onPress={props.onOpenExercise}
           accessibilityRole="link"
@@ -406,7 +430,9 @@ function SetRow({
 }
 
 const useStyles = makeStyles(({ colors, typography }) => ({
-  card: { marginTop: spacing.md, paddingVertical: spacing.md },
+  card: { marginTop: spacing.md, paddingVertical: spacing.md, overflow: 'hidden' },
+  supersetBar: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
+  supersetTag: { ...typography.title, ...typography.numeric },
   head: {
     flexDirection: 'row',
     alignItems: 'center',

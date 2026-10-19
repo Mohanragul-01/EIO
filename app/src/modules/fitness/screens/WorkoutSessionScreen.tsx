@@ -19,7 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useKeepAwake } from 'expo-keep-awake';
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from 'react-native';
 
 import {
@@ -38,6 +38,9 @@ import { formatEventDate } from '../../../core/date';
 import { radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
+import type { KeyboardAwareScrollViewRef } from 'react-native-keyboard-controller';
+
+import { supersetLabels, supersetNext } from '../blocks';
 import { ExerciseBlock } from '../components/ExerciseBlock';
 import { HoldDial } from '../components/HoldDial';
 import { PickerSheet } from '../components/PickerSheet';
@@ -70,6 +73,12 @@ export function WorkoutSessionScreen() {
   const { inventory } = usePlateInventory();
 
   const [picking, setPicking] = useState(false);
+  /** Block whose superset partner is being picked, or whose exercise is being replaced. */
+  const [supersetFor, setSupersetFor] = useState<string | null>(null);
+  const [replaceFor, setReplaceFor] = useState<string | null>(null);
+  const scrollRef = useRef<KeyboardAwareScrollViewRef>(null);
+  /** Each block's top within the scroll content, for jumping to a superset partner. */
+  const blockY = useRef<Record<string, number>>({});
   const [rest, setRestState] = useState<RestState>(null);
   const [setMenu, setSetMenu] = useState<RowTarget | null>(null);
   const [loadFor, setLoadFor] = useState<RowTarget | null>(null);
@@ -156,7 +165,27 @@ export function WorkoutSessionScreen() {
       } else {
         tap();
       }
-      if (result.restSeconds > 0) void beginRest(result.restSeconds, result.exerciseId);
+      // In a superset, ticking moves on to the partner and rests only after
+      // the round; outside one, rest after every set and stay put.
+      const flow = supersetNext(
+        w.blocks.map((b) => ({
+          id: b.id,
+          supersetGroup: b.sessionExercise?.superset_group ?? null,
+          rows: b.rows.map((r) => ({
+            done: r.kind === 'saved' || (b.id === blockId && r.key === key),
+          })),
+        })),
+        blockId,
+        0,
+      );
+      if (result.restSeconds > 0 && flow.restAfter) {
+        void beginRest(result.restSeconds, result.exerciseId);
+      }
+      if (flow.nextBlockId && flow.nextBlockId !== blockId) {
+        const y = blockY.current[flow.nextBlockId];
+        if (y !== undefined)
+          scrollRef.current?.scrollTo({ y: Math.max(0, y - spacing.lg), animated: true });
+      }
     },
     [w, toast, beginRest],
   );
@@ -217,6 +246,10 @@ export function WorkoutSessionScreen() {
     return value && value > 0 ? value : null;
   };
 
+  const supersetTags = supersetLabels(
+    w.blocks.map((b) => ({ id: b.id, supersetGroup: b.sessionExercise?.superset_group ?? null })),
+  );
+
   const restExerciseName = rest ? (w.exercisesById[rest.exerciseId]?.name ?? '') : '';
 
   if (w.loading) {
@@ -250,6 +283,7 @@ export function WorkoutSessionScreen() {
       />
 
       <FormScroll
+        ref={scrollRef}
         contentContainerStyle={[
           styles.scroll,
           { paddingBottom: spacing.xxxl + (rest ? REST_BAR_HEIGHT + spacing.lg : 0) },
@@ -276,35 +310,43 @@ export function WorkoutSessionScreen() {
         ) : null}
 
         {w.blocks.map((block, index) => (
-          <FadeInView key={block.id} delay={Math.min(index, 6) * 40}>
-            <ExerciseBlock
-              block={block}
-              exercise={w.exercisesById[block.exerciseId]}
-              bandsById={bandsById}
-              records={w.records}
-              restSeconds={w.restFor(block)}
-              targetReason={w.targetFor(block).reason}
-              previousFor={(i) => w.previousFor(block, i)}
-              ghostFor={(i) => w.ghostFor(block, i)}
-              onOpenExercise={() =>
-                navigation.navigate('ExerciseProgress', {
-                  exerciseId: block.exerciseId,
-                  name: w.exercisesById[block.exerciseId]?.name ?? 'Exercise',
-                })
-              }
-              onMenu={() => setBlockMenu(block.id)}
-              onRest={() => setRestFor(block.id)}
-              onTick={(key) => void onTick(block.id, key)}
-              onUntick={(key) => void w.untick(block.id, key)}
-              onSetMenu={(key) => setSetMenu({ blockId: block.id, key })}
-              onLoad={(key) => setLoadFor({ blockId: block.id, key })}
-              onChangeDraft={(key, patch) => w.updateDraft(block.id, key, patch)}
-              onDelete={(key) => onDelete(block.id, key)}
-              onHold={(key) => setHoldFor({ blockId: block.id, key })}
-              onAddSet={() => w.addRow(block.id)}
-              onNoteBlur={(note) => void w.setBlockNote(block.id, note)}
-            />
-          </FadeInView>
+          <View
+            key={block.id}
+            onLayout={(e) => {
+              blockY.current[block.id] = e.nativeEvent.layout.y;
+            }}
+          >
+            <FadeInView delay={Math.min(index, 6) * 40}>
+              <ExerciseBlock
+                block={block}
+                exercise={w.exercisesById[block.exerciseId]}
+                bandsById={bandsById}
+                records={w.records}
+                restSeconds={w.restFor(block)}
+                supersetLabel={supersetTags[block.id] ?? null}
+                targetReason={w.targetFor(block).reason}
+                previousFor={(i) => w.previousFor(block, i)}
+                ghostFor={(i) => w.ghostFor(block, i)}
+                onOpenExercise={() =>
+                  navigation.navigate('ExerciseProgress', {
+                    exerciseId: block.exerciseId,
+                    name: w.exercisesById[block.exerciseId]?.name ?? 'Exercise',
+                  })
+                }
+                onMenu={() => setBlockMenu(block.id)}
+                onRest={() => setRestFor(block.id)}
+                onTick={(key) => void onTick(block.id, key)}
+                onUntick={(key) => void w.untick(block.id, key)}
+                onSetMenu={(key) => setSetMenu({ blockId: block.id, key })}
+                onLoad={(key) => setLoadFor({ blockId: block.id, key })}
+                onChangeDraft={(key, patch) => w.updateDraft(block.id, key, patch)}
+                onDelete={(key) => onDelete(block.id, key)}
+                onHold={(key) => setHoldFor({ blockId: block.id, key })}
+                onAddSet={() => w.addRow(block.id)}
+                onNoteBlur={(note) => void w.setBlockNote(block.id, note)}
+              />
+            </FadeInView>
+          </View>
         ))}
 
         <Button
@@ -369,6 +411,47 @@ export function WorkoutSessionScreen() {
         emptyText="No exercises yet. Add some in the Exercises tab."
         onSelect={(ids) => ids.forEach((id) => void w.addExercise(id))}
         onClose={() => setPicking(false)}
+      />
+
+      <PickerSheet
+        visible={supersetFor !== null}
+        title="Superset with"
+        items={w.blocks
+          .filter((b) => b.id !== supersetFor)
+          .map((b) => ({
+            id: b.id,
+            label: w.exercisesById[b.exerciseId]?.name ?? 'Exercise',
+            note: b.sessionExercise?.superset_group
+              ? `Joins superset ${b.sessionExercise.superset_group}`
+              : undefined,
+          }))}
+        emptyText="Add another exercise first."
+        onSelect={([id]) => {
+          if (supersetFor && id) void w.setSuperset(supersetFor, id);
+        }}
+        onClose={() => setSupersetFor(null)}
+      />
+
+      <PickerSheet
+        visible={replaceFor !== null}
+        title="Replace with"
+        items={w.exercises
+          .filter((e) => !w.session || visibleInMode(e, w.session.mode))
+          .map((exercise) => {
+            const added = w.blocks.some((b) => b.exerciseId === exercise.id);
+            return {
+              id: exercise.id,
+              label: exercise.name,
+              group: normaliseMuscle(exercise.muscle_group),
+              disabled: added,
+              note: added ? 'Already in this workout' : undefined,
+            };
+          })}
+        emptyText="No other exercises in this mode."
+        onSelect={([id]) => {
+          if (replaceFor && id) void w.replaceExercise(replaceFor, id);
+        }}
+        onClose={() => setReplaceFor(null)}
       />
 
       {holdBlock && holdFor ? (
@@ -458,6 +541,34 @@ export function WorkoutSessionScreen() {
               icon: 'arrow-down',
               disabled: menuBlockIndex >= w.blocks.length - 1,
               onPress: () => void w.moveExercise(menuForBlock.id, 1),
+            },
+            {
+              key: 'superset',
+              label: menuForBlock.sessionExercise?.superset_group
+                ? `Take out of superset ${menuForBlock.sessionExercise.superset_group}`
+                : 'Superset with…',
+              icon: 'git-merge-outline',
+              disabled: w.blocks.length < 2,
+              onPress: () => {
+                setBlockMenu(null);
+                if (menuForBlock.sessionExercise?.superset_group) {
+                  void w.setSuperset(menuForBlock.id, null);
+                } else {
+                  setSupersetFor(menuForBlock.id);
+                }
+              },
+            },
+            {
+              key: 'replace',
+              label: menuForBlock.rows.some((r) => r.kind === 'saved')
+                ? 'Replace (only before logging)'
+                : 'Replace exercise',
+              icon: 'swap-horizontal',
+              disabled: menuForBlock.rows.some((r) => r.kind === 'saved'),
+              onPress: () => {
+                setBlockMenu(null);
+                setReplaceFor(menuForBlock.id);
+              },
             },
             {
               key: 'warmup',

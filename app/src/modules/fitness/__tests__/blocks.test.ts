@@ -7,7 +7,13 @@
  * session_exercises - and a set that v2 logged without one still shows, so
  * nothing already recorded can go missing.
  */
-import { assembleBlocks, initialDrafts, type DraftRow } from '../blocks';
+import {
+  assembleBlocks,
+  initialDrafts,
+  supersetLabels,
+  supersetNext,
+  type DraftRow,
+} from '../blocks';
 import type { SetFact } from '../load';
 import { matchPrevious } from '../previous';
 import type { SessionExercise, SessionSet, SetType } from '../types';
@@ -27,7 +33,11 @@ function se(exercise_id: string, position: number): SessionExercise {
 }
 
 let seq = 0;
-function saved(exercise_id: string, set_number: number, extra: Partial<SessionSet> = {}): SessionSet {
+function saved(
+  exercise_id: string,
+  set_number: number,
+  extra: Partial<SessionSet> = {},
+): SessionSet {
   seq += 1;
   return {
     id: `set${seq}`,
@@ -109,15 +119,22 @@ describe('initialDrafts', () => {
       blockKey: 'bench',
       savedSets: [],
       routineTargetSets: null,
-      previousSets: [prev('warmup', 10, 40), prev('normal', 8), prev('normal', 8), prev('failure', 5)],
+      previousSets: [
+        prev('warmup', 10, 40),
+        prev('normal', 8),
+        prev('normal', 8),
+        prev('failure', 5),
+      ],
     });
     expect(ids(drafts)).toEqual(['warmup', 'normal', 'normal', 'failure']);
   });
 
   it('a brand-new exercise gets one row to fill in', () => {
-    expect(ids(initialDrafts({ blockKey: 'x', savedSets: [], routineTargetSets: null, previousSets: [] }))).toEqual([
-      'normal',
-    ]);
+    expect(
+      ids(
+        initialDrafts({ blockKey: 'x', savedSets: [], routineTargetSets: null, previousSets: [] }),
+      ),
+    ).toEqual(['normal']);
   });
 
   it('a finished block gets no extra rows', () => {
@@ -132,15 +149,25 @@ describe('initialDrafts', () => {
   });
 
   it('gives every draft a unique key', () => {
-    const drafts = initialDrafts({ blockKey: 'b', savedSets: [], routineTargetSets: 4, previousSets: [] });
+    const drafts = initialDrafts({
+      blockKey: 'b',
+      savedSets: [],
+      routineTargetSets: 4,
+      previousSets: [],
+    });
     expect(new Set(drafts.map((d) => d.key)).size).toBe(4);
   });
 });
 
 describe('matchPrevious', () => {
-  const last = [prev('warmup', 10, 40), prev('normal', 8, 60), prev('normal', 7, 60), prev('drop', 12, 40)];
+  const last = [
+    prev('warmup', 10, 40),
+    prev('normal', 8, 60),
+    prev('normal', 7, 60),
+    prev('drop', 12, 40),
+  ];
 
-  it('matches the nth working set with last time\'s nth working set', () => {
+  it("matches the nth working set with last time's nth working set", () => {
     expect(matchPrevious(last, ['warmup', 'normal', 'normal'], 2)?.reps).toBe(7);
   });
 
@@ -154,5 +181,81 @@ describe('matchPrevious', () => {
 
   it('counts drop and failure sets as working sets', () => {
     expect(matchPrevious(last, ['normal', 'normal', 'drop'], 2)?.reps).toBe(12);
+  });
+});
+
+describe('supersetNext', () => {
+  const block = (id: string, group: string | null, done: boolean[]) => ({
+    id,
+    supersetGroup: group,
+    rows: done.map((d) => ({ done: d })),
+  });
+
+  it('alternates within a superset, resting only after the round', () => {
+    // A1 set 1 just ticked: go to A2 set 1, no rest yet.
+    expect(
+      supersetNext(
+        [block('a1', 'A', [true, false, false]), block('a2', 'A', [false, false, false])],
+        'a1',
+        0,
+      ),
+    ).toEqual({ nextBlockId: 'a2', nextRowIndex: 0, restAfter: false });
+    // A2 set 1 ticked: the round is over; rest, then A1 set 2.
+    expect(
+      supersetNext(
+        [block('a1', 'A', [true, false, false]), block('a2', 'A', [true, false, false])],
+        'a2',
+        0,
+      ),
+    ).toEqual({ nextBlockId: 'a1', nextRowIndex: 1, restAfter: true });
+  });
+
+  it('when the partner has run out of sets, carries on with what is left, resting between', () => {
+    expect(
+      supersetNext([block('a1', 'A', [true, true, true]), block('a2', 'A', [true, true])], 'a1', 2),
+    ).toEqual({ nextBlockId: null, nextRowIndex: null, restAfter: true });
+    expect(
+      supersetNext(
+        [block('a1', 'A', [true, true, false]), block('a2', 'A', [true, true])],
+        'a1',
+        1,
+      ),
+    ).toEqual({ nextBlockId: 'a1', nextRowIndex: 2, restAfter: true });
+  });
+
+  it('a block outside a superset rests after every set and stays put', () => {
+    expect(supersetNext([block('b', null, [true, false])], 'b', 0)).toEqual({
+      nextBlockId: 'b',
+      nextRowIndex: 1,
+      restAfter: true,
+    });
+  });
+
+  it('other groups do not interfere', () => {
+    const blocks = [
+      block('a1', 'A', [true, false]),
+      block('b1', 'B', [false, false]),
+      block('a2', 'A', [false, false]),
+    ];
+    expect(supersetNext(blocks, 'a1', 0)).toEqual({
+      nextBlockId: 'a2',
+      nextRowIndex: 0,
+      restAfter: false,
+    });
+  });
+});
+
+describe('supersetLabels', () => {
+  it('numbers each group in order: A1, A2, then B1', () => {
+    expect(
+      supersetLabels([
+        { id: 'x', supersetGroup: 'A' },
+        { id: 'y', supersetGroup: null },
+        { id: 'z', supersetGroup: 'A' },
+      ]),
+    ).toEqual({
+      x: 'A1',
+      z: 'A2',
+    });
   });
 });

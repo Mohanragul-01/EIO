@@ -52,7 +52,9 @@ export type SessionAction =
   | { type: 'addBlock'; block: BlockState; index?: number }
   | { type: 'removeBlock'; blockId: string }
   | { type: 'moveBlock'; blockId: string; delta: -1 | 1 }
-  | { type: 'updateBlock'; blockId: string; patch: Partial<SessionExercise> };
+  | { type: 'updateBlock'; blockId: string; patch: Partial<SessionExercise> }
+  | { type: 'reorderBlocks'; ids: string[] }
+  | { type: 'replaceBlock'; blockId: string; block: BlockState };
 
 /** A saved set as an editable draft, keeping the row's key. */
 export function draftFromSet(set: SessionSet, key: string): DraftRow {
@@ -179,6 +181,22 @@ export function sessionReducer(state: SessionUiState, action: SessionAction): Se
       [blocks[from], blocks[to]] = [blocks[to], blocks[from]];
       return { ...state, blocks };
     }
+
+    case 'reorderBlocks': {
+      // Blocks in the given order; any the order leaves out keep their
+      // relative order after them, so a stale list can never drop a block.
+      const byId = new Map(state.blocks.map((b) => [b.id, b]));
+      const ordered = action.ids.flatMap((id) => {
+        const block = byId.get(id);
+        if (!block) return [];
+        byId.delete(id);
+        return [block];
+      });
+      return { ...state, blocks: [...ordered, ...state.blocks.filter((b) => byId.has(b.id))] };
+    }
+
+    case 'replaceBlock':
+      return mapBlock(state, action.blockId, () => action.block);
 
     case 'updateBlock':
       return mapBlock(state, action.blockId, (block) =>

@@ -615,6 +615,102 @@ export function useWorkoutSession(sessionId: string) {
   );
 
   /**
+   * Put a block in a superset with another (partnerId), or take it out
+   * (null). The pair share a letter, and the partner moves to sit after the
+   * group's last member so the two are next to each other on screen. A group
+   * left with one member is dissolved.
+   */
+  const setSuperset = useCallback(
+    async (blockId: string, partnerId: string | null) => {
+      const blocks = stateRef.current.blocks;
+      const a = blocks.find((b) => b.id === blockId);
+      if (!a?.sessionExercise) return;
+      const groupOf = (b: BlockState) => b.sessionExercise?.superset_group ?? null;
+      try {
+        if (partnerId === null) {
+          const group = groupOf(a);
+          if (!group) return;
+          const members = blocks.filter((b) => groupOf(b) === group);
+          const clear = members.length <= 2 ? members : [a];
+          clear.forEach((b) =>
+            dispatch({ type: 'updateBlock', blockId: b.id, patch: { superset_group: null } }),
+          );
+          await Promise.all(
+            clear.map((b) =>
+              api.updateSessionExercise(b.sessionExercise!.id, { superset_group: null }),
+            ),
+          );
+          return;
+        }
+        const b = blocks.find((x) => x.id === partnerId);
+        if (!b?.sessionExercise) return;
+        const used = new Set(blocks.map(groupOf).filter((g): g is string => !!g));
+        const group =
+          groupOf(a) ?? groupOf(b) ?? 'ABCDEFGH'.split('').find((l) => !used.has(l)) ?? 'A';
+        dispatch({ type: 'updateBlock', blockId: a.id, patch: { superset_group: group } });
+        dispatch({ type: 'updateBlock', blockId: b.id, patch: { superset_group: group } });
+
+        const order = blocks.map((x) => x.id).filter((id) => id !== b.id);
+        const lastMember = order.reduce(
+          (last, id, i) =>
+            id === a.id || groupOf(blocks.find((x) => x.id === id)!) === group ? i : last,
+          -1,
+        );
+        order.splice(lastMember + 1, 0, b.id);
+        dispatch({ type: 'reorderBlocks', ids: order });
+
+        await Promise.all([
+          api.updateSessionExercise(a.sessionExercise.id, { superset_group: group }),
+          api.updateSessionExercise(b.sessionExercise.id, { superset_group: group }),
+        ]);
+        await api.reorderSessionExercises(
+          order.flatMap((id) => {
+            const block = blocks.find((x) => x.id === id);
+            return block?.sessionExercise ? [block.sessionExercise.id] : [];
+          }),
+        );
+      } catch (e) {
+        fail(e, 'Could not change the superset');
+        void load();
+      }
+    },
+    [fail, load],
+  );
+
+  /** Swap a block's exercise for another. Only before anything is logged in it. */
+  const replaceExercise = useCallback(
+    async (blockId: string, exerciseId: string) => {
+      const block = stateRef.current.blocks.find((b) => b.id === blockId);
+      if (!block?.sessionExercise || !session) return;
+      if (block.rows.some((r) => r.kind === 'saved')) return;
+      try {
+        await api.updateSessionExercise(block.sessionExercise.id, { exercise_id: exerciseId });
+        const [base, prev] = await Promise.all([
+          api.listBaseline([exerciseId], sessionId),
+          api.listPreviousSets([exerciseId], sessionId, session.date),
+        ]);
+        if (!isMounted()) return;
+        setBaseline((b) => ({ ...b, ...base }));
+        setPrevious((p) => ({ ...p, ...prev }));
+        dispatch({
+          type: 'replaceBlock',
+          blockId,
+          block: blockFor(
+            { ...block.sessionExercise, exercise_id: exerciseId },
+            [],
+            slotsByExercise[exerciseId],
+            prev,
+            exercisesById[exerciseId]?.is_unilateral,
+          ),
+        });
+      } catch (e) {
+        fail(e, 'Could not replace that exercise');
+      }
+    },
+    [session, sessionId, slotsByExercise, exercisesById, isMounted, fail],
+  );
+
+  /**
    * Set a block's rest, and remember it on the exercise so next time starts
    * there too. null means "no rest timer" for this block.
    */
@@ -741,6 +837,8 @@ export function useWorkoutSession(sessionId: string) {
     addExercise,
     removeExercise,
     moveExercise,
+    setSuperset,
+    replaceExercise,
     setRest,
     setBlockNote,
     setPinnedNote,
