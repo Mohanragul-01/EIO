@@ -25,6 +25,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback } from 'react';
 import { View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -53,19 +54,24 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
-      {/*
-        KeyboardProvider tracks the real keyboard frame from the OS. It has to
-        sit above the navigator, because the screens that need it are inside.
-      */}
-      <KeyboardProvider>
-        <ThemeProvider>
-          <AuthProvider>
-            <Root ready={fontsLoaded || !!fontError} />
-          </AuthProvider>
-        </ThemeProvider>
-      </KeyboardProvider>
-    </SafeAreaProvider>
+    // Outermost, so every gesture anywhere in the tree - swipe-to-delete a set,
+    // a sheet dragged down - is recognised natively rather than in JS, and the
+    // pager's horizontal swipe and a row's swipe can arbitrate between them.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        {/*
+          KeyboardProvider tracks the real keyboard frame from the OS. It has to
+          sit above the navigator, because the screens that need it are inside.
+        */}
+        <KeyboardProvider>
+          <ThemeProvider>
+            <AuthProvider>
+              <Root ready={fontsLoaded || !!fontError} />
+            </AuthProvider>
+          </ThemeProvider>
+        </KeyboardProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
