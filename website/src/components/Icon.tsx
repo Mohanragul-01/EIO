@@ -55,7 +55,11 @@ export type IconName =
   | 'repeat'
   | 'reset'
   | 'flag'
-  | 'sparkline';
+  | 'sparkline'
+  // Finance v3
+  | 'swap'
+  | 'bolt'
+  | 'sliders';
 
 /**
  * Path data per icon. Several use more than one subpath; they are joined with
@@ -109,6 +113,10 @@ const PATHS: Record<IconName, string> = {
   reset: 'M3 4v6h6 M4.4 15a9 9 0 1 0 1-7.5L3 10',
   flag: 'M5 21V4 M5 5h11l-2 3.5L16 12H5',
   sparkline: 'M3 17l5-6 4 3 5-8 4 5',
+  // Finance v3: a transfer between accounts, a one-click quick add, settings.
+  swap: 'M7 4L3 8l4 4 M3 8h14 M17 12l4 4-4 4 M21 16H7',
+  bolt: 'M13 3L5 14h6l-1 7 8-11h-6z',
+  sliders: 'M4 7h10 M18 7h2 M16 5v4 M4 17h3 M11 17h9 M9 15v4',
 };
 
 /**

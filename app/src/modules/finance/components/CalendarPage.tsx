@@ -163,7 +163,9 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     ...typography.numeric,
     fontSize: 10,
     lineHeight: 13,
-    color: colors.textSecondary,
+    // Full text colour: textSecondary over the darkest tint falls under
+    // 4.5:1 (about 3.7 in light, 3.8 in dark).
+    color: colors.text,
   },
   income: {
     ...typography.caption,
