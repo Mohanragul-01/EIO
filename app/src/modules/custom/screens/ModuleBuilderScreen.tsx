@@ -33,6 +33,7 @@ import { Button, FadeInView, GlassCard, Screen, TextField,
 import { radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
+import { blankDraft, draftFromField } from '../builder';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import {
   FIELD_TYPES,
@@ -69,7 +70,7 @@ export function ModuleBuilderScreen() {
   const [color, setColor] = useState(MODULE_COLORS[0]);
   const [drafts, setDrafts] = useState<FieldDraft[]>([
     // Start with one text field so a brand-new module is never empty.
-    { localId: nextLocalId(), label: '', type: 'text', required: false, options: [] },
+    blankDraft(nextLocalId()),
   ]);
 
   const [existingFields, setExistingFields] = useState<CustomField[]>([]);
@@ -112,17 +113,7 @@ export function ModuleBuilderScreen() {
         setSortKey(module.sort_field_key);
         setSortDirection(module.sort_direction);
         setExistingFields(fields);
-        setDrafts(
-          fields.map((f) => ({
-            localId: nextLocalId(),
-            id: f.id,
-            key: f.key,
-            label: f.label,
-            type: f.type,
-            required: f.required,
-            options: f.options ?? [],
-          })),
-        );
+        setDrafts(fields.map((f) => draftFromField(f, nextLocalId())));
       } catch (e) {
         Alert.alert('Could not load', e instanceof Error ? e.message : 'Please try again.');
       } finally {
@@ -144,7 +135,7 @@ export function ModuleBuilderScreen() {
   const addField = () => {
     setDrafts((current) => [
       ...current,
-      { localId: nextLocalId(), label: '', type: 'text', required: false, options: [] },
+      blankDraft(nextLocalId()),
     ]);
   };
 

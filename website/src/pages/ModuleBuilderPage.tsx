@@ -14,6 +14,7 @@ import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import * as api from '@app/modules/custom/api';
+import { blankDraft, draftFromField } from '@app/modules/custom/builder';
 import {
   aggsForFieldType,
   FIELD_TYPES,
@@ -39,15 +40,8 @@ import {
 import { useAsync } from '../lib/useAsync';
 
 let draftCounter = 0;
-const newDraft = (): FieldDraft => ({
-  // Local-only, so React can key the list while editing. The real key is
-  // assigned by the database on save.
-  localId: `draft-${(draftCounter += 1)}`,
-  label: '',
-  type: 'text',
-  required: false,
-  options: [],
-});
+// Local-only, so React can key the list while editing.
+const newDraft = (): FieldDraft => blankDraft(`draft-${(draftCounter += 1)}`);
 
 export function ModuleBuilderPage() {
   const { moduleId } = useParams();
@@ -86,15 +80,7 @@ export function ModuleBuilderPage() {
     setExisting(fields);
     setDrafts(
       fields.length > 0
-        ? fields.map((field) => ({
-            localId: field.id,
-            id: field.id,
-            key: field.key,
-            label: field.label,
-            type: field.type,
-            required: field.required,
-            options: field.options ?? [],
-          }))
+        ? fields.map((field) => draftFromField(field, field.id))
         : [newDraft()],
     );
 
