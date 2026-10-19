@@ -135,7 +135,10 @@ export type IconName =
   | 'flower'
   | 'pin'
   | 'shuffle'
-  | 'chat';
+  | 'chat'
+  // Notes v3
+  | 'link'
+  | 'list';
 
 /**
  * Path data per icon. Several use more than one subpath; they are joined with
@@ -308,6 +311,9 @@ const PATHS: Record<IconName, string> = {
   more: 'M5 12h.01 M12 12h.01 M19 12h.01',
   arrowUp: 'M12 19V5 M5 12l7-7 7 7',
   arrowDown: 'M12 5v14 M19 12l-7 7-7-7',
+  // Notes v3
+  link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
+  list: 'M9 6h11 M9 12h11 M9 18h11 M4.5 6h.01 M4.5 12h.01 M4.5 18h.01',
 };
 
 /**

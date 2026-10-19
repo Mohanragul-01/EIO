@@ -49,6 +49,7 @@ import { LadderEditScreen } from '../modules/fitness/screens/LadderEditScreen';
 import { PlateCalculatorScreen } from '../modules/fitness/screens/PlateCalculatorScreen';
 import { NoteEditScreen } from '../modules/notes/screens/NoteEditScreen';
 import { NotesListScreen } from '../modules/notes/screens/NotesListScreen';
+import { NotesShelfScreen } from '../modules/notes/screens/NotesShelfScreen';
 import { SubscriptionsListScreen } from '../modules/subscriptions/screens/SubscriptionsListScreen';
 import { SubscriptionCatalogueScreen } from '../modules/subscriptions/screens/SubscriptionCatalogueScreen';
 import { SubscriptionDetailScreen } from '../modules/subscriptions/screens/SubscriptionDetailScreen';
@@ -186,6 +187,7 @@ export function RootNavigator() {
         />
         <Stack.Screen name="NotesList" component={NotesListScreen} options={{ title: 'Notes' }} />
         <Stack.Screen name="NoteEdit" component={NoteEditScreen} />
+        <Stack.Screen name="NotesShelf" component={NotesShelfScreen} />
         <Stack.Screen
           name="FinanceList"
           component={FinanceListScreen}
