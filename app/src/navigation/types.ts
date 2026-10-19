@@ -54,6 +54,10 @@ export type RootStackParamList = {
   RoutineEdit: { routineId?: string };
   /** `name` is passed so the header has a title before the query resolves. */
   ExerciseProgress: { exerciseId: string; name: string };
+  /** The finish screen; also reachable from a finished session. */
+  WorkoutSummary: { sessionId: string };
+  /** Resistance bands, remembered by colour. */
+  Bands: undefined;
 
   //  User-created modules
   // Three screens serve EVERY module you build, however many you create.

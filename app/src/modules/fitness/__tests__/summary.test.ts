@@ -1,0 +1,179 @@
+/**
+ * The finish summary: what you did, how it compares with the last time you
+ * ran the same routine, and what changed from the routine itself.
+ */
+import type { SetFact } from '../load';
+import { compareToLast, describeDeviation, routineDeviation, sessionSummary } from '../summary';
+
+const bench = {
+  load_mode: 'external' as const,
+  tracking_type: 'reps' as const,
+  bodyweight_factor: 1,
+  name: 'Bench',
+};
+const pullUp = {
+  load_mode: 'bodyweight' as const,
+  tracking_type: 'reps' as const,
+  bodyweight_factor: 1,
+  name: 'Pull-up',
+};
+const plank = {
+  load_mode: 'bodyweight' as const,
+  tracking_type: 'time' as const,
+  bodyweight_factor: 1,
+  name: 'Plank',
+};
+const exercises = { bench, pullup: pullUp, plank };
+
+let seq = 0;
+function s(exercise_id: string, partial: Partial<SetFact>): SetFact {
+  seq += 1;
+  return {
+    id: `s${seq}`,
+    exercise_id,
+    session_id: 'x',
+    set_type: 'normal',
+    reps: null,
+    duration_seconds: null,
+    weight_kg: 0,
+    assist_kg: null,
+    clean: true,
+    created_at: '2026-10-19T10:00:00Z',
+    ...partial,
+  };
+}
+
+describe('sessionSummary', () => {
+  it('adds up duration, working volume, working sets and records', () => {
+    const sets = [
+      s('bench', { set_type: 'warmup', reps: 10, weight_kg: 40 }),
+      s('bench', { reps: 5, weight_kg: 80 }),
+      s('bench', { reps: 5, weight_kg: 80 }),
+      s('pullup', { reps: 10 }),
+    ];
+    const summary = sessionSummary({
+      sets,
+      exercisesById: exercises,
+      bodyweightKg: 70,
+      records: {
+        [sets[2].id]: [{ kind: 'heaviest', value: 80, previous: 77.5, label: 'Heaviest weight' }],
+      },
+      startedAt: '2026-10-19T10:00:00Z',
+      endedAt: '2026-10-19T11:05:00Z',
+    });
+    expect(summary.durationMs).toBe(65 * 60_000);
+    expect(summary.volume).toBe(800 + 700);
+    expect(summary.workingSets).toBe(3);
+    expect(summary.records).toEqual([
+      {
+        exerciseId: 'bench',
+        setId: sets[2].id,
+        hit: expect.objectContaining({ kind: 'heaviest' }),
+      },
+    ]);
+  });
+
+  it('has no duration without a start and an end', () => {
+    const summary = sessionSummary({
+      sets: [],
+      exercisesById: exercises,
+      bodyweightKg: null,
+      records: {},
+      startedAt: null,
+      endedAt: null,
+    });
+    expect(summary.durationMs).toBeNull();
+  });
+});
+
+describe('compareToLast', () => {
+  it("reports each exercise's volume change and best set against last time", () => {
+    const now = [s('bench', { reps: 5, weight_kg: 82.5 }), s('bench', { reps: 5, weight_kg: 80 })];
+    const last = [s('bench', { reps: 5, weight_kg: 80 }), s('bench', { reps: 5, weight_kg: 80 })];
+    expect(compareToLast(now, last, exercises, null)).toEqual([
+      {
+        exerciseId: 'bench',
+        name: 'Bench',
+        change: 'up',
+        volumeDelta: 12.5,
+        best: '82.5 × 5',
+        lastBest: '80 × 5',
+      },
+    ]);
+  });
+
+  it('marks an exercise you did not do last time as new', () => {
+    const result = compareToLast(
+      [s('pullup', { reps: 8 })],
+      [s('bench', { reps: 5, weight_kg: 80 })],
+      exercises,
+      null,
+    );
+    expect(result).toEqual([
+      expect.objectContaining({ exerciseId: 'pullup', change: 'new', lastBest: null }),
+    ]);
+  });
+
+  it('compares bodyweight sets by reps and holds by time', () => {
+    const result = compareToLast(
+      [s('pullup', { reps: 9 }), s('plank', { duration_seconds: 50 })],
+      [s('pullup', { reps: 10 }), s('plank', { duration_seconds: 45 })],
+      exercises,
+      null,
+    );
+    expect(result.map((r) => [r.exerciseId, r.change, r.best])).toEqual([
+      ['pullup', 'down', '× 9'],
+      ['plank', 'up', '50s'],
+    ]);
+  });
+
+  it('is empty when there is no last time', () => {
+    expect(compareToLast([s('bench', { reps: 5, weight_kg: 80 })], null, exercises, null)).toEqual(
+      [],
+    );
+  });
+});
+
+describe('routineDeviation', () => {
+  const names = { bench: 'Bench', rows: 'Rows', dips: 'Dips' };
+
+  it('finds added exercises, skipped ones and changed set counts', () => {
+    const dev = routineDeviation(
+      [
+        { exercise_id: 'bench', target_sets: 3 },
+        { exercise_id: 'rows', target_sets: 3 },
+      ],
+      [
+        { exerciseId: 'bench', workingSets: 5 },
+        { exerciseId: 'dips', workingSets: 2 },
+        { exerciseId: 'rows', workingSets: 0 },
+      ],
+    );
+    expect(dev).toEqual({
+      added: ['dips'],
+      skipped: ['rows'],
+      setCounts: [{ exerciseId: 'bench', from: 3, to: 5 }],
+    });
+    expect(describeDeviation(dev, names)).toEqual([
+      'You added Dips',
+      'You did 5 sets of Bench instead of 3',
+      'You skipped Rows',
+    ]);
+  });
+
+  it('a session that matched its routine has nothing to say', () => {
+    const dev = routineDeviation(
+      [{ exercise_id: 'bench', target_sets: 3 }],
+      [{ exerciseId: 'bench', workingSets: 3 }],
+    );
+    expect(describeDeviation(dev, names)).toEqual([]);
+  });
+
+  it('ignores set counts the routine did not set', () => {
+    const dev = routineDeviation(
+      [{ exercise_id: 'bench', target_sets: null }],
+      [{ exerciseId: 'bench', workingSets: 4 }],
+    );
+    expect(dev.setCounts).toEqual([]);
+  });
+});

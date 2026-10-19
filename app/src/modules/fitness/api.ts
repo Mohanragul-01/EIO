@@ -814,3 +814,92 @@ export async function deleteBand(id: string): Promise<void> {
   const { error } = await supabase.from('bands').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
+
+// SUMMARY -------------------------------------------------------------------------
+
+/** "Workout #N": this session's place among all of yours, oldest first. */
+export async function sessionOrdinal(sessionId: string): Promise<number | null> {
+  const ownerId = await getOwnerId();
+  const { data, error } = await supabase
+    .from('workout_sessions')
+    .select('id, date, created_at')
+    .eq('user_id', ownerId)
+    .order('date', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  const index = (data ?? []).findIndex((row: { id: string }) => row.id === sessionId);
+  return index < 0 ? null : index + 1;
+}
+
+/**
+ * The sets of the last OTHER session of the same routine on or before `date`,
+ * for "vs last time you did this routine". Null when there is none.
+ */
+export async function lastRoutineSessionSets(input: {
+  routineId: string;
+  excludeSessionId: string;
+  date: string;
+}): Promise<SetFact[] | null> {
+  const ownerId = await getOwnerId();
+  const { data: sessions, error } = await supabase
+    .from('workout_sessions')
+    .select('id')
+    .eq('user_id', ownerId)
+    .eq('routine_id', input.routineId)
+    .neq('id', input.excludeSessionId)
+    .lte('date', input.date)
+    .order('date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (error) throw new Error(error.message);
+  const last = sessions?.[0] as { id: string } | undefined;
+  if (!last) return null;
+
+  const { data, error: setsError } = await supabase
+    .from('session_sets')
+    .select(FACT_COLUMNS)
+    .eq('session_id', last.id)
+    .order('created_at', { ascending: true });
+  if (setsError) throw new Error(setsError.message);
+  return (data ?? []).map((row) => toSetFact(row as Parameters<typeof toSetFact>[0]));
+}
+
+/**
+ * Bring a routine in line with a session: new target set counts for the
+ * exercises that changed, and new slots (at the end) for exercises added.
+ * Done slot by slot rather than by rewriting the routine, so slots this
+ * screen knows nothing about (ladders, ranges, rest) are left exactly as
+ * they were. Skipped exercises stay in the routine: skipping one today is
+ * not deciding to drop it.
+ */
+export async function updateRoutineFromSession(
+  routineId: string,
+  changes: {
+    setCounts: { exercise_id: string; target_sets: number }[];
+    added: { exercise_id: string; target_sets: number }[];
+  },
+): Promise<void> {
+  const ownerId = await getOwnerId();
+  for (const change of changes.setCounts) {
+    const { error } = await supabase
+      .from('routine_exercises')
+      .update({ target_sets: change.target_sets })
+      .eq('routine_id', routineId)
+      .eq('exercise_id', change.exercise_id);
+    if (error) throw new Error(error.message);
+  }
+  if (changes.added.length > 0) {
+    const existing = await listRoutineExercises(routineId);
+    const start = existing.reduce((top, slot) => Math.max(top, slot.position), -1) + 1;
+    const { error } = await supabase.from('routine_exercises').insert(
+      changes.added.map((slot, i) => ({
+        routine_id: routineId,
+        user_id: ownerId,
+        exercise_id: slot.exercise_id,
+        target_sets: slot.target_sets,
+        position: start + i,
+      })),
+    );
+    if (error) throw new Error(error.message);
+  }
+}
