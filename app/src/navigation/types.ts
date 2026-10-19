@@ -89,8 +89,11 @@ export type RootStackParamList = {
   ModuleBuilder: { moduleId?: string };
   /** The entry list for one custom module. */
   CustomModuleList: { moduleId: string };
-  /** The generated form: omit recordId to create, pass it to edit. */
-  CustomRecordEdit: { moduleId: string; recordId?: string };
+  /**
+   * The generated form: omit recordId to create, pass it to edit. `date`
+   * pre-fills the module's date field when creating from a calendar day.
+   */
+  CustomRecordEdit: { moduleId: string; recordId?: string; date?: string };
 
   //  Finance v3
   /** Every account, its balance, and what you owe on cards. */

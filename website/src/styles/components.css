@@ -923,3 +923,126 @@ button.cal-day-selected:hover {
    3.4:1 in light mode, under the 4.5:1 small text needs. */
 .fin-cal-amt { font-size: var(--text-2xs); color: var(--text); font-variant-numeric: tabular-nums; }
 .fin-cal-in { position: absolute; top: 1px; right: 5px; font-size: var(--text-2xs); font-weight: 700; color: var(--success); }
+/* CUSTOM MODULES (v3) ------------------------------------------------------ */
+/* The module builder's templates and settings, the entry form's new field
+   types, grouped tables, the calendar's day cells and the tile sparkline. */
+
+.cm-label-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+.cm-hint { font-size: var(--text-xs); color: var(--text-muted); }
+.cm-last {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+
+.cm-affix { position: relative; display: flex; align-items: center; flex: 1; }
+.cm-affix .input { width: 100%; }
+.cm-affix-text { margin: 0 6px; color: var(--text-muted); font-size: var(--text-sm); }
+.cm-duration { display: flex; gap: var(--space-md); }
+
+.cm-stars { display: flex; gap: 2px; }
+.cm-star {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  color: var(--text-faint);
+  transition: color var(--transition), background var(--transition);
+}
+.cm-star:hover { background: var(--surface-2); color: var(--text-secondary); }
+.cm-star.on { color: var(--accent-amber); }
+.cm-star:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.cm-stars-read { display: inline-flex; gap: 1px; vertical-align: middle; }
+
+.cm-switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  height: 30px;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.cm-th { display: inline-flex; align-items: center; gap: 4px; }
+.cm-group-row td { background: var(--surface-2); height: 34px; }
+table.data tbody tr.cm-group-row:hover { background: var(--surface-2); }
+.cm-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  font-size: var(--text-sm);
+  font-weight: 550;
+  color: var(--text);
+  text-align: left;
+}
+.cm-group-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.cm-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  padding: 3px 0;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md);
+  font-variant-numeric: tabular-nums;
+}
+.cm-day.today { border-color: var(--border-strong); }
+.cm-day.selected { background: var(--surface-3); border-color: var(--text-faint); font-weight: 600; }
+.cm-day.outside { color: var(--text-faint); }
+.cm-day-dot { width: 5px; height: 5px; border-radius: 50%; }
+
+.cm-sparkline { display: block; width: 100%; height: 24px; margin-top: var(--space-sm); }
+
+.cm-templates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--space-sm);
+}
+.cm-template {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  text-align: left;
+  transition: border-color var(--transition), background var(--transition);
+}
+.cm-template:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.cm-template.selected { border-color: var(--primary); background: var(--primary-soft); }
+.cm-template:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.cm-template-preview { font-size: var(--text-xs); line-height: 1.35; }
+
+.cm-swatch {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  color: var(--background);
+}
+.cm-swatch.selected { border-color: var(--text); }
+.cm-swatch:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.cm-field-card {
+  padding: var(--space-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.cm-settings { display: flex; flex-direction: column; gap: var(--space-sm); }
+.cm-settings .label { margin-top: var(--space-sm); }
+.cm-note { font-size: 12.5px; margin: 0 0 var(--space-xs); }

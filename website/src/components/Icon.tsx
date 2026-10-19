@@ -64,7 +64,10 @@ export type IconName =
   // Finance v3
   | 'swap'
   | 'bolt'
-  | 'sliders';
+  | 'sliders'
+  | 'star'
+  | 'starFilled'
+  | 'bell';
 
 /**
  * Path data per icon. Several use more than one subpath; they are joined with
@@ -127,6 +130,11 @@ const PATHS: Record<IconName, string> = {
   swap: 'M7 4L3 8l4 4 M3 8h14 M17 12l4 4-4 4 M21 16H7',
   bolt: 'M13 3L5 14h6l-1 7 8-11h-6z',
   sliders: 'M4 7h10 M18 7h2 M16 5v4 M4 17h3 M11 17h9 M9 15v4',
+  // One star drawn twice: stroked for an empty slot, filled for a given one,
+  // so a rating reads by shape as well as by colour.
+  star: 'M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z',
+  starFilled: 'M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z',
+  bell: 'M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z M10 20.5a2 2 0 0 0 4 0',
 };
 
 /**
@@ -135,7 +143,7 @@ const PATHS: Record<IconName, string> = {
  * A play triangle drawn as an outline at 16px is mostly hole, and a hairline
  * one is hard to hit visually next to solid text.
  */
-const FILLED: IconName[] = ['play', 'pause'];
+const FILLED: IconName[] = ['play', 'pause', 'starFilled'];
 
 export function Icon({
   name,

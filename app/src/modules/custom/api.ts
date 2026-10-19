@@ -7,8 +7,10 @@
  */
 import { getOwnerId } from '../../core/session';
 import { supabase } from '../../core/supabase';
-import type { CustomField, CustomModule, CustomRecord, FieldDraft } from './types';
+import type { CustomField, CustomModule, CustomRecord, FieldDraft, ModuleInput } from './types';
 import { toFieldKey } from './types';
+
+export type { ModuleInput } from './types';
 
 const MODULES = 'user_modules';
 const FIELDS = 'user_module_fields';
@@ -56,17 +58,6 @@ export async function listFields(moduleId: string): Promise<CustomField[]> {
  * unlike the subscription case where a partial failure meant duplicate money.
  * Not worth an edge function to make atomic.
  */
-/** The module settings the builder can change. */
-export type ModuleInput = {
-  name: string;
-  icon: string;
-  color: string;
-  summary_field_key: string | null;
-  summary_agg: CustomModule['summary_agg'];
-  sort_field_key: string | null;
-  sort_direction: CustomModule['sort_direction'];
-};
-
 export async function createModule(
   input: ModuleInput,
   fields: FieldDraft[],
@@ -107,8 +98,9 @@ export async function updateModule(id: string, input: ModuleInput): Promise<Cust
  * already stored:
  *   • new fields  -> inserted; existing records simply have no value for them,
  *                   which reads as blank rather than breaking.
- *   • edited      -> label/required/options updated. The KEY is never touched,
- *                   so stored values stay attached to their field.
+ *   • edited      -> label, type, required, options, default and hint updated.
+ *                   The KEY is never touched, so stored values stay attached
+ *                   to their field.
  *   • removed     -> the field row is deleted, but the values remain in each
  *                   record's jsonb. Harmless, invisible, and it means an
  *                   accidental delete can be undone by re-adding a field with
@@ -130,13 +122,7 @@ export async function saveFields(
     if (!draft.id) continue;
     const { error } = await supabase
       .from(FIELDS)
-      .update({
-        label: draft.label.trim(),
-        type: draft.type,
-        required: draft.required,
-        options: draft.options,
-        position: index,
-      })
+      .update({ ...fieldColumns(draft), position: index })
       .eq('id', draft.id);
     if (error) throw new Error(error.message);
   }
@@ -174,7 +160,33 @@ export async function saveFields(
   }
 }
 
-/** Shared insert path, so key generation happens in exactly one place. */
+/**
+ * The columns a draft writes, shared by insert and update so the two can
+ * never disagree about what a field is. The KEY is not here: it is written
+ * once, on insert, and never again.
+ */
+function fieldColumns(draft: FieldDraft) {
+  return {
+    label: draft.label.trim(),
+    type: draft.type,
+    required: draft.required,
+    options: draft.options,
+    default_mode: draft.default_mode,
+    // Only a fixed default has a value worth storing; anything else would be a
+    // stale value waiting to resurface if the mode were switched back.
+    default_value: draft.default_mode === 'fixed' ? (draft.default_value ?? null) : null,
+    hint: draft.hint.trim(),
+  };
+}
+
+/**
+ * Shared insert path, so key generation happens in exactly one place.
+ *
+ * The builder now assigns keys itself before saving (builder.assignKeys), so
+ * a setting like the chart can point at a field that is being created in the
+ * same save. A draft that arrives with a key keeps it; one without still gets
+ * one here, checked against the same reserved list.
+ */
 async function insertFields(
   moduleId: string,
   ownerId: string,
@@ -185,16 +197,13 @@ async function insertFields(
   const keys = [...existingKeys];
 
   const rows = drafts.map((draft, index) => {
-    const key = toFieldKey(draft.label, keys);
+    const key = draft.key && !keys.includes(draft.key) ? draft.key : toFieldKey(draft.label, keys);
     keys.push(key); // so the next field in this same batch can't collide
     return {
       module_id: moduleId,
       user_id: ownerId,
       key,
-      label: draft.label.trim(),
-      type: draft.type,
-      required: draft.required,
-      options: draft.options,
+      ...fieldColumns(draft),
       position: positionOffset + index,
     };
   });

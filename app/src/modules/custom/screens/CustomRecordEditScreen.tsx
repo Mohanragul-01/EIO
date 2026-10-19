@@ -5,6 +5,11 @@
  * definitions, holds one object of values keyed by field key, and renders
  * <FieldInput> per field. That's the entire form: whatever you defined in the
  * builder is what appears.
+ *
+ * A NEW entry starts from the module's defaults (defaults.ts) - the same
+ * values a quick log would save - so opening the form costs nothing over
+ * tapping +. Values copied from the last entry carry a "last" tag until you
+ * change them.
  */
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -24,8 +29,11 @@ import { spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
 import { FieldInput } from '../components/FieldInput';
+import { resolveDefaults } from '../defaults';
+import { dateFieldOf } from '../entryDate';
 import { emptyValueFor, validateRecord } from '../format';
 import type { CustomField, CustomModule } from '../types';
+import { todayISO } from '../../../core/date';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'CustomRecordEdit'>;
@@ -36,7 +44,7 @@ export function CustomRecordEditScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
-  const { moduleId, recordId } = route.params;
+  const { moduleId, recordId, date } = route.params;
   const isEditing = !!recordId;
 
   const [module, setModule] = useState<CustomModule | null>(null);
@@ -50,6 +58,14 @@ export function CustomRecordEditScreen() {
    */
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  /** Keys whose value was copied from the last entry and not yet touched. */
+  const [fromLast, setFromLast] = useState<string[]>([]);
+  /**
+   * The entry as stored, kept so a save can merge over it. The form only holds
+   * the module's CURRENT fields; saving that alone would drop every value kept
+   * from a removed field - the values the builder promises are never deleted.
+   */
+  const [stored, setStored] = useState<Record<string, unknown>>({});
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -86,12 +102,19 @@ export function CustomRecordEditScreen() {
             seeded[f.key] = record.data[f.key] ?? emptyValueFor(f.type);
           });
           setValues(seeded);
+          setStored(record.data);
         } else {
-          const blank: Record<string, unknown> = {};
-          fieldRows.forEach((f) => {
-            blank[f.key] = emptyValueFor(f.type);
-          });
-          setValues(blank);
+          // Records only matter here for "same as last entry" defaults.
+          const records = await api.listRecords(moduleId);
+          if (!active) return;
+          const resolved = resolveDefaults(fieldRows, records, todayISO());
+          const dateField = dateFieldOf(fieldRows);
+          // Opened from a calendar day: the entry belongs to that day.
+          if (date && dateField) resolved.values[dateField.key] = date;
+          setValues(resolved.values);
+          setFromLast(
+            resolved.fromLast.filter((key) => !(date && dateField && key === dateField.key)),
+          );
         }
       } catch (e) {
         if (active) setLoadError(e instanceof Error ? e.message : 'Could not load this entry');
@@ -103,10 +126,12 @@ export function CustomRecordEditScreen() {
     return () => {
       active = false;
     };
-  }, [moduleId, recordId]);
+  }, [moduleId, recordId, date]);
 
   const setValue = (key: string, value: unknown) => {
     setValues((current) => ({ ...current, [key]: value }));
+    // Changed by hand: no longer "the same as last time".
+    setFromLast((current) => (current.includes(key) ? current.filter((k) => k !== key) : current));
     // Clear that field's error as soon as it's touched, rather than making
     // the user submit again to find out whether they fixed it.
     setErrors((current) => {
@@ -127,7 +152,7 @@ export function CustomRecordEditScreen() {
     setSaving(true);
     try {
       if (isEditing) {
-        await api.updateRecord(recordId, values);
+        await api.updateRecord(recordId, { ...stored, ...values });
       } else {
         await api.createRecord(moduleId, values);
       }
@@ -191,6 +216,11 @@ export function CustomRecordEditScreen() {
                     value={values[field.key]}
                     onChange={(value) => setValue(field.key, value)}
                     error={errors[field.key]}
+                    accent={module?.color}
+                    fromLast={fromLast.includes(field.key)}
+                    // A date the module reminds you about points forward
+                    // ("Water next on"), so it may be in the future.
+                    dateMode={field.key === module?.reminder_field_key ? 'due' : 'event'}
                   />
                 </View>
               ))}
