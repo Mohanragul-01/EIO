@@ -80,6 +80,7 @@ function sub(overrides: Partial<Subscription> = {}): Subscription {
     currency: 'INR',
     fx_rate: null,
     fx_rate_on: null,
+    anchor_day: null,
     ...overrides,
   };
 }

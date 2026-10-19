@@ -127,6 +127,18 @@ set cycle_unit = case billing_cycle
     cycle_count = case billing_cycle when 'quarterly' then 3 else 1 end
 where cycle_unit is null;
 
+-- The day of the month it bills on. Each payment moves the due date on from
+-- the current one, so without this a subscription billed on the 31st lands
+-- on 28 Feb and stays on the 28th from then on. Set from the date picked in
+-- the v3 form; null (a row a v2 app wrote) means "the due date's own day".
+alter table public.subscriptions
+  add column if not exists anchor_day smallint
+    check (anchor_day is null or anchor_day between 1 and 31);
+
+update public.subscriptions
+set anchor_day = extract(day from next_due_date)::smallint
+where anchor_day is null and next_due_date is not null;
+
 -- billing_cycle itself stays NOT NULL with its four values: v2 reads it. The
 -- v3 app writes the nearest of the four alongside the real cycle (84 days is
 -- "quarterly"), which is close enough for an app that is going away.

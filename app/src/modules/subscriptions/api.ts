@@ -52,7 +52,9 @@ function toSubscription(row: Row): Subscription {
     cancel_notes: r.cancel_notes ?? '',
     currency: r.currency ?? 'INR',
     fx_rate: r.fx_rate === null || r.fx_rate === undefined ? null : Number(r.fx_rate),
-    cycle_count: r.cycle_count === null || r.cycle_count === undefined ? null : Number(r.cycle_count),
+    cycle_count:
+      r.cycle_count === null || r.cycle_count === undefined ? null : Number(r.cycle_count),
+    anchor_day: r.anchor_day === null || r.anchor_day === undefined ? null : Number(r.anchor_day),
     reminder_offsets: r.reminder_offsets ?? null,
   };
 }
@@ -423,7 +425,9 @@ export async function listPaymentsBetween(from: string, to: string): Promise<Pay
  */
 let settingsCache: { ownerId: string; settings: ReminderSettings } | null = null;
 
-export async function getReminderSettings(options?: { fresh?: boolean }): Promise<ReminderSettings> {
+export async function getReminderSettings(options?: {
+  fresh?: boolean;
+}): Promise<ReminderSettings> {
   const ownerId = await getOwnerId();
   if (!options?.fresh && settingsCache?.ownerId === ownerId) return settingsCache.settings;
 
@@ -470,7 +474,11 @@ const accountNames = new Map<string, string>();
 async function accountNameFor(accountId: string | null): Promise<string | null> {
   if (!accountId) return null;
   if (!accountNames.has(accountId)) {
-    const { data } = await supabase.from('accounts').select('name').eq('id', accountId).maybeSingle();
+    const { data } = await supabase
+      .from('accounts')
+      .select('name')
+      .eq('id', accountId)
+      .maybeSingle();
     if (data) accountNames.set(accountId, (data as { name: string }).name);
   }
   return accountNames.get(accountId) ?? null;

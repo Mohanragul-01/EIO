@@ -8,6 +8,7 @@
  */
 import {
   addCycle,
+  anchorFor,
   cycleLabel,
   cycleOf,
   cycleSuffix,
@@ -46,6 +47,47 @@ describe('cycleOf', () => {
       unit: 'month',
       count: 1,
     });
+  });
+});
+
+describe('the billing day (month-end anchor)', () => {
+  // Billed on the 31st: February has to move it to the 28th, and every later
+  // month must come back to the 31st, not stay on the 28th for good.
+  const monthly31 = { unit: 'month' as const, count: 1, anchorDay: 31 };
+
+  it('is read from the row with the cycle', () => {
+    expect(
+      cycleOf({ cycle_unit: 'month', cycle_count: 1, billing_cycle: 'monthly', anchor_day: 31 }),
+    ).toEqual(monthly31);
+  });
+
+  it('brings a clamped date back to the billing day', () => {
+    expect(addCycle('2026-02-28', monthly31)).toBe('2026-03-31');
+    expect(addCycle('2026-03-31', monthly31)).toBe('2026-04-30');
+    expect(addCycle('2027-02-28', { unit: 'year', count: 1, anchorDay: 29 })).toBe('2028-02-29');
+  });
+
+  it('means nothing to day and week cycles', () => {
+    expect(addCycle('2026-02-28', { unit: 'week', count: 1, anchorDay: 31 })).toBe('2026-03-07');
+    expect(addCycle('2026-02-28', { unit: 'day', count: 10, anchorDay: 31 })).toBe('2026-03-10');
+  });
+
+  it('holds across a projection that starts on a clamped date', () => {
+    expect(occurrences('2026-02-28', monthly31, '2026-02-01', '2026-05-31')).toEqual([
+      '2026-02-28',
+      '2026-03-31',
+      '2026-04-30',
+      '2026-05-31',
+    ]);
+  });
+
+  it('is the day picked in the form, kept while the date is left alone', () => {
+    expect(anchorFor('2026-01-31')).toBe(31);
+    // Saving an edit without touching a clamped date keeps the 31st...
+    expect(anchorFor('2026-02-28', { next_due_date: '2026-02-28', anchor_day: 31 })).toBe(31);
+    // ...and picking a new date makes that the billing day.
+    expect(anchorFor('2026-02-27', { next_due_date: '2026-02-28', anchor_day: 31 })).toBe(27);
+    expect(anchorFor('2026-02-28', { next_due_date: '2026-02-28', anchor_day: null })).toBe(28);
   });
 });
 

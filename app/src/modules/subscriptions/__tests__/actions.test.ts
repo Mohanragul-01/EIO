@@ -50,6 +50,7 @@ function sub(overrides: Partial<Subscription> = {}): Subscription {
     currency: 'INR',
     fx_rate: null,
     fx_rate_on: null,
+    anchor_day: null,
     ...overrides,
   };
 }
@@ -62,9 +63,19 @@ describe('markPaidPatch', () => {
     });
   });
 
+  it('comes back to a month-end billing day after February', () => {
+    expect(markPaidPatch(sub({ next_due_date: '2027-02-28', anchor_day: 31 }), {}, TODAY)).toEqual({
+      next_due_date: '2027-03-31',
+    });
+  });
+
   it('follows N-day cycles', () => {
     expect(
-      markPaidPatch(sub({ cycle_unit: 'day', cycle_count: 28, next_due_date: '2026-10-19' }), {}, TODAY),
+      markPaidPatch(
+        sub({ cycle_unit: 'day', cycle_count: 28, next_due_date: '2026-10-19' }),
+        {},
+        TODAY,
+      ),
     ).toEqual({ next_due_date: '2026-11-16' });
   });
 
@@ -77,20 +88,26 @@ describe('markPaidPatch', () => {
       amount_minor: 79900,
     });
     expect(
-      markPaidPatch(sub({ currency: 'USD', amount_minor: 2000, fx_rate: 86 }), { newRate: 87.12 }, TODAY),
+      markPaidPatch(
+        sub({ currency: 'USD', amount_minor: 2000, fx_rate: 86 }),
+        { newRate: 87.12 },
+        TODAY,
+      ),
     ).toMatchObject({ fx_rate: 87.12, fx_rate_on: TODAY });
   });
 
   it('turns a paid trial into an active subscription', () => {
-    expect(
-      markPaidPatch(sub({ status: 'trial', trial_ends_on: '2026-10-19' }), {}, TODAY),
-    ).toEqual({ next_due_date: '2026-11-19', status: 'active' });
+    expect(markPaidPatch(sub({ status: 'trial', trial_ends_on: '2026-10-19' }), {}, TODAY)).toEqual(
+      { next_due_date: '2026-11-19', status: 'active' },
+    );
   });
 
   it('settles a pause whose resume date has come', () => {
-    expect(
-      markPaidPatch(sub({ status: 'paused', resume_on: '2026-10-19' }), {}, TODAY),
-    ).toEqual({ next_due_date: '2026-11-19', status: 'active', resume_on: null });
+    expect(markPaidPatch(sub({ status: 'paused', resume_on: '2026-10-19' }), {}, TODAY)).toEqual({
+      next_due_date: '2026-11-19',
+      status: 'active',
+      resume_on: null,
+    });
   });
 });
 
@@ -147,7 +164,11 @@ describe('cancel, archive, restore', () => {
 
 describe('trial decisions', () => {
   it('keeps a trial as active, with its first charge on the end date', () => {
-    expect(keepTrialPatch(sub({ status: 'trial', trial_ends_on: '2026-10-19', next_due_date: '2026-10-19' }))).toEqual({
+    expect(
+      keepTrialPatch(
+        sub({ status: 'trial', trial_ends_on: '2026-10-19', next_due_date: '2026-10-19' }),
+      ),
+    ).toEqual({
       status: 'active',
       next_due_date: '2026-10-19',
     });

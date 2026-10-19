@@ -14,7 +14,13 @@ import { formatMoney, parseAmountToMinor } from '@app/core/money';
 import * as api from '@app/modules/subscriptions/api';
 import { TILE_COLOURS, readableOn, tileColor } from '@app/modules/subscriptions/brand';
 import { findService, searchCatalogue, type Service } from '@app/modules/subscriptions/catalogue';
-import { cycleLabel, cycleOf, perMonthMinor, perYearMinor } from '@app/modules/subscriptions/cycles';
+import {
+  anchorFor,
+  cycleLabel,
+  cycleOf,
+  perMonthMinor,
+  perYearMinor,
+} from '@app/modules/subscriptions/cycles';
 import { CURRENCIES, currencyDef, formatRate, toInrMinor } from '@app/modules/subscriptions/currency';
 import {
   DEFAULT_REMINDER_SETTINGS,
@@ -159,6 +165,7 @@ export function EditDialog({
       reminder_offsets: offsetsToSave(reminderMode, offsets),
       cycle_unit: cycle.unit,
       cycle_count: cycle.count,
+      anchor_day: anchorFor(isTrial ? trialEnds : nextDue, editing),
       currency,
       fx_rate: rate,
       fx_rate_on:

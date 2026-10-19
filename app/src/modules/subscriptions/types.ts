@@ -28,17 +28,19 @@ export type SubscriptionStatus = 'active' | 'trial' | 'paused' | 'cancelled' | '
 export type CycleUnit = 'day' | 'week' | 'month' | 'year' | 'once';
 
 /** Every `count` units. A one-time charge is `{ unit: 'once', count: 1 }`. */
-export type Cycle = { unit: CycleUnit; count: number };
+export type Cycle = {
+  unit: CycleUnit;
+  count: number;
+  /**
+   * Month and year cycles: the day of the month it bills on (31 for "the last
+   * day"). A due date clamped into a short month comes back to it after.
+   */
+  anchorDay?: number;
+};
 
 /** How it is billed - which also decides how you cancel it. */
 export type ChargeChannel =
-  | 'card'
-  | 'upi_autopay'
-  | 'google_play'
-  | 'apple'
-  | 'netbanking'
-  | 'wallet'
-  | 'manual';
+  'card' | 'upi_autopay' | 'google_play' | 'apple' | 'netbanking' | 'wallet' | 'manual';
 
 export const CHARGE_CHANNELS: ChargeChannel[] = [
   'card',
@@ -108,6 +110,11 @@ export type Subscription = {
   /** Null on rows a v2 app wrote: cycleOf() falls back to billing_cycle. */
   cycle_unit: CycleUnit | null;
   cycle_count: number | null;
+  /**
+   * The day of the month it bills on, set from the date picked in the form.
+   * Null on rows a v2 app wrote: the due date's own day is used.
+   */
+  anchor_day: number | null;
 
   /** ISO code. INR unless set. */
   currency: string;
@@ -140,6 +147,7 @@ export type SubscriptionInput = {
   reminder_offsets: number[] | null;
   cycle_unit: CycleUnit;
   cycle_count: number;
+  anchor_day: number | null;
   currency: string;
   fx_rate: number | null;
   fx_rate_on: string | null;

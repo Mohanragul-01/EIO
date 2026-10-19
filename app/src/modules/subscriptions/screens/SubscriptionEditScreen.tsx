@@ -43,7 +43,7 @@ import { findService, type Service } from '../catalogue';
 import { BrandTile } from '../components/BrandTile';
 import { Chip } from '../components/Chip';
 import { OffsetChips } from '../components/OffsetChips';
-import { cycleLabel, cycleOf, perMonthMinor, perYearMinor } from '../cycles';
+import { anchorFor, cycleLabel, cycleOf, perMonthMinor, perYearMinor } from '../cycles';
 import { CURRENCIES, currencyDef, formatRate, toInrMinor } from '../currency';
 import { offsetsLabel, timeLabel } from '../format';
 import { ensurePermission } from '../notifications';
@@ -317,10 +317,11 @@ export function SubscriptionEditScreen() {
         ? original.status
         : 'active';
 
+    const nextDue = (form.isTrial ? form.trialEnds : form.nextDue) ?? addDaysISO(30);
     const input: SubscriptionInput = {
       name,
       amount_minor: amountMinor,
-      next_due_date: (form.isTrial ? form.trialEnds : form.nextDue) ?? addDaysISO(30),
+      next_due_date: nextDue,
       category: form.category,
       note: form.note.trim(),
       status,
@@ -336,6 +337,7 @@ export function SubscriptionEditScreen() {
       reminder_offsets: offsetsToSave(form.reminderMode, form.customOffsets),
       cycle_unit: cycle.unit,
       cycle_count: cycle.count,
+      anchor_day: anchorFor(nextDue, original),
       currency: form.currency,
       fx_rate: rate,
       fx_rate_on: rate === null ? null : rateChanged ? today : (original?.fx_rate_on ?? today),

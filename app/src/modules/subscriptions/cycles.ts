@@ -29,10 +29,35 @@ export function cycleOf(row: {
   cycle_unit: CycleUnit | null;
   cycle_count: number | null;
   billing_cycle: BillingCycle;
+  anchor_day?: number | null;
 }): Cycle {
-  if (!row.cycle_unit) return LEGACY[row.billing_cycle] ?? LEGACY.monthly;
-  const count = row.cycle_count && row.cycle_count >= 1 ? Math.floor(row.cycle_count) : 1;
-  return { unit: row.cycle_unit, count: row.cycle_unit === 'once' ? 1 : count };
+  let cycle: Cycle;
+  if (!row.cycle_unit) cycle = LEGACY[row.billing_cycle] ?? LEGACY.monthly;
+  else {
+    const count = row.cycle_count && row.cycle_count >= 1 ? Math.floor(row.cycle_count) : 1;
+    cycle = { unit: row.cycle_unit, count: row.cycle_unit === 'once' ? 1 : count };
+  }
+  const day = row.anchor_day;
+  const anchored = cycle.unit === 'month' || cycle.unit === 'year';
+  if (anchored && Number.isInteger(day) && day! >= 1 && day! <= 31) {
+    return { ...cycle, anchorDay: day! };
+  }
+  return cycle;
+}
+
+/**
+ * The billing day to store when a form saves `nextDue`: the day picked, or -
+ * when the date was left as it was - the one already stored, so saving an
+ * edit while the date sits on a clamped 28 Feb does not lose the 31st.
+ */
+export function anchorFor(
+  nextDue: string,
+  original?: { next_due_date: string; anchor_day: number | null } | null,
+): number {
+  if (original && original.next_due_date === nextDue && original.anchor_day) {
+    return original.anchor_day;
+  }
+  return Number(nextDue.slice(8, 10));
 }
 
 /** Rough length in days, only for choosing the nearest v2 cycle. */
@@ -80,9 +105,13 @@ function addDays(iso: string, days: number): string {
  * `iso` plus `months` calendar months in ONE step, clamping the day to the
  * target month's last day. One step matters: 31 Jan + 2 months is 31 Mar,
  * whereas adding one month twice goes via 28 Feb and lands on 28 Mar.
+ *
+ * `anchorDay` is the day to aim for instead of `iso`'s own, which is how a
+ * date already clamped to 28 Feb gets back to the 31st.
  */
-function addMonthsClamped(iso: string, months: number): string {
-  const [y, m, d] = iso.split('-').map(Number);
+function addMonthsClamped(iso: string, months: number, anchorDay?: number): string {
+  const [y, m, iday] = iso.split('-').map(Number);
+  const d = anchorDay ?? iday;
   const absolute = y * 12 + (m - 1) + months;
   const year = Math.floor(absolute / 12);
   const month = absolute - year * 12; // 0-based
@@ -99,9 +128,9 @@ function stepBy(iso: string, cycle: Cycle, k: number): string | null {
     case 'week':
       return addDays(iso, 7 * cycle.count * k);
     case 'month':
-      return addMonthsClamped(iso, cycle.count * k);
+      return addMonthsClamped(iso, cycle.count * k, cycle.anchorDay);
     case 'year':
-      return addMonthsClamped(iso, 12 * cycle.count * k);
+      return addMonthsClamped(iso, 12 * cycle.count * k, cycle.anchorDay);
     case 'once':
       return k === 0 ? iso : null;
   }
