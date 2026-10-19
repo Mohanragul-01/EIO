@@ -37,7 +37,16 @@ export type Note = {
   /** Null for every type except checklist. */
   checklist_items: ChecklistItem[] | null;
   created_at: string;
+  /** Moves on content edits only, never on pin, colour, archive or trash (0021). */
   updated_at: string;
+  /** In the Trash since this instant; null while live. Purged after TRASH_DAYS. */
+  deleted_at: string | null;
+  /** Pinned since this instant; null when not pinned. Does not file a note out of the Inbox. */
+  pinned_at: string | null;
+  /** Archived since this instant; null when not archived. */
+  archived_at: string | null;
+  /** A key from NOTE_COLORS, or null. Read it through readNoteColor: old keys may linger. */
+  color: string | null;
 };
 
 /**
