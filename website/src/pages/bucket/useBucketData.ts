@@ -9,9 +9,10 @@
  *
  * Each change shows at once and puts back only the fields it wrote, on its own
  * row, if the database refuses it. Restoring a snapshot of the whole list
- * would also undo every other tick made while this one was in flight.
+ * would also undo every other tick made while this one was in flight. Writes
+ * to one row are chained so a tick and its Undo land in the order made.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import * as api from '@app/modules/bucket/api';
 import type { ItemPatch } from '@app/modules/bucket/api';
@@ -34,6 +35,22 @@ async function loadAll(): Promise<Data> {
 export function useBucketData() {
   const { data, loading, error, reload, set } = useAsync(loadAll, 'bucket');
   const [actionError, setActionError] = useState<string | null>(null);
+
+  /** The last write queued for each row, so the next one waits for it. */
+  const queues = useRef(new Map<string, Promise<unknown>>());
+  const inOrder = useCallback(<T,>(id: string, write: () => Promise<T>): Promise<T> => {
+    const previous = queues.current.get(id) ?? Promise.resolve();
+    // After the previous write, whether it worked or not.
+    const next = previous.then(write, write);
+    const settled = next.catch(() => undefined);
+    queues.current.set(id, settled);
+    void settled.then(() => {
+      if (queues.current.get(id) === settled) queues.current.delete(id);
+    });
+    return next;
+  }, []);
+
+  const clearActionError = useCallback(() => setActionError(null), []);
 
   const setItems = useCallback(
     (update: (items: BucketItem[]) => BucketItem[]) =>
@@ -64,7 +81,7 @@ export function useBucketData() {
       );
 
       try {
-        await api.patchItem(id, fields);
+        await inOrder(id, () => api.patchItem(id, fields));
         return true;
       } catch (e) {
         const previous = before;
@@ -73,16 +90,16 @@ export function useBucketData() {
         return false;
       }
     },
-    [setItems],
+    [setItems, inOrder],
   );
 
   /** Change fields and wait for the answer. Throws, for the dialog to show. */
   const save = useCallback(
     async (id: string, fields: ItemPatch) => {
-      await api.patchItem(id, fields);
+      await inOrder(id, () => api.patchItem(id, fields));
       setItems((items) => items.map((row) => (row.id === id ? { ...row, ...fields } : row)));
     },
-    [setItems],
+    [setItems, inOrder],
   );
 
   /** Demotion first, each rolling back only itself. See api.swapNow. */
@@ -189,6 +206,8 @@ export function useBucketData() {
   const moveStep = useCallback(
     async (step: BucketStep, direction: -1 | 1) => {
       const siblings = (steps ?? []).filter((row) => row.item_id === step.item_id);
+      // A step without an id yet cannot be renumbered.
+      if (siblings.some(isPendingStep)) return;
       const moves = stepMoves(siblings, step.id, direction);
       if (moves.length === 0) return;
       const before = new Map(siblings.map((row) => [row.id, row.position]));
@@ -214,6 +233,9 @@ export function useBucketData() {
     steps: data?.steps ?? null,
     loading,
     error: error ?? actionError,
+    /** Errors from changes made on the page, for a dialog to show too. */
+    actionError,
+    clearActionError,
     reload,
     patch,
     save,

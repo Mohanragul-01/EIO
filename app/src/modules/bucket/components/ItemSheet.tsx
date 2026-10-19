@@ -79,6 +79,11 @@ type ItemSheetProps = {
   /** "Not done after all" from the Memory tab. */
   onMarkUndone?: (item: BucketItem) => void;
   stepActions: StepActions;
+  /**
+   * A failure from something saved as you go (a step), which the screen
+   * would otherwise only show underneath this sheet.
+   */
+  actionError?: string | null;
 };
 
 const emptyPlan = (item: BucketItem | null): PlanDraft => ({
@@ -101,6 +106,7 @@ export function ItemSheet({
   onDelete,
   onMarkUndone,
   stepActions,
+  actionError,
 }: ItemSheetProps) {
   const styles = useStyles();
   const { colors } = useTheme();
@@ -114,6 +120,12 @@ export function ItemSheet({
   const [note, setNote] = useState('');
   const [plan, setPlan] = useState<PlanDraft>(emptyPlan(null));
   const [memory, setMemory] = useState<MemoryDraft | null>(null);
+  /**
+   * Whether "When" was touched. An item done with no date reads back as
+   * "Today", and writing that back on an unrelated save (a title fix) would
+   * stamp it with today's date.
+   */
+  const [whenTouched, setWhenTouched] = useState(false);
 
   const [titleError, setTitleError] = useState<string | null>(null);
   const [categoryError, setCategoryError] = useState<string | null>(null);
@@ -141,6 +153,7 @@ export function ItemSheet({
     setNote(item?.note ?? '');
     setPlan(emptyPlan(item));
     setMemory(item?.is_done ? draftOf(item, today) : null);
+    setWhenTouched(false);
     setTitleError(null);
     setCategoryError(null);
     setEstError(null);
@@ -164,7 +177,8 @@ export function ItemSheet({
     category.trim().length > 0 &&
     !categories.some((c) => c.toLowerCase() === category.trim().toLowerCase());
 
-  const askingToSwap = want === 'now' && item?.focus !== 'now' && shelfFull;
+  // A done item takes no place on Now, so it never has to ask.
+  const askingToSwap = want === 'now' && item?.focus !== 'now' && !item?.is_done && shelfFull;
 
   const handleSave = async () => {
     const cleanTitle = title.trim();
@@ -202,7 +216,8 @@ export function ItemSheet({
     }
 
     if (item?.is_done && memory) {
-      Object.assign(fields, whenToDone(memory.when, today), {
+      if (item.done_on || whenTouched) Object.assign(fields, whenToDone(memory.when, today));
+      Object.assign(fields, {
         memory: memory.memory.trim(),
         place: memory.place.trim(),
         again: memory.again,
@@ -394,7 +409,14 @@ export function ItemSheet({
 
         {tab === 'memory' && item && memory ? (
           <View>
-            <MemoryFields draft={memory} onChange={setMemory} today={today} />
+            <MemoryFields
+              draft={memory}
+              onChange={(next) => {
+                if (next.when !== memory.when) setWhenTouched(true);
+                setMemory(next);
+              }}
+              today={today}
+            />
             {onMarkUndone ? (
               <Pressable
                 onPress={() => onMarkUndone(item)}
@@ -407,7 +429,7 @@ export function ItemSheet({
           </View>
         ) : null}
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error || actionError ? <Text style={styles.error}>{error ?? actionError}</Text> : null}
       </ScrollView>
     </Sheet>
   );

@@ -33,11 +33,32 @@ alter table public.bucket_items
 -- Null means 'day', which is what every tick before this migration was.
 --
 -- Deliberately NOT tied to done_on by a check: the v2 app unticks by nulling
--- done_on alone, and a paired constraint would make that update fail. A
--- precision left on an undone row is ignored by every reader.
+-- done_on alone, and a paired constraint would make that update fail.
 alter table public.bucket_items
   add column if not exists done_precision text
     check (done_precision is null or done_precision in ('year', 'month', 'day'));
+
+-- Instead, clearing the date clears its precision. Without this, an item
+-- backdated to "2019" by v3, then unticked and re-ticked in the v2 app, would
+-- keep 'year' beside v2's new date and read as "sometime in" this year. v2
+-- must untick before it can re-tick, so clearing on the untick is enough, and
+-- nothing that sets a date (v2's tick, v3's backdating) is touched.
+create or replace function public.bucket_items_clear_done_precision()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.done_on is null then
+    new.done_precision := null;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists bucket_items_clear_done_precision on public.bucket_items;
+create trigger bucket_items_clear_done_precision
+  before insert or update on public.bucket_items
+  for each row execute function public.bucket_items_clear_done_precision();
 
 -- PICK FOR ME -------------------------------------------------------------------
 
@@ -119,7 +140,10 @@ create trigger bucket_steps_set_updated_at before update on public.bucket_steps
   for each row execute function public.set_updated_at();
 
 -- ROW LEVEL SECURITY ----------------------------------------------------------
--- The same four-policy template as every other table in this app.
+-- The same four-policy template as every other table in this app, with one
+-- addition on the writes: the step's item must be yours too. A foreign key
+-- is checked without RLS, so user_id alone would let anyone who learned an
+-- item id hang steps off someone else's item.
 do $$
 begin
   execute 'alter table public.bucket_steps enable row level security';
@@ -132,9 +156,21 @@ begin
   execute 'create policy "bucket_steps_select_own" on public.bucket_steps
     for select using (user_id = auth.uid())';
   execute 'create policy "bucket_steps_insert_own" on public.bucket_steps
-    for insert with check (user_id = auth.uid())';
+    for insert with check (
+      user_id = auth.uid()
+      and exists (
+        select 1 from public.bucket_items i
+        where i.id = bucket_steps.item_id and i.user_id = auth.uid()
+      )
+    )';
   execute 'create policy "bucket_steps_update_own" on public.bucket_steps
-    for update using (user_id = auth.uid()) with check (user_id = auth.uid())';
+    for update using (user_id = auth.uid()) with check (
+      user_id = auth.uid()
+      and exists (
+        select 1 from public.bucket_items i
+        where i.id = bucket_steps.item_id and i.user_id = auth.uid()
+      )
+    )';
   execute 'create policy "bucket_steps_delete_own" on public.bucket_steps
     for delete using (user_id = auth.uid())';
 end $$;

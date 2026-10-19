@@ -64,7 +64,7 @@ import { livedTimeline, summariseYear, type YearSummary } from '../lived';
 import { readPickPrefs, writePickPrefs } from '../pickPrefs';
 import { pickPool, pickSeed, picksFor, snoozeUntil, type PickPrefs } from '../picks';
 import { formatTarget, type Target } from '../plan';
-import { isShelfFull, nowShelf, stepsByItem } from '../shelf';
+import { focusOnReopen, isShelfFull, nowShelf, stepsByItem } from '../shelf';
 import {
   COSTS,
   COST_LABEL,
@@ -267,11 +267,18 @@ export function BucketListScreen() {
 
   const untick = (item: BucketItem) => {
     const previous = doneStateOf(item);
+    // Done, it freed its place on Now; if that place has been taken since,
+    // it comes back as Next rather than making six.
+    const focus = focusOnReopen(item, items);
+    const demoted = focus !== item.focus;
     haptics.tap();
-    void patch(item.id, UNDONE);
+    void patch(item.id, demoted ? { ...UNDONE, focus } : UNDONE);
     // The memory, place and "again" stay: they are your writing, and an
     // accidental untick must not erase them. Undo brings the date back too.
-    showToast(`Not done · ${item.title}`, () => restore(item.id, previous));
+    showToast(
+      demoted ? `Not done · ${item.title} · Now is full, so it is on Next` : `Not done · ${item.title}`,
+      () => restore(item.id, demoted ? { ...previous, focus: item.focus } : previous),
+    );
   };
 
   const tick = (item: BucketItem) => {
@@ -297,6 +304,14 @@ export function BucketListScreen() {
     const bar = barRef.current;
     if (!bar) return;
     closeBar(bar.id);
+    const item = byId.get(bar.itemId);
+    const focus = item ? focusOnReopen(item, items) : null;
+    if (item && focus !== item.focus) {
+      // Its place on Now was taken while it was ticked.
+      restore(bar.itemId, { ...bar.previous, focus });
+      showToast(`Now is full, so ${item.title} is on Next`);
+      return;
+    }
     restore(bar.itemId, bar.previous);
   };
 
@@ -389,6 +404,9 @@ export function BucketListScreen() {
   };
 
   const openEditor = (item: BucketItem | null, tab: ItemTab = 'about') => {
+    // The sheet shows the screen's error too (a step that failed to save
+    // would otherwise only say so under the sheet), so it opens clean.
+    bucket.setError(null);
     setEditor({ itemId: item?.id ?? null, tab });
   };
 
@@ -398,7 +416,12 @@ export function BucketListScreen() {
     // Asking for a sixth place on Now never quietly grows the shelf: the
     // save keeps the old want, then the swap sheet asks which one makes way.
     const others = items.filter((item) => item.id !== editing?.id);
-    const needsSwap = fields.focus === 'now' && editing?.focus !== 'now' && isShelfFull(others);
+    // A done item takes no place on Now, so it never needs a swap.
+    const needsSwap =
+      fields.focus === 'now' &&
+      editing?.focus !== 'now' &&
+      !editing?.is_done &&
+      isShelfFull(others);
 
     if (editing) {
       await bucket.save(editing.id, needsSwap ? { ...fields, focus: editing.focus } : fields);
@@ -846,6 +869,7 @@ export function BucketListScreen() {
         onDelete={removeItem}
         onMarkUndone={markUndone}
         stepActions={stepActions}
+        actionError={bucket.error}
       />
 
       <MemorySheet

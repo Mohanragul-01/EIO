@@ -64,6 +64,7 @@ export function ItemDialog({
   onDelete,
   onMarkUndone,
   stepActions,
+  actionError,
 }: {
   /** Null when adding. The dialog is mounted per open, so state seeds once. */
   item: BucketItem | null;
@@ -78,6 +79,8 @@ export function ItemDialog({
   onDelete: (item: BucketItem) => void;
   onMarkUndone: (item: BucketItem) => void;
   stepActions: StepActions;
+  /** A failed step change, which the page would only show behind this dialog. */
+  actionError?: string | null;
 }) {
   const [tab, setTab] = useState<ItemTab>(initialTab);
   const [title, setTitle] = useState(item?.title ?? '');
@@ -96,6 +99,12 @@ export function ItemDialog({
     item?.is_done ? memoryDraftOf(item, today) : null,
   );
 
+  /**
+   * Whether "When" was touched. An item done with no date reads back as
+   * "Today", and writing that back on an unrelated save would stamp it.
+   */
+  const [whenTouched, setWhenTouched] = useState(false);
+
   const [titleError, setTitleError] = useState<string | null>(null);
   const [estError, setEstError] = useState<string | null>(null);
   const [savedError, setSavedError] = useState<string | null>(null);
@@ -104,7 +113,8 @@ export function ItemDialog({
 
   const tabs: ItemTab[] = item ? (item.is_done ? ['about', 'plan', 'memory'] : ['about', 'plan']) : [];
   const planEditable = want === 'now' || want === 'next';
-  const askingToSwap = want === 'now' && item?.focus !== 'now' && shelfFull;
+  // A done item takes no place on Now, so it never has to ask.
+  const askingToSwap = want === 'now' && item?.focus !== 'now' && !item?.is_done && shelfFull;
 
   const save = async () => {
     const cleanTitle = title.trim();
@@ -141,7 +151,8 @@ export function ItemDialog({
     }
 
     if (item?.is_done && memory) {
-      Object.assign(fields, whenToDone(memory.when, today), {
+      if (item.done_on || whenTouched) Object.assign(fields, whenToDone(memory.when, today));
+      Object.assign(fields, {
         memory: memory.memory.trim(),
         place: memory.place.trim(),
         again: memory.again,
@@ -298,14 +309,21 @@ export function ItemDialog({
 
       {tab === 'memory' && item && memory ? (
         <>
-          <MemoryFields draft={memory} onChange={setMemory} today={today} />
+          <MemoryFields
+            draft={memory}
+            onChange={(next) => {
+              if (next.when !== memory.when) setWhenTouched(true);
+              setMemory(next);
+            }}
+            today={today}
+          />
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => onMarkUndone(item)}>
             Not done after all? Mark it not done
           </button>
         </>
       ) : null}
 
-      <ErrorBanner message={error} />
+      <ErrorBanner message={error ?? actionError ?? null} />
     </Modal>
   );
 }

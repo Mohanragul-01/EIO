@@ -10,7 +10,7 @@
  * the tick puts it straight back on the shelf.
  */
 import { targetEnd } from './plan';
-import type { BucketItem, BucketStep } from './types';
+import type { BucketItem, BucketStep, Focus } from './types';
 
 export const NOW_CAP = 5;
 
@@ -35,6 +35,19 @@ export function nowShelf(items: BucketItem[]): BucketItem[] {
 
 export function isShelfFull(items: BucketItem[]): boolean {
   return nowShelf(items).length >= NOW_CAP;
+}
+
+/**
+ * The focus an item should have when it is reopened - unticked, or a tick
+ * undone.
+ *
+ * A done Now item keeps its focus but frees its slot, so while it was done
+ * something else may have taken the place. Reopening it as Now would then put
+ * six on the shelf; it goes to Next instead, which the caller says aloud.
+ */
+export function focusOnReopen(item: BucketItem, items: BucketItem[]): Focus | null {
+  if (item.focus !== 'now') return item.focus;
+  return isShelfFull(items.filter((other) => other.id !== item.id)) ? 'next' : 'now';
 }
 
 /** Position order, oldest first where two share one. */

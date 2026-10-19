@@ -145,6 +145,9 @@ export function PlanFields({
       : null;
 
   const doneCount = steps.filter((s) => s.is_done).length;
+  // Nothing moves while a step is still on its way to the database: it has
+  // no id to renumber yet.
+  const anyPending = steps.some(isPendingStep);
 
   const submitStep = () => {
     const title = newStep.trim();
@@ -282,14 +285,14 @@ export function PlanFields({
                 <StepAction
                   icon="arrow-up"
                   label="Up"
-                  disabled={index === 0}
+                  disabled={anyPending || index === 0}
                   onPress={() => onMoveStep(step, -1)}
                   accessibilityLabel={`Move ${step.title} up`}
                 />
                 <StepAction
                   icon="arrow-down"
                   label="Down"
-                  disabled={index === steps.length - 1}
+                  disabled={anyPending || index === steps.length - 1}
                   onPress={() => onMoveStep(step, 1)}
                   accessibilityLabel={`Move ${step.title} down`}
                 />

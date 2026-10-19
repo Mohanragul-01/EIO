@@ -7,6 +7,7 @@
  */
 import {
   NOW_CAP,
+  focusOnReopen,
   isShelfFull,
   nextStep,
   nextStepPosition,
@@ -195,5 +196,28 @@ describe('nextStepPosition', () => {
   it('goes after the last step, or first on an empty list', () => {
     expect(nextStepPosition([])).toBe(0);
     expect(nextStepPosition([step({ position: 0 }), step({ position: 4 })])).toBe(5);
+  });
+});
+
+describe('focusOnReopen', () => {
+  // A done Now item keeps its focus but frees its slot. Reopening it (untick,
+  // or undoing a tick) must not push the shelf past five.
+  const others = (n: number) => Array.from({ length: n }, () => item());
+
+  it('keeps Now when there is room', () => {
+    const reopened = item({ is_done: true, done_on: '2026-10-01' });
+    expect(focusOnReopen(reopened, [...others(4), reopened])).toBe('now');
+  });
+
+  it('moves it to Next when the shelf filled up meanwhile', () => {
+    const reopened = item({ is_done: true, done_on: '2026-10-01' });
+    expect(focusOnReopen(reopened, [...others(5), reopened])).toBe('next');
+  });
+
+  it('leaves anything not on Now alone', () => {
+    const next = item({ focus: 'next', is_done: true, done_on: '2026-10-01' });
+    const someday = item({ focus: null, is_done: true, done_on: '2026-10-01' });
+    expect(focusOnReopen(next, [...others(5), next])).toBe('next');
+    expect(focusOnReopen(someday, [...others(5), someday])).toBeNull();
   });
 });

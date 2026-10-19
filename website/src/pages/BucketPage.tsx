@@ -19,7 +19,13 @@ import { livedTimeline } from '@app/modules/bucket/lived';
 import { readPickPrefs, writePickPrefs } from '@app/modules/bucket/pickPrefs';
 import { pickPool, pickSeed, picksFor, snoozeUntil, type PickPrefs } from '@app/modules/bucket/picks';
 import { formatTarget, type Target } from '@app/modules/bucket/plan';
-import { NOW_CAP, isShelfFull, nowShelf, stepsByItem } from '@app/modules/bucket/shelf';
+import {
+  NOW_CAP,
+  focusOnReopen,
+  isShelfFull,
+  nowShelf,
+  stepsByItem,
+} from '@app/modules/bucket/shelf';
 import {
   COSTS,
   COST_LABEL,
@@ -192,10 +198,19 @@ export function BucketPage() {
 
   const untick = (item: BucketItem) => {
     const previous = doneStateOf(item);
-    void patch(item.id, UNDONE);
+    // Done, it freed its place on Now; if that place was taken since, it
+    // comes back as Next rather than making six.
+    const focus = focusOnReopen(item, items);
+    const demoted = focus !== item.focus;
+    void patch(item.id, demoted ? { ...UNDONE, focus } : UNDONE);
     // Memory, place and "again" stay - they are your writing. Undo brings
     // the date back too.
-    showToast(`Not done · ${item.title}`, () => void patch(item.id, previous));
+    showToast(
+      demoted
+        ? `Not done · ${item.title} · Now is full, so it is on Next`
+        : `Not done · ${item.title}`,
+      () => void patch(item.id, demoted ? { ...previous, focus: item.focus } : previous),
+    );
   };
 
   const tick = (item: BucketItem) => {
@@ -214,12 +229,20 @@ export function BucketPage() {
     });
   };
 
-  const undoTick = useCallback(() => {
+  const undoTick = () => {
     const bar = barRef.current;
     if (!bar) return;
     closeBar(bar.id);
+    const item = byId.get(bar.itemId);
+    const focus = item ? focusOnReopen(item, items) : null;
+    if (item && focus !== item.focus) {
+      // Its place on Now was taken while it was ticked.
+      void patch(bar.itemId, { ...bar.previous, focus });
+      showToast(`Now is full, so ${item.title} is on Next`);
+      return;
+    }
     void patch(bar.itemId, bar.previous);
-  }, [closeBar, patch]);
+  };
 
   const addMemoryFromBar = () => {
     const bar = barRef.current;
@@ -302,8 +325,11 @@ export function BucketPage() {
     });
   };
 
-  const openItem = (item: BucketItem | null, tab: ItemTab = 'about') =>
+  const openItem = (item: BucketItem | null, tab: ItemTab = 'about') => {
+    // The dialog shows step errors too, so it opens clean.
+    bucket.clearActionError();
     setDialog({ kind: 'item', itemId: item?.id ?? null, tab });
+  };
 
   const editing =
     dialog?.kind === 'item' && dialog.itemId ? (byId.get(dialog.itemId) ?? null) : null;
@@ -311,7 +337,12 @@ export function BucketPage() {
   const saveItem = async (fields: BucketInput & ItemPatch) => {
     const others = items.filter((item) => item.id !== editing?.id);
     // A sixth on Now never quietly grows the shelf: save the rest, then ask.
-    const needsSwap = fields.focus === 'now' && editing?.focus !== 'now' && isShelfFull(others);
+    // A done item takes no place on Now, so it never needs a swap.
+    const needsSwap =
+      fields.focus === 'now' &&
+      editing?.focus !== 'now' &&
+      !editing?.is_done &&
+      isShelfFull(others);
 
     if (editing) {
       await bucket.save(editing.id, needsSwap ? { ...fields, focus: editing.focus } : fields);
@@ -608,6 +639,7 @@ export function BucketPage() {
           onDelete={(item) => void remove(item)}
           onMarkUndone={markUndone}
           stepActions={stepActions}
+          actionError={bucket.actionError}
         />
       ) : null}
 

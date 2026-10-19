@@ -15,10 +15,16 @@
  * database, because they can be refused - the same title twice in one
  * category - and the sheet must stay open to say so.
  *
+ * ONE ROW, ONE WRITE AT A TIME. A tick and its Undo a moment later are two
+ * writes to the same row; sent together, the network can deliver the Undo
+ * first and leave the tick standing in the database while the screen shows
+ * it undone. Writes to a row are therefore chained, so they land in the order
+ * they were made. Different rows still go in parallel.
+ *
  * Loading never sets state before its first await, so a screen can start it
  * from a focus effect without a synchronous render cascade.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { useLatestRun } from '../../core/useLatestRun';
 
@@ -42,6 +48,23 @@ export function useBucket() {
   const [error, setError] = useState<string | null>(null);
 
   const { begin, isMounted } = useLatestRun();
+
+  /** The last write queued for each row, so the next one waits for it. */
+  const queues = useRef(new Map<string, Promise<unknown>>());
+
+  /** Run a write after every earlier write to the same row has settled. */
+  const inOrder = useCallback(<T,>(id: string, write: () => Promise<T>): Promise<T> => {
+    const previous = queues.current.get(id) ?? Promise.resolve();
+    // After the previous write whether it worked or not: a failed tick must
+    // not stop its Undo from being sent.
+    const next = previous.then(write, write);
+    const settled = next.catch(() => undefined);
+    queues.current.set(id, settled);
+    void settled.then(() => {
+      if (queues.current.get(id) === settled) queues.current.delete(id);
+    });
+    return next;
+  }, []);
 
   const load = useCallback(async () => {
     const isCurrent = begin();
@@ -89,7 +112,7 @@ export function useBucket() {
       );
 
       try {
-        await api.patchItem(id, fields);
+        await inOrder(id, () => api.patchItem(id, fields));
         return true;
       } catch (e) {
         if (isMounted()) {
@@ -104,14 +127,17 @@ export function useBucket() {
         return false;
       }
     },
-    [isMounted],
+    [isMounted, inOrder],
   );
 
   /** Change fields and wait for the answer. Throws, for the sheet to show. */
-  const save = useCallback(async (id: string, fields: ItemPatch): Promise<void> => {
-    await api.patchItem(id, fields);
-    setItems((current) => current.map((row) => (row.id === id ? { ...row, ...fields } : row)));
-  }, []);
+  const save = useCallback(
+    async (id: string, fields: ItemPatch): Promise<void> => {
+      await inOrder(id, () => api.patchItem(id, fields));
+      setItems((current) => current.map((row) => (row.id === id ? { ...row, ...fields } : row)));
+    },
+    [inOrder],
+  );
 
   /**
    * Swap one item off the Now shelf for another.
@@ -161,7 +187,12 @@ export function useBucket() {
             restored.splice(index < 0 ? restored.length : index, 0, item);
             return restored;
           });
-          setSteps((current) => [...current, ...removedSteps]);
+          // Only the ones not already back: a reload may have landed while the
+          // delete was failing, and doubling a step doubles its counts.
+          setSteps((current) => [
+            ...current,
+            ...removedSteps.filter((step) => !current.some((s) => s.id === step.id)),
+          ]);
           setError(messageOf(e, 'Could not remove that'));
         }
         return false;
@@ -262,6 +293,9 @@ export function useBucket() {
   const moveStep = useCallback(
     async (step: BucketStep, direction: -1 | 1): Promise<void> => {
       const siblings = steps.filter((s) => s.item_id === step.item_id);
+      // A step without an id yet cannot be renumbered, and moving its
+      // neighbours alone would leave screen and database in different orders.
+      if (siblings.some(isPendingStep)) return;
       const moves = stepMoves(siblings, step.id, direction);
       if (moves.length === 0) return;
 

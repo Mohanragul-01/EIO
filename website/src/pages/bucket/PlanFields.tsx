@@ -117,6 +117,9 @@ export function PlanFields({
         : Math.min(99, Math.round((savedMinor / estMinor) * 100))
       : null;
 
+  // Nothing moves while a step is still on its way: it has no id to renumber.
+  const anyPending = steps.some(isPendingStep);
+
   const submitStep = () => {
     const title = newStep.trim();
     if (!title) return;
@@ -243,7 +246,7 @@ export function PlanFields({
                   <button
                     type="button"
                     className="icon-btn"
-                    disabled={pending || index === 0}
+                    disabled={anyPending || index === 0}
                     onClick={() => onMoveStep(step, -1)}
                     aria-label={`Move ${step.title} up`}
                   >
@@ -252,7 +255,7 @@ export function PlanFields({
                   <button
                     type="button"
                     className="icon-btn"
-                    disabled={pending || index === steps.length - 1}
+                    disabled={anyPending || index === steps.length - 1}
                     onClick={() => onMoveStep(step, 1)}
                     aria-label={`Move ${step.title} down`}
                   >
