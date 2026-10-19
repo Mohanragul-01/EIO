@@ -181,6 +181,8 @@ export type Payment = {
   amount_minor: number;
   date: string;
   account_id: string | null;
+  /** The ledger category it was filed under. */
+  category: string;
   note: string;
 };
 
