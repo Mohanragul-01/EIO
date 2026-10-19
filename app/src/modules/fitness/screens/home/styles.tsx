@@ -44,6 +44,10 @@ export const useHomeStyles = makeStyles(({ colors, typography }) => ({
   linkDisabled: {
     opacity: 0.4,
   },
+  modeRow: {
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.sm,
+  },
   tabsTopSpacer: {
     // Clears the transparent nav header. SwipeTabs owns the tab row's own
     // horizontal padding, so this is only the gap above it.

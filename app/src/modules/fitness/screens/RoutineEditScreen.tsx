@@ -167,7 +167,7 @@ export function RoutineEditScreen() {
 
     try {
       await api.saveRoutine(
-        { id: routineId, name: trimmed },
+        { id: routineId, name: trimmed, mode: route.params?.mode },
         entries.map((entry) => ({
           exercise_id: entry.exercise_id,
           // Blank means "no target", which is different from zero. Null keeps

@@ -8,7 +8,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,6 +23,7 @@ import { Button, EmptyState, FadeInView, GlassCard } from '../../../../core/comp
 import { useTheme } from '../../../../core/ThemeContext';
 import { motion } from '../../../../core/theme';
 import { usePlan } from '../../useFitness';
+import { useFitnessMode } from '../../useFitnessMode';
 import type { RootStackParamList } from '../../../../navigation/types';
 import { ErrorBanner, useHomeStyles } from './styles';
 
@@ -32,7 +33,14 @@ export function RoutinesTab() {
   const styles = useHomeStyles();
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
-  const { routines, loading, refreshing, error, refresh, reload, removeRoutine } = usePlan();
+  const plan = usePlan();
+  const { loading, refreshing, error, refresh, reload, removeRoutine } = plan;
+  const { mode } = useFitnessMode();
+  // Each mode lists its own routines; a routine's mode is set when it is made.
+  const routines = useMemo(
+    () => plan.routines.filter((r) => r.mode === mode),
+    [plan.routines, mode],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -74,7 +82,7 @@ export function RoutinesTab() {
               <Button
                 label="New routine"
                 icon="add"
-                onPress={() => navigation.navigate('RoutineEdit', {})}
+                onPress={() => navigation.navigate('RoutineEdit', { mode })}
               />
             }
           />
@@ -120,7 +128,7 @@ export function RoutinesTab() {
       {routines.length > 0 ? (
         <FadeInView style={styles.fabWrap} delay={120}>
           <Pressable
-            onPress={() => navigation.navigate('RoutineEdit', {})}
+            onPress={() => navigation.navigate('RoutineEdit', { mode })}
             style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
             accessibilityRole="button"
             accessibilityLabel="New routine"

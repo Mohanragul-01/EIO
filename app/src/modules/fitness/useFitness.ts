@@ -210,9 +210,11 @@ export function usePlan() {
       name: string,
       muscleGroup: string | null,
       trackingType: TrackingType = 'reps',
+      extra: api.ExerciseFields = {},
     ) => {
       try {
         await api.createExercise({
+          ...extra,
           name: name.trim(),
           muscle_group: muscleGroup,
           tracking_type: trackingType,

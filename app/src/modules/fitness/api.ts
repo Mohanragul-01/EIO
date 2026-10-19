@@ -220,7 +220,8 @@ export async function listRoutineExercises(routineId: string): Promise<RoutineEx
  * leave a stale row behind.
  */
 export async function saveRoutine(
-  input: { id?: string; name: string },
+  /** `mode` is set when the routine is created and never changed by a save. */
+  input: { id?: string; name: string; mode?: FitnessMode },
   exercises: { exercise_id: string; target_sets: number | null; target_reps: number | null }[],
 ): Promise<Routine> {
   const ownerId = await getOwnerId();
@@ -256,7 +257,7 @@ export async function saveRoutine(
   } else {
     const { data, error } = await supabase
       .from('routines')
-      .insert({ name: input.name, user_id: ownerId })
+      .insert({ name: input.name, user_id: ownerId, mode: input.mode ?? 'gym' })
       .select()
       .single();
     if (error) throw new Error(error.message);

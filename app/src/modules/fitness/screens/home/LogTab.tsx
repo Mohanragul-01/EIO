@@ -24,10 +24,12 @@ import { useTheme } from '../../../../core/ThemeContext';
 import { formatEventDate, todayISO, addDaysISO } from '../../../../core/date';
 import { motion } from '../../../../core/theme';
 import * as api from '../../api';
+import { MODE_LABEL } from '../../mode';
 import { PickerSheet } from '../../components/PickerSheet';
 import { WeekStrip } from '../../components/WeekStrip';
-import { type Routine, type WorkoutSession } from '../../types';
+import { type FitnessMode, type Routine, type WorkoutSession } from '../../types';
 import { useFitnessHome } from '../../useFitness';
+import { useFitnessMode } from '../../useFitnessMode';
 import type { RootStackParamList } from '../../../../navigation/types';
 import { ErrorBanner, useHomeStyles } from './styles';
 
@@ -38,6 +40,7 @@ export function LogTab() {
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
   const { sessions, summary, loading, refreshing, error, refresh, reload } = useFitnessHome();
+  const { mode } = useFitnessMode();
   const [starting, setStarting] = useState(false);
   const [routineChoices, setRoutineChoices] = useState<Routine[] | null>(null);
   /** The day a pending 'choose a routine' will be logged against. */
@@ -58,14 +61,15 @@ export function LogTab() {
    * mid-session, which on a phone in a gym is not a remote possibility.
    */
   const startSession = useCallback(
-    async (routineId: string | null, date: string = todayISO()) => {
+    async (routineId: string | null, date: string = todayISO(), routineMode?: FitnessMode) => {
       setStarting(true);
       try {
         // startSession also lays out the routine's exercises as blocks and
         // snapshots the bodyweight, so the session opens ready to log.
         const session = await api.startSession({
           date,
-          mode: 'gym',
+          // A routine carries its own mode; a freestyle session takes the lens.
+          mode: routineMode ?? mode,
           routine_id: routineId,
         });
         navigation.navigate('WorkoutSession', { sessionId: session.id, routineId });
@@ -75,7 +79,7 @@ export function LogTab() {
         setStarting(false);
       }
     },
-    [navigation],
+    [navigation, mode],
   );
 
   /**
@@ -105,7 +109,8 @@ export function LogTab() {
     async (date: string) => {
       setPendingDate(date);
       try {
-        const routines = await api.listRoutines();
+        // This mode's routines; the other mode's are a switch away.
+        const routines = (await api.listRoutines()).filter((r) => r.mode === mode);
         if (routines.length === 0) {
           void startSession(null, date);
           return;
@@ -121,7 +126,7 @@ export function LogTab() {
         void startSession(null, date);
       }
     },
-    [startSession],
+    [startSession, mode],
   );
 
   /**
@@ -233,7 +238,13 @@ export function LogTab() {
             label: routine.name,
           })),
         ]}
-        onSelect={([id]) => void startSession(id === FREESTYLE ? null : id, pendingDate)}
+        onSelect={([id]) =>
+          void startSession(
+            id === FREESTYLE ? null : id,
+            pendingDate,
+            routineChoices?.find((r) => r.id === id)?.mode,
+          )
+        }
         onClose={() => setRoutineChoices(null)}
       />
 
@@ -267,12 +278,26 @@ export function LogTab() {
 function SessionRow({ session, onPress }: { session: WorkoutSession; onPress: () => void }) {
   const styles = useHomeStyles();
   const { colors } = useTheme();
+  // The mode is marked by icon and accent together, and spoken, never by
+  // colour alone.
+  const calisthenics = session.mode === 'calisthenics';
+  const accent = calisthenics ? colors.accentCyan : colors.accentRose;
 
   return (
     <GlassCard onPress={onPress} style={styles.row}>
-      <View style={styles.rowInner}>
-        <View style={[styles.rowIcon, { backgroundColor: colors.accentRose + '1F' }]}>
-          <Ionicons name="barbell-outline" size={17} color={colors.accentRose} />
+      <View
+        style={styles.rowInner}
+        accessible
+        accessibilityLabel={`${MODE_LABEL[session.mode]} workout, ${formatEventDate(session.date)}${
+          session.notes ? `. ${session.notes}` : ''
+        }`}
+      >
+        <View style={[styles.rowIcon, { backgroundColor: accent + '1F' }]}>
+          <Ionicons
+            name={calisthenics ? 'body-outline' : 'barbell-outline'}
+            size={17}
+            color={accent}
+          />
         </View>
         <View style={styles.rowBody}>
           <Text style={styles.rowTitle}>{formatEventDate(session.date)}</Text>

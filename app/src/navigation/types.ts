@@ -9,6 +9,7 @@
  * a missing param becomes a compile error instead of a blank screen at runtime.
  * Every new screen gets one line here.
  */
+import type { FitnessMode } from '../modules/fitness/types';
 export type RootStackParamList = {
   Home: undefined;
 
@@ -51,7 +52,8 @@ export type RootStackParamList = {
    * nothing.
    */
   WorkoutSession: { sessionId: string; routineId: string | null };
-  RoutineEdit: { routineId?: string };
+  /** `mode` only matters for a new routine: it decides which mode lists it. */
+  RoutineEdit: { routineId?: string; mode?: FitnessMode };
   /** `name` is passed so the header has a title before the query resolves. */
   ExerciseProgress: { exerciseId: string; name: string };
   /** The finish screen; also reachable from a finished session. */

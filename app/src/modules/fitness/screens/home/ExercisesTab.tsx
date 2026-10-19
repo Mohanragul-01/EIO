@@ -35,9 +35,12 @@ import {
   normaliseMuscle,
   regionOf,
   type MuscleRegion,
+  type LoadMode,
   type TrackingType,
 } from '../../types';
+import { defaultsForMode, visibleInMode } from '../../mode';
 import { usePlan } from '../../useFitness';
+import { useFitnessMode } from '../../useFitnessMode';
 import type { RootStackParamList } from '../../../../navigation/types';
 import { ErrorBanner, useHomeStyles } from './styles';
 
@@ -47,21 +50,21 @@ export function ExercisesTab() {
   const styles = useHomeStyles();
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
-  const {
-    exercises,
-    loading,
-    refreshing,
-    error,
-    clearError,
-    refresh,
-    reload,
-    addExercise,
-    removeExercise,
-  } = usePlan();
+  const plan = usePlan();
+  const { loading, refreshing, error, clearError, refresh, reload, addExercise, removeExercise } =
+    plan;
+  const { mode } = useFitnessMode();
+  // Only this mode's library ('both' shows in either).
+  const exercises = useMemo(
+    () => plan.exercises.filter((e) => visibleInMode(e, mode)),
+    [plan.exercises, mode],
+  );
 
   const [name, setName] = useState('');
-  const [muscle, setMuscle] = useState<string>('Mid chest');
+  const [muscle, setMuscle] = useState<string>('Chest');
   const [tracking, setTracking] = useState<TrackingType>('reps');
+  /** Weights or bodyweight. Starts at the mode's default each time the form opens. */
+  const [loadMode, setLoadMode] = useState<LoadMode>(defaultsForMode(mode).load_mode);
   const [adding, setAdding] = useState(false);
 
   /** Which region's exercises are showing. 'All' is its own first tab. */
@@ -119,7 +122,12 @@ export function ExercisesTab() {
 
   const handleAdd = async () => {
     if (!name.trim()) return;
-    const ok = await addExercise(name, muscle, tracking);
+    const ok = await addExercise(name, muscle, tracking, {
+      load_mode: loadMode,
+      // Bodyweight movements belong to both days; a lift belongs to the mode
+      // it was made in.
+      discipline: loadMode === 'bodyweight' ? 'both' : defaultsForMode(mode).discipline,
+    });
     if (ok) {
       setName('');
       setAdding(false);
@@ -174,6 +182,19 @@ export function ExercisesTab() {
                   : 'Sets are logged as weight and reps.'}
               </Text>
 
+              <Text style={[styles.label, styles.addLabel]}>Load</Text>
+              <SegmentedControl
+                options={['external', 'bodyweight'] as const}
+                value={loadMode}
+                onChange={setLoadMode}
+                renderLabel={(m) => (m === 'external' ? 'Weights' : 'Bodyweight')}
+              />
+              <Text style={styles.hint}>
+                {loadMode === 'bodyweight'
+                  ? 'Your body is the load: sets record added weight or assistance, and it shows in both modes.'
+                  : 'A barbell, dumbbell or machine is the load.'}
+              </Text>
+
               <Text style={[styles.label, styles.addLabel]}>Muscle</Text>
               <ScrollView
                 horizontal
@@ -214,7 +235,10 @@ export function ExercisesTab() {
               label="Add an exercise"
               icon="add"
               variant="glass"
-              onPress={() => setAdding(true)}
+              onPress={() => {
+                setLoadMode(defaultsForMode(mode).load_mode);
+                setAdding(true);
+              }}
               style={styles.addCard}
             />
           )}

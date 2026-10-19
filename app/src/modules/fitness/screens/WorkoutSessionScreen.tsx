@@ -42,6 +42,7 @@ import { ExerciseBlock } from '../components/ExerciseBlock';
 import { PickerSheet } from '../components/PickerSheet';
 import { REST_BAR_HEIGHT, RestBar } from '../components/RestBar';
 import { BlockMenu, LoadSheet, RestSheet, SetTypeSheet } from '../components/SessionSheets';
+import { visibleInMode } from '../mode';
 import { primaryRecord } from '../records';
 import { adjustRest, startRest, type RestState } from '../restTimer';
 import { formatDuration, normaliseMuscle, type SetType } from '../types';
@@ -317,16 +318,20 @@ export function WorkoutSessionScreen() {
       <PickerSheet
         visible={picking}
         title="Add an exercise"
-        items={w.exercises.map((exercise) => {
-          const added = w.blocks.some((b) => b.exerciseId === exercise.id);
-          return {
-            id: exercise.id,
-            label: exercise.name,
-            group: normaliseMuscle(exercise.muscle_group),
-            disabled: added,
-            note: added ? 'Already added' : undefined,
-          };
-        })}
+        // The session's mode lists its own library ('both' shows in either),
+        // so a calisthenics day is not a scroll past every machine.
+        items={w.exercises
+          .filter((e) => !w.session || visibleInMode(e, w.session.mode))
+          .map((exercise) => {
+            const added = w.blocks.some((b) => b.exerciseId === exercise.id);
+            return {
+              id: exercise.id,
+              label: exercise.name,
+              group: normaliseMuscle(exercise.muscle_group),
+              disabled: added,
+              note: added ? 'Already added' : undefined,
+            };
+          })}
         emptyText="No exercises yet. Add some in the Exercises tab."
         onSelect={(ids) => ids.forEach((id) => void w.addExercise(id))}
         onClose={() => setPicking(false)}
