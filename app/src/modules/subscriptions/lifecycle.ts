@@ -179,3 +179,31 @@ export function countdown(sub: Lifecycle, today: string): { text: string; tone: 
     }
   }
 }
+
+/** The furthest ahead a renewal reminder can fire (OFFSET_CHOICES' largest). */
+const REMINDER_WINDOW_DAYS = 14;
+
+/**
+ * Whether a notification's button still makes sense today.
+ *
+ * Notifications already in the tray outlive the state they were sent for:
+ * pay from the same-day reminder and the 1-day one is still there; tap its
+ * Mark paid and, without this, the NEXT cycle would be paid too. A trial's
+ * Keep on a subscription already kept would move its due date backwards. So
+ * Mark paid applies only to a subscription that charges and is due within
+ * the reminder window (overdue included), and the trial buttons only to a
+ * trial.
+ */
+export function notificationActionApplies(
+  action: 'pay' | 'keep' | 'cancelled',
+  sub: Lifecycle,
+  today: string,
+): boolean {
+  if (action === 'pay') {
+    return (
+      effectiveState(sub, today) === 'active' &&
+      daysBetween(today, sub.next_due_date) <= REMINDER_WINDOW_DAYS
+    );
+  }
+  return sub.status === 'trial';
+}

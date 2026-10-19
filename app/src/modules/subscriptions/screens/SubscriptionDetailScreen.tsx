@@ -18,7 +18,7 @@ import React, { useCallback, useLayoutEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { categoryDef } from '../../../core/categories';
-import { Button, FadeInView, GlassCard, Screen } from '../../../core/components';
+import { Button, FadeInView, GlassCard, Screen, useToast } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { formatEventDate, todayISO } from '../../../core/date';
 import { formatMoney } from '../../../core/money';
@@ -34,6 +34,7 @@ import {
   countdown,
   effectiveState,
   needsTrialDecision,
+  notificationActionApplies,
   projectsCharges,
   trialEndsOn,
   type Tone,
@@ -55,6 +56,7 @@ export function SubscriptionDetailScreen() {
   const today = todayISO();
   const d = useSubscription(id);
   const sub = d.subscription;
+  const toast = useToast();
 
   const actions = useSubscriptionActions({
     today,
@@ -82,11 +84,21 @@ export function SubscriptionDetailScreen() {
    * render, React's pattern for adjusting state to new props, rather than in
    * an effect: it only opens a sheet, which is this screen's own state.
    */
-  const actionKey = action && sub ? `${sub.id}:${action}:${route.key}` : null;
+  // Only for the subscription the reminder was about, and only while its
+  // button still makes sense (see notificationActionApplies): an old reminder
+  // must not pay the next cycle or undo a decision already made.
+  const actionKey =
+    action && sub && sub.id === id ? `${sub.id}:${action}:${route.params.at ?? route.key}` : null;
   const [handled, setHandled] = useState<string | null>(null);
   if (actionKey && handled !== actionKey && sub) {
     setHandled(actionKey);
-    actions.run(action === 'pay' ? 'pay' : 'keep', sub);
+    if (notificationActionApplies(action!, sub, today)) {
+      actions.run(action === 'pay' ? 'pay' : 'keep', sub);
+    } else {
+      toast.show({
+        message: action === 'pay' ? 'Already paid for this cycle' : 'Already decided',
+      });
+    }
   }
 
   // openMenu is a state setter, so this does not re-run on every render.

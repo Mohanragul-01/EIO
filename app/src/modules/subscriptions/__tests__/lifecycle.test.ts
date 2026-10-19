@@ -14,6 +14,7 @@ import {
   isActiveFlag,
   needsTrialDecision,
   projectsCharges,
+  notificationActionApplies,
 } from '../lifecycle';
 import type { Subscription } from '../types';
 
@@ -217,5 +218,41 @@ describe('needsTrialDecision', () => {
       true,
     );
     expect(needsTrialDecision(sub(), TODAY)).toBe(false);
+  });
+});
+
+describe('notificationActionApplies', () => {
+  const base = { trial_ends_on: null, ends_on: null, resume_on: null };
+
+  it('Mark paid applies to an active subscription due within the reminder window', () => {
+    expect(
+      notificationActionApplies('pay', { ...base, status: 'active', next_due_date: '2026-10-21' }, '2026-10-19'),
+    ).toBe(true);
+    // Overdue still counts: it has not been paid.
+    expect(
+      notificationActionApplies('pay', { ...base, status: 'active', next_due_date: '2026-10-10' }, '2026-10-19'),
+    ).toBe(true);
+  });
+
+  it('Mark paid on an old reminder after the cycle was paid does nothing', () => {
+    // Paid from the same-day reminder: the due date has moved a month on.
+    expect(
+      notificationActionApplies('pay', { ...base, status: 'active', next_due_date: '2026-11-19' }, '2026-10-19'),
+    ).toBe(false);
+  });
+
+  it('Mark paid does nothing for a cancelled, archived or trial subscription', () => {
+    for (const status of ['cancelled', 'archived', 'trial'] as const) {
+      expect(
+        notificationActionApplies('pay', { ...base, status, next_due_date: '2026-10-20' }, '2026-10-19'),
+      ).toBe(false);
+    }
+  });
+
+  it('the trial buttons apply only while it is still a trial', () => {
+    const trial = { ...base, status: 'trial' as const, next_due_date: '2026-10-20', trial_ends_on: '2026-10-20' };
+    expect(notificationActionApplies('keep', trial, '2026-10-19')).toBe(true);
+    expect(notificationActionApplies('cancelled', trial, '2026-10-19')).toBe(true);
+    expect(notificationActionApplies('keep', { ...trial, status: 'active' }, '2026-10-19')).toBe(false);
   });
 });

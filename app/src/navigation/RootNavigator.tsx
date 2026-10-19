@@ -202,7 +202,15 @@ export function RootNavigator() {
         <Stack.Screen name="SubscriptionEdit" component={SubscriptionEditScreen} />
         {/* Titles set by the screens: the subscription's name, and the
             catalogue's own. */}
-        <Stack.Screen name="SubscriptionDetail" component={SubscriptionDetailScreen} />
+        <Stack.Screen
+          name="SubscriptionDetail"
+          component={SubscriptionDetailScreen}
+          // One route per subscription: a reminder for another subscription
+          // must open its own screen, not swap the params of the one on top
+          // (which kept showing the old subscription for a render, and ran
+          // the reminder's action against it).
+          getId={({ params }) => params.id}
+        />
         <Stack.Screen name="SubscriptionCatalogue" component={SubscriptionCatalogueScreen} />
         <Stack.Screen
           name="FitnessList"

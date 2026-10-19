@@ -61,7 +61,8 @@ export type RootStackParamList = {
    * One subscription. `action` arrives from a notification: 'pay' opens Mark
    * paid, 'keep' and 'cancelled' answer a trial that is ending.
    */
-  SubscriptionDetail: { id: string; action?: 'pay' | 'keep' | 'cancelled' };
+  /** `at` makes each notification tap distinct, so a second tap acts again. */
+  SubscriptionDetail: { id: string; action?: 'pay' | 'keep' | 'cancelled'; at?: string };
   /** Quick-add: search the catalogue, or add your own. */
   SubscriptionCatalogue: undefined;
   FitnessList: undefined;

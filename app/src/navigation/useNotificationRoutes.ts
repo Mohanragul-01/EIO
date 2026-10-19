@@ -28,10 +28,12 @@ export function useNotificationRoutes(
       if (!names.includes(target.route as keyof RootStackParamList)) return;
       // The one untyped boundary: the route came from a notification's data.
       // It is checked against the navigator's own route names just above.
-      (navigationRef.navigate as (route: string, params?: object) => void)(
-        target.route,
-        target.params,
-      );
+      // `at` makes every tap a new arrival, so the same button pressed twice
+      // is handled twice rather than ignored as already seen.
+      (navigationRef.navigate as (route: string, params?: object) => void)(target.route, {
+        ...target.params,
+        at: String(Date.now()),
+      });
     });
   }, [navigationRef, enabled]);
 }
