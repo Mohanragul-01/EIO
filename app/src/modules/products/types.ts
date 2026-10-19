@@ -17,10 +17,25 @@ export type Product = {
   per_use: number | null;
   /** Paise, like every other amount of money in this app. */
   price_minor: number | null;
-  opened_on: string;
+  /**
+   * Null for a SPARE: bought, not opened yet. Its clock - the measured rate,
+   * the period after opening - has not started.
+   */
+  opened_on: string | null;
   /** Set when it runs out. A finished product is kept, not deleted. */
   finished_on: string | null;
   note: string;
+  /**
+   * The container this one replaced, when it was started from "Start a new
+   * one" or "Add a spare". Its lifespan is this one's first estimate.
+   */
+  previous_id: string | null;
+  /** The printed expiry date. */
+  expires_on: string | null;
+  /** Period after opening, in months: the open-jar "12M" on the pack. */
+  pao_months: number | null;
+  /** Days before it runs out to reorder. Null means DEFAULT_LEAD_DAYS. */
+  reorder_lead_days: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -32,9 +47,27 @@ export type ProductInput = {
   total_quantity: number;
   per_use: number | null;
   price_minor: number | null;
-  opened_on: string;
+  opened_on: string | null;
   note: string;
+  expires_on: string | null;
+  pao_months: number | null;
+  reorder_lead_days: number | null;
+  /** Only set when starting a container from another one. */
+  previous_id?: string | null;
 };
+
+/**
+ * Days before running out at which "Reorder now" begins, when a product does
+ * not say. A week is the point at which ordering today still arrives in time.
+ */
+export const DEFAULT_LEAD_DAYS = 7;
+
+/** "Running low" begins this many days before "Reorder now". */
+export const LOW_BUFFER_DAYS = 14;
+
+export function leadDaysOf(product: Pick<Product, 'reorder_lead_days'>): number {
+  return product.reorder_lead_days ?? DEFAULT_LEAD_DAYS;
+}
 
 export type ProductUse = {
   id: string;
@@ -82,12 +115,15 @@ export type Projection = {
   emptyOn: string | null;
   /** Paise per day, for the things worth knowing that about. */
   costPerDay: number | null;
-  /** How many days it has been open. Always at least 1. */
+  /**
+   * How many days it has been open, counting the opening day, up to today or
+   * to the day it was finished. At least 1 once opened; 0 for a spare.
+   */
   daysOpen: number;
 };
 
 /** Whole days between two calendar dates, ignoring time and timezone. */
-function daysBetween(fromISO: string, toISO: string): number {
+export function daysBetween(fromISO: string, toISO: string): number {
   const [fy, fm, fd] = fromISO.split('-').map(Number);
   const [ty, tm, td] = toISO.split('-').map(Number);
   // Local dates, so a timezone cannot shift the answer by a day.
@@ -96,7 +132,8 @@ function daysBetween(fromISO: string, toISO: string): number {
   return Math.round((to.getTime() - from.getTime()) / 86400000);
 }
 
-function addDays(iso: string, days: number): string {
+/** A calendar date moved by whole days, built from (y, m, d) so DST cannot shift it. */
+export function addDays(iso: string, days: number): string {
   const [y, m, d] = iso.split('-').map(Number);
   const date = new Date(y, m - 1, d);
   date.setDate(date.getDate() + days);
@@ -134,15 +171,39 @@ export function project(
       ? 0
       : Math.min(100, Math.round((used / product.total_quantity) * 100));
 
+  // A spare has not started emptying, so there is nothing to measure yet.
+  if (!product.opened_on) {
+    return {
+      used,
+      remaining,
+      percentUsed,
+      dailyRate: null,
+      daysLeft: null,
+      emptyOn: null,
+      costPerDay: null,
+      daysOpen: 0,
+    };
+  }
+
+  // A finished container's life ended when it was finished. Counting to today
+  // instead made "Lasted 10 days" grow every day the card was looked at, and
+  // diluted its measured rate with days it was not even in use.
+  const end = product.finished_on ?? today;
+
   // At least 1, so a product opened today never divides by zero.
-  const daysOpen = Math.max(1, daysBetween(product.opened_on, today) + 1);
+  const daysOpen = Math.max(1, daysBetween(product.opened_on, end) + 1);
 
   // Two days of history before predicting anything, and something actually
   // used - a rate of zero would project an infinite lifespan.
-  const canProject = daysOpen >= 2 && used > 0 && remaining > 0;
-  const dailyRate = canProject ? used / daysOpen : null;
+  const dailyRate = daysOpen >= 2 && used > 0 ? used / daysOpen : null;
 
-  const daysLeft = dailyRate === null ? null : Math.floor(remaining / dailyRate);
+  // Days left only for something still in use with something left in it. A
+  // finished container keeps its rate - it is what it actually used a day -
+  // but it has no future to project.
+  const daysLeft =
+    dailyRate !== null && remaining > 0 && !product.finished_on
+      ? Math.floor(remaining / dailyRate)
+      : null;
   const emptyOn = daysLeft === null ? null : addDays(today, daysLeft);
 
   const costPerDay =
@@ -157,22 +218,31 @@ export function project(
  * How urgently this needs replacing.
  *
  * Thresholds rather than a raw number, because "7 days left" only means
- * something once you know how long delivery takes. A week is the point at
- * which ordering today still arrives in time.
+ * something once you know how long delivery takes - which is what the
+ * product's lead time says. "Reorder now" starts at the lead time, "Running
+ * low" two weeks before that. At the default week that is 7 and 21 days,
+ * exactly the bands v2 always had.
  */
-export type Urgency = 'finished' | 'critical' | 'soon' | 'ok' | 'unknown';
+export type Urgency = 'finished' | 'unopened' | 'critical' | 'soon' | 'ok' | 'unknown';
 
-export function urgencyOf(product: Product, projection: Projection): Urgency {
+export function urgencyOf(
+  product: Pick<Product, 'finished_on' | 'opened_on' | 'reorder_lead_days'>,
+  projection: Pick<Projection, 'remaining' | 'daysLeft'>,
+): Urgency {
   if (product.finished_on) return 'finished';
+  if (!product.opened_on) return 'unopened';
   if (projection.remaining <= 0) return 'critical';
   if (projection.daysLeft === null) return 'unknown';
-  if (projection.daysLeft <= 7) return 'critical';
-  if (projection.daysLeft <= 21) return 'soon';
+
+  const lead = leadDaysOf(product);
+  if (projection.daysLeft <= lead) return 'critical';
+  if (projection.daysLeft <= lead + LOW_BUFFER_DAYS) return 'soon';
   return 'ok';
 }
 
 export const URGENCY_LABEL: Record<Urgency, string> = {
   finished: 'Finished',
+  unopened: 'Not opened',
   critical: 'Reorder now',
   soon: 'Running low',
   ok: 'Plenty left',
@@ -249,6 +319,20 @@ export function formatDaysLeft(days: number | null): string {
 
   const months = Math.round(days / 30);
   return `about ${months} month${months === 1 ? '' : 's'}`;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * "3 Nov", or "3 Jan 2027" when the year is not today's. Day first, with
+ * fixed month names rather than the phone's locale, because it is also baked
+ * into notification text at scheduling time and must read the same on every
+ * device - and in the tests.
+ */
+export function formatDayMonth(iso: string, today?: string): string {
+  const [year, month, day] = iso.split('-').map(Number);
+  const base = `${day} ${MONTHS[month - 1]}`;
+  return today && today.slice(0, 4) !== iso.slice(0, 4) ? `${base} ${year}` : base;
 }
 
 /**

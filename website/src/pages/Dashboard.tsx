@@ -21,7 +21,7 @@ import * as financeApi from '@app/modules/finance/api';
 import * as fitnessApi from '@app/modules/fitness/api';
 import * as notesApi from '@app/modules/notes/api';
 import * as productsApi from '@app/modules/products/api';
-import { project, urgencyOf } from '@app/modules/products/types';
+import { buildOutlooks, reorderSummary } from '@app/modules/products/outlook';
 import * as subsApi from '@app/modules/subscriptions/api';
 import { toMonthlyMinor } from '@app/modules/subscriptions/types';
 import * as todoApi from '@app/modules/todo/api';
@@ -123,34 +123,19 @@ async function productsSummary() {
     productsApi.listAllUses(),
   ]);
 
-  const open = products.filter((p) => !p.finished_on);
-  if (open.length === 0) return { text: 'Nothing tracked', tone: 'neutral' as const };
+  // The same outlook the Products page and the phone tile use, so "to
+  // reorder" means one thing everywhere: Reorder now with no spare waiting.
+  // (This tile used to count Running low too, and disagreed with the page.)
+  const { toReorder, runningLow, inUse } = reorderSummary(buildOutlooks(products, uses, todayISO()));
+  if (inUse === 0) return { text: 'Nothing tracked', tone: 'neutral' as const };
 
-  // Unlike the phone tile, the desktop one can afford the usage history: it is
-  // one board on a wide screen rather than one of eight cards over mobile data,
-  // and "3 to reorder" is worth far more than "7 in use".
-  const byProduct = new Map<string, typeof uses>();
-  uses.forEach((use) => {
-    const bucket = byProduct.get(use.product_id);
-    if (bucket) bucket.push(use);
-    else byProduct.set(use.product_id, [use]);
-  });
-
-  const today = todayISO();
-  const urgent = open.filter((product) => {
-    const projection = project(product, byProduct.get(product.id) ?? [], today);
-    const urgency = urgencyOf(product, projection);
-    return urgency === 'critical' || urgency === 'soon';
-  }).length;
-
-  if (urgent > 0) {
-    return {
-      text: `${urgent} to reorder`,
-      sub: `${open.length} in use`,
-      tone: 'warn' as const,
-    };
+  if (toReorder > 0) {
+    return { text: `${toReorder} to reorder`, sub: `${inUse} in use`, tone: 'warn' as const };
   }
-  return { text: `${open.length} in use`, sub: 'all stocked up', tone: 'ok' as const };
+  if (runningLow > 0) {
+    return { text: `${inUse} in use`, sub: `${runningLow} running low`, tone: 'ok' as const };
+  }
+  return { text: `${inUse} in use`, sub: 'all stocked up', tone: 'ok' as const };
 }
 
 const TONE_COLOR = {

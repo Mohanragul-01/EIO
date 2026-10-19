@@ -2,20 +2,27 @@
  * ProductsListScreen - what you use daily, and what needs reordering.
  *
  * Sorted by urgency rather than by name, because the only reason to open this
- * is to find out what is about to run out. Alphabetical order treats "three
- * days left" and "four months left" as equally interesting.
+ * is to find out what is about to run out (or go off). Alphabetical order
+ * treats "three days left" and "four months left" as equally interesting.
  *
- * The primary action on every row is "log a use", which is the thing you do
- * every day - so it is a button on the row rather than something behind a tap
- * into a detail screen. It logs for TODAY. Tapping the card itself opens the
- * detail screen, which is where history lives and where a forgotten day can
- * be logged: everything that is not today goes one level down.
+ * THE DAILY ACT IS ONE TAP. "Log use" on a card logs today's usual amount,
+ * and the toast that follows names the day - "Logged 5 g · Today" - with an
+ * Undo. Holding it asks WHEN: Today, Yesterday, or a day from a calendar,
+ * with the amount pre-filled. Things you use every day sit at the top as the
+ * Today checklist, so a morning of five supplements is five taps on one card,
+ * or one "Log all".
+ *
+ * A finished container lives on under Finished, stacked with its repeat
+ * purchases ("Whey ×3"), because how long each one lasted is the estimate for
+ * the next. Finishing itself is one level down, on the product's page, where
+ * its day can be chosen - it used to be the long-press here, a destructive
+ * gesture sharing a button with the most frequent one.
  */
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, Text, View } from 'react-native';
 
 import {
   Button,
@@ -25,35 +32,42 @@ import {
   GlassCard,
   Screen,
   SegmentedControl,
+  useToast,
 } from '../../../core/components';
-import { makeStyles, useTheme } from '../../../core/ThemeContext';
-import { formatEventDate, todayISO } from '../../../core/date';
+import { formatEventDate } from '../../../core/date';
+import { success, tap } from '../../../core/haptics';
 import { formatMoney } from '../../../core/money';
-import { radius, spacing } from '../../../core/theme';
+import { makeStyles, useTheme } from '../../../core/ThemeContext';
+import { layout, radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
-import * as api from '../api';
+import { todayChecklist, type ChecklistRow } from '../checklist';
 import {
-  CATEGORY_LABEL,
-  URGENCY_LABEL,
-  formatDaysLeft,
-  formatQuantity,
-  project,
-  urgencyOf,
-  type Product,
-  type ProductUse,
-  type Urgency,
-} from '../types';
+  LIFECYCLE_LABEL,
+  estimateLabel,
+  finishedGroups,
+  lifespanDays,
+  type Lifecycle,
+} from '../containers';
+import {
+  chipsFor,
+  loggedAllMessage,
+  loggedMessage,
+  removedMessage,
+  remainingFraction,
+  reorderMarker,
+  reorderSummary,
+  type Outlook,
+} from '../outlook';
+import { CATEGORY_LABEL, formatDaysLeft, formatQuantity, type Product, type Urgency } from '../types';
+import { conflictMessage } from '../useBy';
+import { useProducts } from '../useProducts';
+import { StatusChips, SupplyBar, toneOf } from '../components/StatusChips';
+import { TodayChecklist } from '../components/TodayChecklist';
+import { UseSheet, type UseDraft } from '../components/UseSheet';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'ProductsList'>;
 
-type ProductState = 'open' | 'finished' | 'all';
-
-const STATES: ProductState[] = ['open', 'finished', 'all'];
-const STATE_LABEL: Record<ProductState, string> = {
-  open: 'In use',
-  finished: 'Finished',
-  all: 'All',
-};
+const LIFECYCLES: Lifecycle[] = ['unopened', 'in_use', 'finished'];
 
 /** What needs acting on, first. */
 const RANK: Record<Urgency, number> = {
@@ -61,36 +75,42 @@ const RANK: Record<Urgency, number> = {
   soon: 1,
   unknown: 2,
   ok: 3,
-  finished: 4,
+  unopened: 4,
+  finished: 5,
 };
+
+function rankOf(outlook: Outlook): number {
+  // Expired leads whatever is left in it; a container with a spare waiting
+  // has nothing to order, so it sorts with the ones that are fine.
+  if (outlook.useByState === 'expired') return -1;
+  if (outlook.spare && (outlook.urgency === 'critical' || outlook.urgency === 'soon')) return RANK.ok;
+  return RANK[outlook.urgency];
+}
+
+/** "12 days", or "~42 days" when it is the previous container's estimate. */
+function headlineOf(outlook: Outlook): string {
+  if (outlook.lifecycle === 'finished') return 'Finished';
+  if (outlook.lifecycle === 'unopened') return 'Spare';
+  if (outlook.projection.daysLeft !== null) return formatDaysLeft(outlook.projection.daysLeft);
+  if (outlook.estimate) return `~${formatDaysLeft(outlook.estimate.daysLeft)}`;
+  if (outlook.projection.remaining <= 0) return 'Empty';
+  return 'New';
+}
 
 export function ProductsListScreen() {
   const styles = useStyles();
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
+  const toast = useToast();
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [uses, setUses] = useState<ProductUse[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [state, setState] = useState<ProductState>('open');
+  const { products, uses, outlooks, today, loading, refreshing, error, load, logUse, logMany, removeUses } =
+    useProducts();
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
-    setError(null);
-    try {
-      const [p, u] = await Promise.all([api.listProducts(), api.listAllUses()]);
-      setProducts(p);
-      setUses(u);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load your products');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const [chosenLifecycle, setLifecycle] = useState<Lifecycle>('in_use');
+  const [busy, setBusy] = useState<Set<string>>(new Set());
+  const [loggingAll, setLoggingAll] = useState(false);
+  const [sheetFor, setSheetFor] = useState<Product | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -98,99 +118,127 @@ export function ProductsListScreen() {
     }, [load]),
   );
 
-  const today = todayISO();
+  const summary = useMemo(() => reorderSummary(outlooks), [outlooks]);
+  const checklist = useMemo(() => todayChecklist(products, uses, today), [products, uses, today]);
+  const groups = useMemo(() => finishedGroups(products), [products]);
 
-  const rows = useMemo(() => {
-    const byProduct = new Map<string, ProductUse[]>();
-    uses.forEach((use) => {
-      (byProduct.get(use.product_id) ?? byProduct.set(use.product_id, []).get(use.product_id)!).push(
-        use,
-      );
+  const counts = useMemo(() => {
+    const result: Record<Lifecycle, number> = { unopened: 0, in_use: 0, finished: 0 };
+    outlooks.forEach((o) => {
+      result[o.lifecycle] += 1;
     });
-
-    return products
-      .map((product) => {
-        const projection = project(product, byProduct.get(product.id) ?? [], today);
-        return { product, projection, urgency: urgencyOf(product, projection) };
-      })
-      .sort(
-        (a, b) =>
-          RANK[a.urgency] - RANK[b.urgency] ||
-          (a.projection.daysLeft ?? 9999) - (b.projection.daysLeft ?? 9999) ||
-          a.product.name.localeCompare(b.product.name),
-      );
-  }, [products, uses, today]);
-
-  const needsReorder = rows.filter(
-    (r) => !r.product.finished_on && (r.urgency === 'critical' || r.urgency === 'soon'),
-  ).length;
-
-  const finishedCount = rows.filter((r) => r.product.finished_on).length;
+    return result;
+  }, [outlooks]);
 
   /**
-   * Finished containers are kept, not deleted - they are the record of how long
-   * one actually lasted. But they accumulate forever, and a list of things you
-   * have already used up is not what you open this screen to read, so the
-   * default hides them. The website has had this filter since it was built.
+   * The filter only shows while there are spares or finished containers. If
+   * the last one goes (a spare opened on its page, say) while its tab is
+   * chosen, the control disappears - so the list falls back to In use rather
+   * than leaving you on an empty tab with no way off it.
    */
+  const showLifecycles = counts.unopened > 0 || counts.finished > 0;
+  const lifecycle: Lifecycle = showLifecycles ? chosenLifecycle : 'in_use';
+
   const visible = useMemo(
     () =>
-      rows.filter(({ product }) => {
-        if (state === 'open') return !product.finished_on;
-        if (state === 'finished') return !!product.finished_on;
-        return true;
-      }),
-    [rows, state],
+      outlooks
+        .filter((o) => o.lifecycle === lifecycle)
+        .sort(
+          (a, b) =>
+            rankOf(a) - rankOf(b) ||
+            (a.projection.daysLeft ?? a.estimate?.daysLeft ?? 9999) -
+              (b.projection.daysLeft ?? b.estimate?.daysLeft ?? 9999) ||
+            a.product.name.localeCompare(b.product.name),
+        ),
+    [outlooks, lifecycle],
   );
 
-  const colorFor = (urgency: Urgency) =>
-    urgency === 'critical'
-      ? colors.danger
-      : urgency === 'soon'
-        ? colors.warning
-        : urgency === 'ok'
-          ? colors.success
-          : colors.textMuted;
+  const setRowBusy = useCallback((id: string, on: boolean) => {
+    setBusy((current) => {
+      const next = new Set(current);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
 
   /**
-   * Mark a container as used up.
-   *
-   * Errors surface rather than being dropped: the old version fired the write
-   * and reloaded off the back of it with no catch, so a failed write looked
-   * exactly like a successful one until the next refresh contradicted it.
+   * Log, then offer to take it back - naming the day it landed on. `onSaved`
+   * runs between the two, which is where a sheet closes: a toast raised while
+   * a sheet is still open sits under it, Undo and all.
    */
-  const markFinished = useCallback(
-    async (product: Product) => {
-      setBusyId(product.id);
-      setError(null);
-      try {
-        await api.setFinished(product.id, true);
-        await load();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : `Could not finish ${product.name}`);
-      } finally {
-        setBusyId(null);
-      }
+  const logAndOffer = useCallback(
+    async (product: Product, draft: UseDraft, name?: string, onSaved?: () => void) => {
+      const saved = await logUse(product.id, draft.quantity, draft.usedOn, draft.note);
+      if (!saved) return false;
+      onSaved?.();
+      tap();
+      toast.show({
+        message: loggedMessage({ quantity: saved.quantity, unit: product.unit, usedOn: saved.used_on, name }),
+        actionLabel: 'Undo',
+        onAction: () => void removeUses([saved]),
+      });
+      return true;
     },
-    [load],
+    [logUse, removeUses, toast],
   );
 
-  const logUse = useCallback(
-    async (product: Product) => {
-      setBusyId(product.id);
-      try {
-        // Falls back to 1 when the amount was never measured: recording THAT
-        // you used it is what the rate is built from.
-        await api.logUse(product.id, product.per_use ?? 1);
-        await load();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Could not log that');
-      } finally {
-        setBusyId(null);
+  const quickLog = (product: Product) =>
+    void logAndOffer(
+      product,
+      { quantity: product.per_use ?? 1, usedOn: today, note: '' },
+      product.name,
+    );
+
+  const toggleChecklist = async (row: ChecklistRow) => {
+    const id = row.product.id;
+    setRowBusy(id, true);
+    try {
+      if (!row.done) {
+        await logAndOffer(row.product, { quantity: row.amount, usedOn: today, note: '' }, row.product.name);
+        return;
       }
-    },
-    [load],
-  );
+      // Tapping a ticked row takes back the most recent use today - the one
+      // the tick most likely made.
+      const latest = row.todayUses[0];
+      if (!latest || latest.id.startsWith('pending-')) return;
+      if (!(await removeUses([latest]))) return;
+      tap();
+      toast.show({
+        message: removedMessage({ quantity: latest.quantity, unit: row.product.unit, usedOn: latest.used_on, name: row.product.name }),
+        actionLabel: 'Undo',
+        onAction: () => void logUse(latest.product_id, latest.quantity, latest.used_on, latest.note),
+      });
+    } finally {
+      setRowBusy(id, false);
+    }
+  };
+
+  const logAll = async () => {
+    const open = checklist.filter((row) => !row.done);
+    if (open.length === 0) return;
+    setLoggingAll(true);
+    try {
+      const saved = await logMany(
+        open.map((row) => ({ productId: row.product.id, quantity: row.amount })),
+        today,
+      );
+      if (!saved) return;
+      success();
+      toast.show({
+        message: loggedAllMessage(saved.length),
+        actionLabel: 'Undo',
+        onAction: () => void removeUses(saved),
+      });
+    } finally {
+      setLoggingAll(false);
+    }
+  };
+
+  const loggedDays = useMemo(() => {
+    if (!sheetFor) return new Set<string>();
+    return new Set(uses.filter((u) => u.product_id === sheetFor.id).map((u) => u.used_on));
+  }, [uses, sheetFor]);
 
   if (loading) {
     return (
@@ -216,7 +264,7 @@ export function ProductsListScreen() {
           />
         }
       >
-        {rows.length === 0 ? (
+        {products.length === 0 ? (
           <EmptyState
             icon="cube-outline"
             accent={colors.accentCyan}
@@ -234,149 +282,162 @@ export function ProductsListScreen() {
           <>
             <FadeInView>
               <GlassCard style={styles.summary}>
-                <Text style={styles.summaryBig}>
-                  {needsReorder > 0 ? needsReorder : 'All'}
+                <Text style={[styles.summaryBig, summary.toReorder > 0 && { color: colors.danger }]}>
+                  {summary.toReorder > 0 ? summary.toReorder : 'All'}
                 </Text>
                 <Text style={styles.summaryLabel}>
-                  {needsReorder > 0
-                    ? `to reorder within three weeks`
-                    : 'stocked up for now'}
+                  {summary.toReorder > 0 ? 'to reorder now' : 'stocked up for now'}
                 </Text>
-                {/*
-                  Marking something finished used to live only on a long press
-                  of Log use, with nothing on screen to suggest it existed. A
-                  gesture nobody can see is a feature nobody has.
-                */}
+                {summary.runningLow > 0 || summary.spares > 0 ? (
+                  <Text style={styles.summarySub}>
+                    {[
+                      summary.runningLow > 0 ? `${summary.runningLow} running low` : null,
+                      summary.spares > 0
+                        ? `${summary.spares} ${summary.spares === 1 ? 'spare' : 'spares'} on the shelf`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Text>
+                ) : null}
                 <Text style={styles.summaryHint}>
-                  Tap a card for its history and past days · hold Log use when one runs out
+                  Tap a card for its history · hold Log use to pick the day
                 </Text>
               </GlassCard>
             </FadeInView>
 
             {/*
-              Only worth a control once something has actually been finished.
-              Before that every option says the same thing, and a segmented
-              control with one real answer is furniture.
+              Only once there is more than one kind to filter between. Before
+              that every option says the same thing, and a segmented control
+              with one real answer is furniture.
             */}
-            {finishedCount > 0 ? (
+            {showLifecycles ? (
               <SegmentedControl
-                options={STATES}
-                value={state}
-                onChange={setState}
-                renderLabel={(o) => STATE_LABEL[o]}
+                options={LIFECYCLES}
+                value={lifecycle}
+                onChange={setLifecycle}
+                renderLabel={(o) =>
+                  counts[o] > 0 ? `${LIFECYCLE_LABEL[o]} ${counts[o]}` : LIFECYCLE_LABEL[o]
+                }
                 style={styles.states}
               />
             ) : null}
 
-            {visible.length === 0 ? (
-              <Text style={styles.noneHere}>
-                {state === 'finished'
-                  ? 'Nothing finished yet.'
-                  : 'Nothing in use — everything here is finished.'}
-              </Text>
+            {lifecycle === 'in_use' && checklist.length > 0 ? (
+              <FadeInView delay={40}>
+                <TodayChecklist
+                  rows={checklist}
+                  busy={busy}
+                  onToggle={(row) => void toggleChecklist(row)}
+                  onLogAll={() => void logAll()}
+                  loggingAll={loggingAll}
+                />
+              </FadeInView>
             ) : null}
 
-            {visible.map(({ product, projection, urgency }, index) => (
-              <FadeInView key={product.id} delay={Math.min(index, 6) * 40}>
-                <GlassCard
-                  style={styles.card}
-                  onPress={() =>
-                    navigation.navigate('ProductDetail', { productId: product.id })
-                  }
-                >
-                  <View style={styles.cardHead}>
-                    <View style={[styles.dot, { backgroundColor: colorFor(urgency) }]} />
-                    {/* Truncated: the days-left label to its right is the
-                        thing you scan for, and a long product name would push
-                        it out of line. */}
-                    <Text style={styles.name} numberOfLines={1}>
-                      {product.name}
-                    </Text>
-                    <Text style={[styles.days, { color: colorFor(urgency) }]}>
-                      {product.finished_on
-                        ? URGENCY_LABEL.finished
-                        : formatDaysLeft(projection.daysLeft)}
-                    </Text>
-                  </View>
+            {lifecycle === 'finished' ? (
+              groups.length === 0 ? (
+                <Text style={styles.noneHere}>Nothing finished yet.</Text>
+              ) : (
+                groups.map((group, index) => {
+                  const open = expanded === group.key;
+                  const latest = group.containers[0];
+                  return (
+                    <FadeInView key={group.key} delay={Math.min(index, 6) * 40}>
+                      <GlassCard style={styles.card}>
+                        <Pressable
+                          onPress={() => setExpanded(open ? null : group.key)}
+                          style={styles.groupHead}
+                          accessibilityRole="button"
+                          accessibilityState={{ expanded: open }}
+                          accessibilityLabel={`${group.name}, ${group.containers.length} finished`}
+                        >
+                          <Text style={styles.name} numberOfLines={1}>
+                            {group.name}
+                            {group.containers.length > 1 ? (
+                              <Text style={styles.times}>{`  ×${group.containers.length}`}</Text>
+                            ) : null}
+                          </Text>
+                          <Text style={styles.groupMeta}>
+                            last {formatEventDate(latest.finished_on!)}
+                          </Text>
+                          <Ionicons
+                            name={open ? 'chevron-up' : 'chevron-down'}
+                            size={18}
+                            color={colors.textMuted}
+                          />
+                        </Pressable>
 
-                  <Text style={styles.sub}>
-                    {formatQuantity(projection.remaining, product.unit)} left of{' '}
-                    {formatQuantity(product.total_quantity, product.unit)}
-                    {' · '}
-                    {CATEGORY_LABEL[product.category] ?? 'Other'}
-                  </Text>
-
-                  <View style={styles.meter}>
-                    <View
-                      style={[
-                        styles.meterFill,
-                        {
-                          width: `${projection.percentUsed}%`,
-                          backgroundColor: colorFor(urgency),
-                        },
-                      ]}
-                    />
-                  </View>
-
-                  <View style={styles.cardFoot}>
-                    <Text style={styles.rate}>
-                      {projection.dailyRate !== null
-                        ? `${formatQuantity(
-                            Math.round(projection.dailyRate * 10) / 10,
-                            product.unit,
-                          )} a day${
-                            projection.costPerDay !== null
-                              ? ` · ${formatMoney(projection.costPerDay)}/day`
-                              : ''
-                          }`
-                        : product.finished_on
-                          ? `Lasted ${projection.daysOpen} days`
-                          : 'Log a few uses to see the rate'}
-                    </Text>
-
-                    {!product.finished_on ? (
-                      <Pressable
-                        onPress={() => void logUse(product)}
-                        onLongPress={() =>
-                          Alert.alert('Finished?', `Mark ${product.name} as used up?`, [
-                            { text: 'Cancel', style: 'cancel' },
-                            {
-                              text: 'Finished',
-                              onPress: () => void markFinished(product),
-                            },
-                          ])
-                        }
-                        disabled={busyId === product.id}
-                        style={({ pressed }) => [styles.logButton, pressed && styles.pressed]}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Log a use of ${product.name}`}
-                        accessibilityHint="Long press to mark it finished"
-                      >
-                        {busyId === product.id ? (
-                          <ActivityIndicator size="small" color={colors.primary} />
-                        ) : (
-                          <>
-                            <Ionicons name="add" size={14} color={colors.primary} />
-                            <Text style={styles.logText}>Log use</Text>
-                          </>
-                        )}
-                      </Pressable>
-                    ) : (
-                      <Text style={styles.finishedOn}>
-                        {formatEventDate(product.finished_on)}
-                      </Text>
-                    )}
-                  </View>
-                </GlassCard>
-              </FadeInView>
-            ))}
+                        {open
+                          ? group.containers.map((container) => {
+                              const lasted = lifespanDays(container);
+                              return (
+                                <Pressable
+                                  key={container.id}
+                                  onPress={() =>
+                                    navigation.navigate('ProductDetail', { productId: container.id })
+                                  }
+                                  style={({ pressed }) => [styles.containerRow, pressed && styles.pressed]}
+                                  accessibilityRole="button"
+                                >
+                                  <View style={styles.containerText}>
+                                    <Text style={styles.containerDates}>
+                                      {container.opened_on ? formatEventDate(container.opened_on) : '—'}
+                                      {' – '}
+                                      {formatEventDate(container.finished_on!)}
+                                    </Text>
+                                    <Text style={styles.containerMeta}>
+                                      {[
+                                        lasted !== null
+                                          ? `lasted ${lasted} ${lasted === 1 ? 'day' : 'days'}`
+                                          : null,
+                                        formatQuantity(container.total_quantity, container.unit),
+                                        container.price_minor !== null
+                                          ? formatMoney(container.price_minor)
+                                          : null,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(' · ')}
+                                    </Text>
+                                  </View>
+                                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                                </Pressable>
+                              );
+                            })
+                          : null}
+                      </GlassCard>
+                    </FadeInView>
+                  );
+                })
+              )
+            ) : visible.length === 0 ? (
+              <Text style={styles.noneHere}>
+                {lifecycle === 'unopened'
+                  ? 'No spares. Add one from a product’s page when you buy ahead.'
+                  : 'Nothing in use right now.'}
+              </Text>
+            ) : (
+              visible.map((outlook, index) => (
+                <FadeInView key={outlook.product.id} delay={Math.min(index, 6) * 40}>
+                  <ProductCard
+                    outlook={outlook}
+                    today={today}
+                    onOpen={() =>
+                      navigation.navigate('ProductDetail', { productId: outlook.product.id })
+                    }
+                    onLog={() => quickLog(outlook.product)}
+                    onChooseDay={() => setSheetFor(outlook.product)}
+                  />
+                </FadeInView>
+              ))
+            )}
           </>
         )}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </FormScroll>
 
-      {rows.length > 0 ? (
+      {products.length > 0 ? (
         <FadeInView style={styles.fabWrap} delay={120}>
           <Pressable
             onPress={() => navigation.navigate('ProductEdit', {})}
@@ -388,7 +449,121 @@ export function ProductsListScreen() {
           </Pressable>
         </FadeInView>
       ) : null}
+
+      {sheetFor ? (
+        <UseSheet
+          visible
+          product={sheetFor}
+          mode={{ kind: 'log', day: today }}
+          today={today}
+          logged={loggedDays}
+          onClose={() => setSheetFor(null)}
+          onSubmit={(draft) =>
+            logAndOffer(sheetFor, draft, sheetFor.name, () => setSheetFor(null))
+          }
+        />
+      ) : null}
     </Screen>
+  );
+}
+
+/** One container in use, or a spare. */
+function ProductCard({
+  outlook,
+  today,
+  onOpen,
+  onLog,
+  onChooseDay,
+}: {
+  outlook: Outlook;
+  today: string;
+  onOpen: () => void;
+  onLog: () => void;
+  onChooseDay: () => void;
+}) {
+  const styles = useStyles();
+  const { colors } = useTheme();
+  const { product, projection } = outlook;
+
+  const chips = chipsFor(outlook, today);
+  // The bar and the headline speak for the supply, so they take the supply
+  // chip's colour even when a use-by chip leads.
+  const supply = chips.find((chip) => chip.kind !== 'use-by' && chip.kind !== 'expired') ?? chips[0];
+  const tone = toneOf(colors, supply.kind);
+  // An estimate or a brand-new container has no measured figure to colour.
+  const headTone =
+    outlook.projection.daysLeft === null && outlook.lifecycle === 'in_use' ? colors.textSecondary : tone;
+  const marker = reorderMarker(outlook);
+
+  return (
+    <GlassCard style={styles.card} onPress={onOpen}>
+      <View style={styles.cardHead}>
+        {/* Truncated: the days-left label to its right is what you scan for,
+            and a long name would push it out of line. */}
+        <Text style={styles.name} numberOfLines={1}>
+          {product.name}
+        </Text>
+        <Text style={[styles.days, { color: headTone }]}>{headlineOf(outlook)}</Text>
+      </View>
+
+      <Text style={styles.sub}>
+        {outlook.lifecycle === 'unopened'
+          ? `Not opened · ${formatQuantity(product.total_quantity, product.unit)}`
+          : `${formatQuantity(projection.remaining, product.unit)} left of ${formatQuantity(product.total_quantity, product.unit)}`}
+        {' · '}
+        {CATEGORY_LABEL[product.category] ?? 'Other'}
+      </Text>
+
+      {outlook.lifecycle === 'in_use' ? (
+        <View style={styles.bar}>
+          <SupplyBar fraction={remainingFraction(outlook)} marker={marker} tone={tone} />
+        </View>
+      ) : null}
+
+      <View style={styles.chips}>
+        <StatusChips chips={chips} />
+      </View>
+
+      {outlook.estimate ? (
+        <Text style={styles.estimate}>{estimateLabel(outlook.estimate, product.unit)}</Text>
+      ) : null}
+
+      {outlook.conflict ? (
+        <View style={styles.conflict}>
+          <Ionicons name="time-outline" size={13} color={colors.warning} />
+          <Text style={styles.conflictText}>{conflictMessage(outlook.conflict)}</Text>
+        </View>
+      ) : null}
+
+      {outlook.lifecycle === 'in_use' ? (
+        <View style={styles.cardFoot}>
+          <Text style={styles.rate}>
+            {projection.dailyRate !== null
+              ? `${formatQuantity(Math.round(projection.dailyRate * 10) / 10, product.unit)} a day${
+                  projection.costPerDay !== null ? ` · ${formatMoney(projection.costPerDay)}/day` : ''
+                }`
+              : 'Log a few days to measure the rate'}
+          </Text>
+
+          <Pressable
+            onPress={onLog}
+            onLongPress={onChooseDay}
+            accessibilityActions={[{ name: 'longpress', label: 'Log for another day' }]}
+            onAccessibilityAction={(event) => {
+              if (event.nativeEvent.actionName === 'longpress') onChooseDay();
+            }}
+            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+            style={({ pressed }) => [styles.logButton, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={`Log ${formatQuantity(product.per_use ?? 1, product.unit)} of ${product.name} for today`}
+            accessibilityHint="Long press to choose the day and amount"
+          >
+            <Ionicons name="add" size={15} color={colors.primary} />
+            <Text style={styles.logText}>Log use</Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </GlassCard>
   );
 }
 
@@ -397,14 +572,16 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   list: {
     paddingHorizontal: spacing.xl,
     paddingTop: 96,
-    paddingBottom: 110,
+    // Clear of the add button and the toast that floats above it.
+    paddingBottom: layout.aboveFab + spacing.xxxl,
   },
 
   summary: { marginBottom: spacing.lg, alignItems: 'flex-start' },
   states: { marginBottom: spacing.lg },
   noneHere: { ...typography.caption, marginBottom: spacing.lg },
-  summaryBig: { ...typography.display, fontSize: 32 },
+  summaryBig: { ...typography.display, ...typography.numeric, fontSize: 32 },
   summaryLabel: { ...typography.caption },
+  summarySub: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
   summaryHint: {
     ...typography.caption,
     fontSize: 11,
@@ -414,19 +591,15 @@ const useStyles = makeStyles(({ colors, typography }) => ({
 
   card: { marginBottom: spacing.md },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  dot: { width: 8, height: 8, borderRadius: 4 },
   name: { ...typography.title, fontSize: 15, flex: 1 },
-  days: { ...typography.caption, fontWeight: '600' },
-  sub: { ...typography.caption, fontSize: 12, marginTop: 4 },
-
-  meter: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.glassBorder,
-    marginTop: spacing.md,
-    overflow: 'hidden',
-  },
-  meterFill: { height: '100%' },
+  times: { ...typography.caption, color: colors.textSecondary },
+  days: { ...typography.caption, ...typography.numeric, fontWeight: '600' },
+  sub: { ...typography.caption, ...typography.numeric, fontSize: 12, marginTop: 4 },
+  bar: { marginTop: spacing.md },
+  chips: { marginTop: spacing.sm },
+  estimate: { ...typography.caption, fontSize: 12, color: colors.textSecondary, marginTop: spacing.sm },
+  conflict: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: spacing.sm },
+  conflictText: { ...typography.caption, fontSize: 12, color: colors.textSecondary, flex: 1 },
 
   cardFoot: {
     flexDirection: 'row',
@@ -435,26 +608,40 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     gap: spacing.md,
     marginTop: spacing.md,
   },
-  rate: { ...typography.caption, fontSize: 11.5, color: colors.textFaint, flex: 1 },
+  rate: { ...typography.caption, ...typography.numeric, fontSize: 11.5, color: colors.textFaint, flex: 1 },
   logButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    minHeight: 40,
     paddingHorizontal: spacing.md,
-    paddingVertical: 7,
     borderRadius: radius.sm,
     backgroundColor: colors.primary + '1A',
   },
-  logText: { ...typography.caption, color: colors.primary },
-  finishedOn: { ...typography.caption, fontSize: 11.5, color: colors.textFaint },
+  logText: { ...typography.caption, color: colors.primary, fontWeight: '600' },
   pressed: { opacity: 0.6 },
+
+  groupHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 48 },
+  groupMeta: { ...typography.caption, fontSize: 12, color: colors.textFaint },
+  containerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 52,
+    borderTopWidth: 1,
+    borderTopColor: colors.glassBorder,
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+  },
+  containerText: { flex: 1 },
+  containerDates: { ...typography.body, ...typography.numeric, color: colors.text },
+  containerMeta: { ...typography.caption, ...typography.numeric, color: colors.textMuted },
 
   error: { ...typography.caption, color: colors.danger, marginTop: spacing.md },
 
-  fabWrap: { position: 'absolute', right: spacing.xl, bottom: spacing.xxl },
+  fabWrap: { position: 'absolute', right: spacing.xl, bottom: layout.fabInset },
   fab: {
-    width: 58,
-    height: 58,
+    width: layout.fabSize,
+    height: layout.fabSize,
     borderRadius: radius.pill,
     backgroundColor: colors.primary,
     alignItems: 'center',

@@ -742,3 +742,40 @@ button.cal-day-selected:hover {
   color: var(--on-primary);
   font-weight: 600;
 }
+
+/* PRODUCTS ----------------------------------------------------------------- */
+/* Status chips: always a word and an icon, the tint only reinforces it. */
+
+.pchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pchip.danger { background: var(--danger-soft); color: var(--danger); }
+.pchip.warn { background: var(--warning-soft); color: var(--warning); }
+.pchip.ok { background: var(--success-soft); color: var(--success); }
+.pchip.info { background: var(--info-soft); color: var(--info); }
+.pchip.muted { background: var(--surface-3); color: var(--text-muted); }
+
+/* What is left, filling from the left, with a mark at the reorder point. */
+.supply { position: relative; height: 5px; border-radius: 3px; background: var(--surface-3); }
+.supply > i { display: block; height: 100%; border-radius: 3px; transition: width var(--transition); }
+.supply > b {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-secondary);
+}
+
+/* A ticked Today row; text on --completed stays --text / --text-secondary. */
+.list-row.done { background: var(--completed); }
+.list-row.done .muted { color: var(--text-secondary); }

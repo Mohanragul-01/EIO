@@ -55,7 +55,12 @@ export type IconName =
   | 'repeat'
   | 'reset'
   | 'flag'
-  | 'sparkline';
+  | 'sparkline'
+  // Products: a spare on the shelf, a use-by date, running low, not enough data.
+  | 'box'
+  | 'clock'
+  | 'trendDown'
+  | 'help';
 
 /**
  * Path data per icon. Several use more than one subpath; they are joined with
@@ -109,6 +114,11 @@ const PATHS: Record<IconName, string> = {
   reset: 'M3 4v6h6 M4.4 15a9 9 0 1 0 1-7.5L3 10',
   flag: 'M5 21V4 M5 5h11l-2 3.5L16 12H5',
   sparkline: 'M3 17l5-6 4 3 5-8 4 5',
+
+  box: 'M21 8l-9-5-9 5v8l9 5 9-5z M3 8l9 5 9-5 M12 13v8',
+  clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M12 7v5l3 2',
+  trendDown: 'M22 17l-8-8-4 4-8-8 M16 17h6v-6',
+  help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M9.6 9.3a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .8-1 1.5v.3 M12 16.8h.01',
 };
 
 /**

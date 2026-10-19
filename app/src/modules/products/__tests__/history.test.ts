@@ -5,7 +5,7 @@
  * they were built for - so the cases that matter are the empty days, and the
  * boundaries of the window those empty days live in.
  */
-import { formatQuantity, groupByDay, recentDays } from '../types';
+import { formatDayMonth, formatQuantity, groupByDay, recentDays } from '../types';
 
 const use = (used_on: string, quantity: number, id = `${used_on}-${quantity}`) => ({
   id,
@@ -76,5 +76,16 @@ describe('formatQuantity', () => {
 
   it('rounds to two places', () => {
     expect(formatQuantity(1 / 3, 'ml')).toBe('0.33 ml');
+  });
+});
+
+describe('formatDayMonth', () => {
+  it('writes the day first with a short month', () => {
+    expect(formatDayMonth('2026-11-03')).toBe('3 Nov');
+  });
+
+  it("adds the year only when it is not today's", () => {
+    expect(formatDayMonth('2026-11-03', '2026-10-19')).toBe('3 Nov');
+    expect(formatDayMonth('2027-01-03', '2026-10-19')).toBe('3 Jan 2027');
   });
 });
