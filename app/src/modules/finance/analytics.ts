@@ -9,33 +9,31 @@
  *
  * Everything here works in integer paise. See core/money.ts for why.
  */
+import { toISODate } from '../../core/date';
 import { formatMoney } from '../../core/money';
-import type { LedgerPoint, TransactionKind } from './types';
+import { periodOf, recentPeriods, shortMonth } from './period';
+import type { LedgerPoint, TransactionKind, TransferDirection } from './types';
 
 /**
- * Everything you have, ever: income minus expense across all transactions.
+ * Income minus expense across all transactions, ever.
  *
- * NOT scoped to a month, which is the whole point of it. The month view
- * answers "how am I doing right now"; this answers "what is actually left",
- * and the two disagreeing is normal rather than a bug.
+ * Transfers are ignored: they move money between your own accounts, so
+ * counting either half would double-count every rupee you shuffle around. A
+ * lone half (its partner deleted elsewhere) is ignored for the same reason.
  *
- * WHEN TRANSFERS ARRIVE, this needs a third branch that ignores them. A
- * transfer is money moving between your own accounts, so counting it as either
- * income or expense would double-count every rupee you shuffle around. The
- * kind does not exist yet - migration 0008 would add it and is unapplied - so
- * handling it here would mean widening TransactionKind to a value the database
- * currently rejects, which is worse than leaving the gap documented.
+ * The headline balance is accounts.netBalance now, which adds opening balances
+ * to this; this stays as the figure with no accounts involved.
  */
 export function runningBalance(points: LedgerPoint[]): number {
-  return points.reduce(
-    (total, point) =>
-      point.kind === 'income' ? total + point.amount_minor : total - point.amount_minor,
-    0,
-  );
+  return points.reduce((total, point) => {
+    if (point.kind === 'income') return total + point.amount_minor;
+    if (point.kind === 'expense') return total - point.amount_minor;
+    return total;
+  }, 0);
 }
 
 export type MonthTotal = {
-  /** 'YYYY-MM', which sorts correctly as a string. */
+  /** 'YYYY-MM' of the finance month, which sorts correctly as a string. */
   month: string;
   /** Short label for a chart axis, e.g. 'Aug'. */
   label: string;
@@ -44,7 +42,10 @@ export type MonthTotal = {
 };
 
 /**
- * Income and expense per month, oldest first, for the trend chart.
+ * Income and expense per finance month, oldest first, for the trend chart.
+ *
+ * With a month that starts on a salary day, each bar is that period, not the
+ * calendar month (see period.ts), so the trend agrees with the totals above it.
  *
  * Months with no transactions are INCLUDED as zeroes. Skipping them would
  * compress the gap and draw a line that implies a steady trend across a period
@@ -57,28 +58,21 @@ export function monthlyTotals(
   points: LedgerPoint[],
   monthsBack: number,
   now: Date = new Date(),
+  startDay = 1,
 ): MonthTotal[] {
-  const months: MonthTotal[] = [];
+  const key = (p: { year: number; month: number }) => `${p.year}-${String(p.month).padStart(2, '0')}`;
 
-  for (let offset = monthsBack - 1; offset >= 0; offset -= 1) {
-    // Day 1 avoids the month-end trap: new Date(2026, 0, 31) minus a month is
-    // 3 March, so stepping months from today's day-of-month skips February.
-    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
-    months.push({
-      month: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
-      label: date.toLocaleDateString(undefined, { month: 'short' }),
-      incomeMinor: 0,
-      expenseMinor: 0,
-    });
-  }
+  const months: MonthTotal[] = recentPeriods(periodOf(toISODate(now), startDay), monthsBack).map(
+    (period) => ({ month: key(period), label: shortMonth(period), incomeMinor: 0, expenseMinor: 0 }),
+  );
 
   // Indexed once, so this is a single pass rather than a scan per month.
   const byMonth = new Map(months.map((m) => [m.month, m]));
 
   points.forEach((point) => {
-    // 'YYYY-MM-DD' sliced to 'YYYY-MM'. No Date parsing, so no timezone shift
+    // From the 'YYYY-MM-DD' string, never a parsed Date, so no timezone shift
     // can move a transaction into the neighbouring month.
-    const bucket = byMonth.get(point.date.slice(0, 7));
+    const bucket = byMonth.get(key(periodOf(point.date, startDay)));
     if (!bucket) return; // outside the window
 
     if (point.kind === 'income') bucket.incomeMinor += point.amount_minor;
@@ -91,7 +85,7 @@ export function monthlyTotals(
 // CSV export
 
 /** Column order, and the header row. */
-const CSV_COLUMNS = ['date', 'type', 'category', 'note', 'amount'] as const;
+const CSV_COLUMNS = ['date', 'type', 'category', 'note', 'amount', 'account'] as const;
 
 /**
  * Escape one CSV field.
@@ -107,6 +101,16 @@ function escapeCsv(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
 }
 
+export type CsvRow = {
+  date: string;
+  kind: TransactionKind;
+  category: string;
+  note: string;
+  amount_minor: number;
+  account_id: string | null;
+  transfer_direction: TransferDirection | null;
+};
+
 /**
  * Rows to CSV text.
  *
@@ -114,20 +118,23 @@ function escapeCsv(value: string): string {
  * amount is an integer; a spreadsheet expects a decimal, and this is the
  * boundary. Two decimal places always, so the column stays aligned and does
  * not round to something that fails to add up.
+ *
+ * A transfer's halves are typed "transfer out" and "transfer in", so a
+ * spreadsheet that sums the expense rows never picks them up by accident.
  */
-export function toCsv(
-  rows: { date: string; kind: TransactionKind; category: string; note: string; amount_minor: number }[],
-): string {
+export function toCsv(rows: CsvRow[], accountName: (id: string) => string = () => ''): string {
   const lines = [CSV_COLUMNS.join(',')];
 
   rows.forEach((row) => {
+    const type = row.kind === 'transfer' ? `transfer ${row.transfer_direction ?? ''}`.trim() : row.kind;
     lines.push(
       [
         row.date,
-        row.kind,
+        type,
         escapeCsv(row.category),
         escapeCsv(row.note),
         (row.amount_minor / 100).toFixed(2),
+        escapeCsv(row.account_id ? accountName(row.account_id) : ''),
       ].join(','),
     );
   });

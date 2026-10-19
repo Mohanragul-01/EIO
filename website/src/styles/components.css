@@ -779,3 +779,147 @@ button.cal-day-selected:hover {
 /* A ticked Today row; text on --completed stays --text / --text-secondary. */
 .list-row.done { background: var(--completed); }
 .list-row.done .muted { color: var(--text-secondary); }
+/* FINANCE ------------------------------------------------------------------ */
+/* Finance v3: the month toolbar and quick adds, the ledger's head, budget bars
+   with their pace tick, the account list, and the spending calendar. */
+
+.fin-toolbar {
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.fin-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; justify-content: flex-end; }
+.fin-quick-item {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  overflow: hidden;
+}
+.fin-quick-log,
+.fin-quick-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-xs);
+}
+.fin-quick-log { padding: 5px 6px 5px 10px; }
+.fin-quick-edit { padding: 5px 9px 5px 5px; color: var(--text-muted); }
+.fin-quick-log:hover,
+.fin-quick-edit:hover { background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.fin-quick-log:focus-visible,
+.fin-quick-edit:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+.fin-ledger-head { padding: var(--space-md) var(--space-md) 0; }
+.fin-filters { padding: var(--space-md) var(--space-md) 0; }
+.fin-filters .filter-bar { margin-bottom: var(--space-sm); }
+
+.fin-two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); }
+
+/* A row of the accounts card or a calendar day's list: name left, figure right. */
+.fin-account,
+.fin-slice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: 5px 6px;
+  margin: 0 -6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+}
+.fin-account:hover,
+.fin-slice:hover { background: var(--surface-2); }
+
+/* BUDGETS. The fill says how much is gone; the tick says how much should be,
+   if the limit were spread evenly over the month. The state is written beside
+   it too, so green against amber never carries the meaning alone. */
+.fin-budget { display: flex; align-items: center; gap: 4px; border-radius: var(--radius-md); }
+.fin-budget.on { background: var(--surface-2); }
+.fin-budget-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.fin-budget-main:hover { background: var(--surface-2); }
+.fin-budget-track {
+  position: relative;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.fin-budget-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--radius-pill); }
+.fin-budget-fill.ok { background: var(--success); }
+.fin-budget-fill.warn { background: var(--warning); }
+.fin-budget-fill.bad { background: var(--danger); }
+.fin-budget-tick { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text); }
+.fin-tick-key { display: inline-block; width: 2px; height: 11px; background: var(--text); }
+
+.fin-state { display: inline-flex; align-items: center; gap: 4px; font-weight: 550; }
+.fin-state.ok { color: var(--success); }
+.fin-state.warn { color: var(--warning); }
+.fin-state.bad { color: var(--danger); }
+
+.fin-history-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: var(--space-xs);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* CALENDAR. A day prints its spend and is tinted against the month's usual
+   spending day, four steps of the "out" colour; a + marks money in. */
+.fin-cal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-lg);
+  padding: var(--space-md);
+}
+@media (min-width: 900px) {
+  .fin-cal { grid-template-columns: minmax(0, 1fr) 240px; }
+}
+.fin-cal-side { min-width: 0; }
+
+.fin-cal-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 46px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md);
+}
+.fin-cal-day.lvl-1 { background: color-mix(in srgb, var(--accent-rose) 10%, transparent); }
+.fin-cal-day.lvl-2 { background: color-mix(in srgb, var(--accent-rose) 20%, transparent); }
+.fin-cal-day.lvl-3 { background: color-mix(in srgb, var(--accent-rose) 33%, transparent); }
+.fin-cal-day.lvl-4 { background: color-mix(in srgb, var(--accent-rose) 50%, transparent); }
+.fin-cal-day.today { border-color: var(--primary); }
+.fin-cal-day.selected { border-color: var(--text); border-width: 2px; }
+.fin-cal-num { font-size: var(--text-sm); }
+/* Full text colour, not secondary: secondary over the darkest tint is about
+   3.4:1 in light mode, under the 4.5:1 small text needs. */
+.fin-cal-amt { font-size: var(--text-2xs); color: var(--text); font-variant-numeric: tabular-nums; }
+.fin-cal-in { position: absolute; top: 1px; right: 5px; font-size: var(--text-2xs); font-weight: 700; color: var(--success); }

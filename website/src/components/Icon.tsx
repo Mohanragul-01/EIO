@@ -60,7 +60,11 @@ export type IconName =
   | 'box'
   | 'clock'
   | 'trendDown'
-  | 'help';
+  | 'help'
+  // Finance v3
+  | 'swap'
+  | 'bolt'
+  | 'sliders';
 
 /**
  * Path data per icon. Several use more than one subpath; they are joined with
@@ -119,6 +123,10 @@ const PATHS: Record<IconName, string> = {
   clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M12 7v5l3 2',
   trendDown: 'M22 17l-8-8-4 4-8-8 M16 17h6v-6',
   help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M9.6 9.3a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .8-1 1.5v.3 M12 16.8h.01',
+  // Finance v3: a transfer between accounts, a one-click quick add, settings.
+  swap: 'M7 4L3 8l4 4 M3 8h14 M17 12l4 4-4 4 M21 16H7',
+  bolt: 'M13 3L5 14h6l-1 7 8-11h-6z',
+  sliders: 'M4 7h10 M18 7h2 M16 5v4 M4 17h3 M11 17h9 M9 15v4',
 };
 
 /**

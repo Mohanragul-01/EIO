@@ -37,7 +37,19 @@ export type RootStackParamList = {
    */
   NoteEdit: { id?: string; type?: 'note' | 'checklist' | 'journal'; quick?: boolean };
   FinanceList: undefined;
-  TransactionEdit: { id?: string };
+  /**
+   * Add or edit an entry. `id` edits an expense or income; `groupId` edits a
+   * transfer (both rows). When adding: `date` pre-dates it (the calendar's
+   * "Add for 16 Oct"), `kind` opens it as a transfer, `accountId` picks the
+   * account.
+   */
+  TransactionEdit: {
+    id?: string;
+    groupId?: string;
+    date?: string;
+    kind?: 'expense' | 'income' | 'transfer';
+    accountId?: string;
+  };
 
   SubscriptionsList: undefined;
   SubscriptionEdit: { id?: string };
@@ -79,6 +91,27 @@ export type RootStackParamList = {
   CustomModuleList: { moduleId: string };
   /** The generated form: omit recordId to create, pass it to edit. */
   CustomRecordEdit: { moduleId: string; recordId?: string };
+
+  //  Finance v3
+  /** Every account, its balance, and what you owe on cards. */
+  FinanceAccounts: undefined;
+  /** Search every entry ever, with a total of what matches. */
+  FinanceSearch: undefined;
+  /** One category in one finance month, with its six-month history. */
+  FinanceCategory: { category: string; year: number; month: number };
+  /**
+   * The add form opened by eio://finance/add. Its params come from OUTSIDE the
+   * app (an automation reading a bank SMS), so they are all raw strings here
+   * and are validated by modules/finance/capture.ts before anything uses them.
+   */
+  FinanceCapture: {
+    amount?: string;
+    note?: string;
+    category?: string;
+    kind?: string;
+    account?: string;
+    date?: string;
+  };
 };
 
 /** Every screen name in the app. */

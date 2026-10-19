@@ -16,7 +16,7 @@ import { Link } from 'react-router-dom';
 import { daysUntil, todayISO } from '@app/core/date';
 import { formatMoney } from '@app/core/money';
 import * as bucketApi from '@app/modules/bucket/api';
-import { formatBalance, runningBalance } from '@app/modules/finance/analytics';
+import { formatBalance } from '@app/modules/finance/analytics';
 import * as financeApi from '@app/modules/finance/api';
 import * as fitnessApi from '@app/modules/fitness/api';
 import * as notesApi from '@app/modules/notes/api';
@@ -52,21 +52,20 @@ async function notesSummary() {
 }
 
 async function financeSummary() {
-  const now = new Date();
-  const [rows, ledger] = await Promise.all([
-    financeApi.listTransactions(now.getFullYear(), now.getMonth() + 1),
-    financeApi.listLedgerPoints(),
-  ]);
-
-  const balance = runningBalance(ledger);
-  const spent = rows
-    .filter((t) => t.kind === 'expense')
-    .reduce((total, t) => total + t.amount_minor, 0);
+  // Balance across accounts, and this finance month's spending with transfers
+  // left out: the Finance page's own figures (finance/overview.ts).
+  const { balanceMinor, spentMinor, overBudget } = await financeApi.loadOverview();
+  const spent = `${formatMoney(spentMinor, { compact: true })} out this month`;
 
   return {
-    text: formatBalance(balance),
-    sub: rows.length === 0 ? 'No activity this month' : `${formatMoney(spent, { compact: true })} out this month`,
-    tone: balance < 0 ? ('bad' as const) : ('ok' as const),
+    text: formatBalance(balanceMinor),
+    sub:
+      overBudget > 0
+        ? `${overBudget} over budget · ${spent}`
+        : spentMinor === 0
+          ? 'No spending this month'
+          : spent,
+    tone: balanceMinor < 0 ? ('bad' as const) : overBudget > 0 ? ('warn' as const) : ('ok' as const),
   };
 }
 

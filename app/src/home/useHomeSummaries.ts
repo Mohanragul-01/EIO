@@ -19,7 +19,7 @@ import { useLatestRun } from '../core/useLatestRun';
 import { formatMoney } from '../core/money';
 import { daysUntil } from '../core/date';
 import * as financeApi from '../modules/finance/api';
-import { formatBalance, runningBalance } from '../modules/finance/analytics';
+import { formatBalance } from '../modules/finance/analytics';
 import * as fitnessApi from '../modules/fitness/api';
 import * as notesApi from '../modules/notes/api';
 import * as subscriptionsApi from '../modules/subscriptions/api';
@@ -55,23 +55,17 @@ async function notesSummary(): Promise<string> {
 }
 
 async function financeSummary(): Promise<string> {
-  const now = new Date();
-  // Both figures in parallel: the balance spans everything, the spend is this
-  // month, and they answer different questions.
-  const [rows, ledger] = await Promise.all([
-    financeApi.listTransactions(now.getFullYear(), now.getMonth() + 1),
-    financeApi.listLedgerPoints(),
-  ]);
+  // The balance across accounts and this finance month's spending, transfers
+  // left out - the same figures the Finance screen shows (finance/overview.ts).
+  const { balanceMinor, spentMinor, overBudget } = await financeApi.loadOverview();
 
-  const balance = formatBalance(runningBalance(ledger));
-  if (rows.length === 0) return `${balance} balance`;
-
-  const spent = rows
-    .filter((t) => t.kind === 'expense')
-    .reduce((total, t) => total + t.amount_minor, 0);
+  const balance = formatBalance(balanceMinor);
+  // A budget already blown is something to act on, so it wins the line.
+  if (overBudget > 0) return `${balance} left, ${overBudget} over budget`;
+  if (spentMinor === 0) return `${balance} balance`;
   // Balance first: it is the figure you actually act on. The month's spend is
   // context for it.
-  return `${balance} left, ${formatMoney(spent, { compact: true })} out`;
+  return `${balance} left, ${formatMoney(spentMinor, { compact: true })} out`;
 }
 
 async function subscriptionsSummary(): Promise<string> {
