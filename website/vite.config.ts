@@ -56,7 +56,7 @@ export default defineConfig(({ mode }) => {
         // signature AsyncStorage has.
         '@react-native-async-storage/async-storage': resolvePath('./src/lib/shims/asyncStorage.ts'),
 
-        // Subscriptions reaches these through its notification module. A
+        // Shared modules reach these through core/notifications. A
         // browser cannot schedule an OS-level reminder, so the stubs let the
         // shared code take its own "notifications unavailable" path rather
         // than the website forking that module.

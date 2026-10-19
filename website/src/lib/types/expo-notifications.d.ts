@@ -40,6 +40,7 @@ declare module 'expo-notifications' {
   export function getPermissionsAsync(): Promise<PermissionResponse>;
   export function requestPermissionsAsync(): Promise<PermissionResponse>;
   export function cancelScheduledNotificationAsync(identifier: string): Promise<void>;
+  export function getAllScheduledNotificationsAsync(): Promise<{ identifier: string }[]>;
 
   export function scheduleNotificationAsync(request: {
     identifier?: string;
