@@ -11,7 +11,11 @@
  * a module ever gets large it can graduate to its own nested navigator without
  * changing how the home screen works.
  */
-import { NavigationContainer, type Theme as NavTheme } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  type LinkingOptions,
+  type Theme as NavTheme,
+} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
@@ -25,6 +29,9 @@ import { CustomRecordEditScreen } from '../modules/custom/screens/CustomRecordEd
 import { ModuleBuilderScreen } from '../modules/custom/screens/ModuleBuilderScreen';
 import { FinanceListScreen } from '../modules/finance/screens/FinanceListScreen';
 import { TransactionEditScreen } from '../modules/finance/screens/TransactionEditScreen';
+import { AccountsScreen } from '../modules/finance/screens/AccountsScreen';
+import { CategoryDetailScreen } from '../modules/finance/screens/CategoryDetailScreen';
+import { FinanceSearchScreen } from '../modules/finance/screens/FinanceSearchScreen';
 import { SubscriptionEditScreen } from '../modules/subscriptions/screens/SubscriptionEditScreen';
 import { BucketListScreen } from '../modules/bucket/screens/BucketListScreen';
 import { FitnessListScreen } from '../modules/fitness/screens/FitnessListScreen';
@@ -44,6 +51,35 @@ import { makeStyles, useTheme } from '../core/ThemeContext';
 
 // Passing the param list here is what makes navigate() calls type-safe.
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+/**
+ * DEEP LINKS - eio://finance/add?amount=250&note=Swiggy&category=food opens a
+ * pre-filled add form, so an automation app (MacroDroid, Tasker) can turn a
+ * bank SMS into an entry without EIO holding an SMS or notification
+ * permission. The `eio` scheme is set in app.json, which is build-time: it
+ * exists only in an APK built after it was added, and never in Expo Go.
+ *
+ * Only these paths are mapped. Any other eio:// link matches nothing and is
+ * ignored, and the capture screen reads its own parameters through
+ * modules/finance/capture.ts, which treats every one as untrusted.
+ *
+ * initialRouteName puts Home underneath when the link cold-starts the app, so
+ * Back after saving lands somewhere. When the app is already open the form
+ * opens on top of wherever you were, and saving returns you there.
+ *
+ * Module scope, as React Navigation asks: a new object every render would
+ * look like a new config.
+ */
+const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: ['eio://'],
+  config: {
+    initialRouteName: 'Home',
+    screens: {
+      FinanceCapture: 'finance/add',
+      FinanceList: 'finance',
+    },
+  },
+};
 
 export function RootNavigator() {
   const styles = useStyles();
@@ -82,7 +118,18 @@ export function RootNavigator() {
 
   return (
     // NavigationContainer owns the navigation state. Exactly one, at the root.
-    <NavigationContainer theme={makeNavigationTheme(colors, isDark)}>
+    <NavigationContainer
+      theme={makeNavigationTheme(colors, isDark)}
+      linking={linking}
+      // Shown for the moment it takes to read the link that opened the app
+      // (none, usually); the same spinner as the auth boot, so launch does not
+      // flash an empty frame.
+      fallback={
+        <View style={styles.boot}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      }
+    >
       <Stack.Navigator
         // screenOptions applies to EVERY screen - set header styling once here
         // rather than repeating it per screen.
@@ -162,6 +209,21 @@ export function RootNavigator() {
         <Stack.Screen name="ModuleBuilder" component={ModuleBuilderScreen} />
         <Stack.Screen name="CustomModuleList" component={CustomModuleListScreen} />
         <Stack.Screen name="CustomRecordEdit" component={CustomRecordEditScreen} />
+
+        {/* Finance v3. The capture link's form is the same screen as the
+            add form; it reads which route it is on. */}
+        <Stack.Screen
+          name="FinanceAccounts"
+          component={AccountsScreen}
+          options={{ title: 'Accounts' }}
+        />
+        <Stack.Screen
+          name="FinanceSearch"
+          component={FinanceSearchScreen}
+          options={{ title: 'Search' }}
+        />
+        <Stack.Screen name="FinanceCategory" component={CategoryDetailScreen} />
+        <Stack.Screen name="FinanceCapture" component={TransactionEditScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
