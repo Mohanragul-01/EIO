@@ -742,3 +742,131 @@ button.cal-day-selected:hover {
   color: var(--on-primary);
   font-weight: 600;
 }
+
+/* NOTES (v3) --------------------------------------------------------------- */
+
+/* A colour is a tint plus a stripe down the left edge; the card also names
+   the colour in words, so it is never the colour alone. */
+.note-card { border-left: 3px solid transparent; }
+.note-card-open {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  min-width: 0;
+  color: inherit;
+}
+.note-card-preview {
+  font-size: 13px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+.note-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.note-progress {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+.note-progress > div {
+  height: 100%;
+  background: var(--success);
+  transition: width var(--transition);
+}
+.note-undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 6px 6px 6px var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  font-size: 13px;
+}
+
+/* Markdown, read. */
+.note-md { display: flex; flex-direction: column; gap: 4px; line-height: 1.6; }
+.note-md-blank { height: 6px; }
+.note-md-p, .note-md-quote { margin: 0; }
+.note-md-h1 { font-size: var(--text-lg); font-weight: 650; margin: 6px 0 0; }
+.note-md-h2 { font-size: var(--text-md); font-weight: 650; margin: 4px 0 0; }
+.note-md-h3 { font-size: var(--text-base); font-weight: 650; margin: 2px 0 0; }
+.note-md-quote {
+  padding-left: var(--space-md);
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+.note-md-li { display: flex; align-items: flex-start; gap: var(--space-sm); }
+.note-md-bullet {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 0.65em;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+.note-md-bullet.hollow { background: none; border: 1.5px solid var(--text-secondary); }
+.note-md-number { min-width: 1.4em; color: var(--text-secondary); }
+.note-md-task .check { margin-top: 0.25em; flex: none; }
+.note-md-done { color: var(--text-secondary); }
+.note-md a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+
+/* Colour choices: a named chip per colour. */
+.note-swatches { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.note-swatch { display: inline-flex; align-items: center; gap: 6px; }
+.note-swatch.selected { border-color: var(--primary); color: var(--text); }
+.note-swatch-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: var(--on-primary);
+}
+.note-swatch-dot.none { border: 1.5px dashed var(--border-strong); color: var(--text); }
+
+/* The formatting bar over the body. */
+.md-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: var(--surface-2);
+}
+.md-tool { width: 32px; height: 32px; }
+.md-tool-text { font-size: 13px; font-weight: 650; }
+.md-tool-italic { font-style: italic; font-family: Georgia, serif; }
+.md-textarea { border-top-left-radius: 0; border-top-right-radius: 0; font-family: var(--font-mono); font-size: 13px; }
+
+/* Journal strip. */
+.journal-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-secondary);
+}
+.journal-streak.on { color: var(--warning); }
+.journal-day {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+}
+.journal-day.filled { background: var(--primary); border-color: var(--primary); }
+.journal-day.today { outline: 2px solid var(--primary); outline-offset: 2px; }

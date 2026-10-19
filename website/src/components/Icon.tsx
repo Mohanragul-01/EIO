@@ -55,7 +55,15 @@ export type IconName =
   | 'repeat'
   | 'reset'
   | 'flag'
-  | 'sparkline';
+  | 'sparkline'
+  // Notes v3
+  | 'pin'
+  | 'archive'
+  | 'palette'
+  | 'link'
+  | 'list'
+  | 'flame'
+  | 'shuffle';
 
 /**
  * Path data per icon. Several use more than one subpath; they are joined with
@@ -109,6 +117,16 @@ const PATHS: Record<IconName, string> = {
   reset: 'M3 4v6h6 M4.4 15a9 9 0 1 0 1-7.5L3 10',
   flag: 'M5 21V4 M5 5h11l-2 3.5L16 12H5',
   sparkline: 'M3 17l5-6 4 3 5-8 4 5',
+
+  // Notes v3
+  pin: 'M9 3.5h6 M10 3.5v5.5l-3 4h10l-3-4V3.5 M12 13v7.5',
+  archive: 'M3.5 4.5h17v4h-17z M5 8.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8.5 M10 12.5h4',
+  palette:
+    'M12 3a9 9 0 1 0 0 18c.9 0 1.5-.6 1.5-1.4 0-.4-.2-.8-.4-1.1-.3-.3-.4-.6-.4-1 0-.8.6-1.4 1.4-1.4H16a5 5 0 0 0 5-5c0-4.4-4-8.1-9-8.1z M7.5 11.5h.01 M10 7.5h.01 M14.5 7.5h.01',
+  link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
+  list: 'M9 6h11 M9 12h11 M9 18h11 M4.5 6h.01 M4.5 12h.01 M4.5 18h.01',
+  flame: 'M12 21a6 6 0 0 0 6-6c0-4-3-6.5-4-10.5-2 2-3 4.3-3 6.3-1-.9-1.6-2-1.7-3.3C7.2 9.8 6 12.3 6 15a6 6 0 0 0 6 6z',
+  shuffle: 'M16 3.5h4.5V8 M3.5 20L20.5 3.5 M20.5 16v4.5H16 M14.5 14.5l6 6 M3.5 3.5l5 5',
 };
 
 /**
