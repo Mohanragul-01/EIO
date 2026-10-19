@@ -8,6 +8,7 @@
  * it by Oct 2027", worked out in either direction.
  */
 import {
+  amountText,
   choiceOf,
   describeSavings,
   formatTarget,
@@ -190,5 +191,15 @@ describe('savingsAdvice', () => {
   it('groups lakhs the Indian way', () => {
     const advice = savingsAdvice({ ...base, estMinor: rupees(2_00_000), savedMinor: rupees(50_000) });
     expect(describeSavings(advice)).toBe('₹1,50,000 to go');
+  });
+});
+
+describe('amountText', () => {
+  it('prefills whole rupees without paise, and keeps paise when there are some', () => {
+    // "38000.00" in an edit field reads as a different, fussier number.
+    expect(amountText(rupees(38_000))).toBe('38000');
+    expect(amountText(rupees(1299.5))).toBe('1299.50');
+    expect(amountText(null)).toBe('');
+    expect(amountText(0)).toBe('');
   });
 });

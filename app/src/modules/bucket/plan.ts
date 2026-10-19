@@ -15,7 +15,7 @@
  * calculator, in whichever direction you have the numbers for: from a target
  * month to a monthly amount, or from a monthly amount to the month it lands.
  */
-import { formatMoney } from '../../core/money';
+import { formatMoney, minorToAmountString } from '../../core/money';
 import type { Precision } from './types';
 import { MONTH_SHORT, daysInMonth, formatWhen, isoOf, partsOf } from './when';
 
@@ -189,4 +189,13 @@ export function describeSavings(advice: SavingsAdvice): string {
     case 'by-monthly':
       return `${money(advice.toGoMinor)} to go · ${money(advice.monthlyMinor)} a month reaches it by ${advice.reach}`;
   }
+}
+
+/**
+ * Paise as an edit field's starting text: "38000", not "38000.00", unless
+ * there really are paise. Empty for nothing, so the placeholder shows.
+ */
+export function amountText(minor: number | null): string {
+  if (!minor) return '';
+  return minor % 100 === 0 ? String(minor / 100) : minorToAmountString(minor);
 }

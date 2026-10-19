@@ -9,6 +9,10 @@
  * So categories are a vertical, searchable list with their own progress on each
  * row - which also answers the question you actually have when filtering by
  * category ("how much of this one is left?") rather than just narrowing to it.
+ * Each row carries the category's icon, the same one its section header shows.
+ *
+ * Want (Now / Next / Someday) sits beside cost and never replaces it: Next is
+ * a tier you filter to when choosing what comes after the shelf.
  */
 import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
@@ -17,7 +21,8 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SegmentedControl, Sheet } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { radius, spacing } from '../../../core/theme';
-import { COSTS, COST_SHORT, type Cost } from '../types';
+import { COSTS, COST_SHORT, WANTS, WANT_LABEL, type Cost, type Want } from '../types';
+import { CategoryIcon } from './CategoryIcon';
 
 export type Status = 'todo' | 'done' | 'all';
 
@@ -31,6 +36,8 @@ type FilterSheetProps = {
   onStatus: (value: Status) => void;
   cost: Cost | 'any';
   onCost: (value: Cost | 'any') => void;
+  want: Want | 'any';
+  onWant: (value: Want | 'any') => void;
   category: string;
   onCategory: (value: string) => void;
 
@@ -40,6 +47,9 @@ type FilterSheetProps = {
 
 const STATUS: Status[] = ['todo', 'done', 'all'];
 const STATUS_LABEL: Record<Status, string> = { todo: 'To do', done: 'Done', all: 'All' };
+
+const WANT_OPTIONS: (Want | 'any')[] = ['any', ...WANTS];
+const WANT_OPTION_LABEL: Record<Want | 'any', string> = { any: 'Any', ...WANT_LABEL };
 
 const COST_OPTIONS: (Cost | 'any')[] = ['any', ...COSTS];
 const COST_OPTION_LABEL: Record<Cost | 'any', string> = {
@@ -56,6 +66,8 @@ export function FilterSheet({
   onStatus,
   cost,
   onCost,
+  want,
+  onWant,
   category,
   onCategory,
   categories,
@@ -87,6 +99,15 @@ export function FilterSheet({
         value={cost}
         onChange={onCost}
         renderLabel={(o) => COST_OPTION_LABEL[o]}
+        style={styles.spaced}
+      />
+
+      <SegmentedControl
+        label="Want"
+        options={WANT_OPTIONS}
+        value={want}
+        onChange={onWant}
+        renderLabel={(o) => WANT_OPTION_LABEL[o]}
         style={styles.spaced}
       />
 
@@ -127,6 +148,7 @@ export function FilterSheet({
         {matches.map((c) => (
           <CategoryRow
             key={c.category}
+            category={c.category}
             label={c.category}
             note={`${c.done} of ${c.total}`}
             selected={category === c.category}
@@ -155,11 +177,14 @@ export function FilterSheet({
 }
 
 function CategoryRow({
+  category,
   label,
   note,
   selected,
   onPress,
 }: {
+  /** Absent for "Every category", which has no icon of its own. */
+  category?: string;
   label: string;
   note?: string;
   selected: boolean;
@@ -174,7 +199,13 @@ function CategoryRow({
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       accessibilityRole="radio"
       accessibilityState={{ selected }}
+      accessibilityLabel={note ? `${label}, ${note} done` : label}
     >
+      {category ? (
+        <CategoryIcon category={category} size={16} color={selected ? colors.primary : undefined} />
+      ) : (
+        <Ionicons name="apps-outline" size={16} color={selected ? colors.primary : colors.textMuted} />
+      )}
       <Text style={[styles.rowLabel, selected && styles.rowLabelOn]} numberOfLines={1}>
         {label}
       </Text>
@@ -202,19 +233,21 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   },
   searchInput: { flex: 1, ...typography.body, fontSize: 14, color: colors.text, padding: 0 },
 
-  list: { marginTop: spacing.sm, maxHeight: 260 },
+  // Shorter since Want joined the sheet, so the whole sheet still fits a small
+  // phone without the controls above scrolling away.
+  list: { marginTop: spacing.sm, maxHeight: 220 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingVertical: 11,
+    minHeight: 48,
   },
   rowLabel: { ...typography.body, fontSize: 14, flex: 1, color: colors.textSecondary },
   rowLabelOn: { color: colors.primary },
-  rowNote: { ...typography.caption, fontSize: 11.5, color: colors.textFaint },
+  rowNote: { ...typography.caption, ...typography.numeric, fontSize: 11.5, color: colors.textFaint },
   pressed: { opacity: 0.6 },
   empty: { ...typography.caption, paddingVertical: spacing.lg },
 
-  clear: { alignItems: 'center', paddingTop: spacing.lg },
+  clear: { alignItems: 'center', justifyContent: 'center', minHeight: 48, marginTop: spacing.sm },
   clearText: { ...typography.caption, color: colors.danger },
 }));
