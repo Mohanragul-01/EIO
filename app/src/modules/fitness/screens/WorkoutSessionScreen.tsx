@@ -267,6 +267,7 @@ export function WorkoutSessionScreen() {
               bandsById={bandsById}
               records={w.records}
               restSeconds={w.restFor(block)}
+              targetReason={w.targetFor(block).reason}
               previousFor={(i) => w.previousFor(block, i)}
               ghostFor={(i) => w.ghostFor(block, i)}
               onOpenExercise={() =>

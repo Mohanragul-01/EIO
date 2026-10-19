@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
+import { todayISO } from '../../core/date';
 import { useLatestRun } from '../../core/useLatestRun';
 
 import * as api from './api';
@@ -24,6 +25,7 @@ import { initialDrafts, newDraft, type DraftRow } from './blocks';
 import { toSetFact, workingVolume, type SetFact } from './load';
 import { matchPrevious } from './previous';
 import { ladderSlotTarget } from './progression';
+import { nextTarget, type Target } from './targets';
 import { sessionRecords, type RecordHit } from './records';
 import {
   commitDraft,
@@ -256,20 +258,62 @@ export function useWorkoutSession(sessionId: string) {
     [previous],
   );
 
+  /**
+   * What to aim for this session, by double progression (targets.ts). Its
+   * numbers replace the ghosts only when it has a reason - a step up, or a
+   * hold after a break - and the reason is shown beside the exercise.
+   */
+  const targetFor = useCallback(
+    (block: BlockState): Target => {
+      const exercise = exercisesById[block.exerciseId];
+      const last = previous[block.exerciseId];
+      const slot = slotsByExercise[block.exerciseId];
+      if (!exercise || !last) return { weight: null, reps: null, seconds: null, reason: null };
+      return nextTarget({
+        exercise,
+        slot: slot
+          ? {
+              repsMin: slot.target_reps_min,
+              repsMax: slot.target_reps,
+              secondsMin: slot.target_seconds_min,
+              secondsMax: slot.target_seconds_max,
+              incrementKg: slot.increment_kg,
+            }
+          : null,
+        lastWorkingSets: last.sets,
+        lastDate: last.date,
+        today: session?.date ?? todayISO(),
+      });
+    },
+    [exercisesById, previous, slotsByExercise, session],
+  );
+
   /** The greyed values a row shows and commits if left empty. */
   const ghostFor = useCallback(
     (block: BlockState, index: number): Ghost => {
       const exercise = exercisesById[block.exerciseId];
       const row = block.rows[index];
       if (!exercise || !row) return { reps: null, seconds: null, weight: null, assist: null };
-      return ghostValues({
+      const rowType = row.kind === 'saved' ? row.set.set_type : row.draft.set_type;
+      const ghost = ghostValues({
         exercise,
         previous: previousFor(block, index),
         slot: slotsByExercise[block.exerciseId] ?? null,
-        rowType: row.kind === 'saved' ? row.set.set_type : row.draft.set_type,
+        rowType,
       });
+      // A progression target applies to working sets, never warm-ups or drops.
+      const target = targetFor(block);
+      if (target.reason && (rowType === 'normal' || rowType === 'failure')) {
+        return {
+          reps: target.reps ?? ghost.reps,
+          seconds: target.seconds ?? ghost.seconds,
+          weight: target.weight ?? ghost.weight,
+          assist: ghost.assist,
+        };
+      }
+      return ghost;
     },
-    [exercisesById, previousFor, slotsByExercise],
+    [exercisesById, previousFor, slotsByExercise, targetFor],
   );
 
   /** A block's rest: its own, else the exercise's, else the default. */
@@ -674,6 +718,7 @@ export function useWorkoutSession(sessionId: string) {
     slotsByExercise,
     previousFor,
     ghostFor,
+    targetFor,
     restFor,
     loading,
     error,

@@ -35,6 +35,8 @@ type Props = {
   bandsById: Record<string, Band>;
   records: Record<string, RecordHit[]>;
   restSeconds: number;
+  /** Why today's ghost numbers differ from last time, e.g. "+2.5 kg · every set hit 12". */
+  targetReason?: string | null;
   previousFor: (index: number) => SetFact | null;
   ghostFor: (index: number) => Ghost;
   onOpenExercise: () => void;
@@ -107,6 +109,17 @@ export function ExerciseBlock(props: Props) {
           <Ionicons name="ellipsis-vertical" size={18} color={colors.textSecondary} />
         </Pressable>
       </View>
+
+      {props.targetReason ? (
+        <View
+          style={styles.reason}
+          accessible
+          accessibilityLabel={`Today's target: ${props.targetReason}`}
+        >
+          <Ionicons name="trending-up" size={14} color={colors.info} />
+          <Text style={styles.reasonText}>{props.targetReason}</Text>
+        </View>
+      ) : null}
 
       {exercise?.pinned_note ? (
         <View style={styles.pinned}>
@@ -427,6 +440,19 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     marginHorizontal: spacing.lg,
     marginBottom: spacing.xs,
   },
+  reason: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    alignSelf: 'flex-start',
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.glass,
+  },
+  reasonText: { ...typography.caption, color: colors.info },
   pinnedText: { ...typography.caption, color: colors.textSecondary, flex: 1 },
   note: {
     ...typography.caption,
