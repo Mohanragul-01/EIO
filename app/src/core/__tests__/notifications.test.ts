@@ -29,6 +29,7 @@ type NativeMock = {
   getLastNotificationResponse: jest.Mock;
   clearLastNotificationResponse: jest.Mock;
   dismissNotificationAsync: jest.Mock;
+  getPresentedNotificationsAsync: jest.Mock;
   DEFAULT_ACTION_IDENTIFIER: string;
 };
 
@@ -47,7 +48,8 @@ function nativeMock(granted = true): NativeMock {
     addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
     getLastNotificationResponse: jest.fn(() => null),
     clearLastNotificationResponse: jest.fn(),
-    dismissNotificationAsync: jest.fn(() => Promise.resolve()),
+    dismissNotificationAsync: jest.fn((_id: string) => Promise.resolve()),
+    getPresentedNotificationsAsync: jest.fn(() => Promise.resolve([] as unknown[])),
     DEFAULT_ACTION_IDENTIFIER: 'expo.modules.notifications.actions.DEFAULT',
   };
 }
@@ -327,6 +329,42 @@ describe('onAnyResponse', () => {
     const stop = core.onAnyResponse(jest.fn());
     expect(() => stop()).not.toThrow();
     expect(() => core.listenForResponses()()).not.toThrow();
+    expect(required).not.toHaveBeenCalled();
+  });
+});
+
+describe('dismissPresented', () => {
+  // Cancelling stops reminders still to come; one already in the tray keeps
+  // its buttons, which would act on today's state (pay the next cycle).
+  const shown = (...ids: string[]) => ids.map((identifier) => ({ request: { identifier } }));
+
+  it('takes away the showing notifications whose id starts with the prefix, and no others', async () => {
+    const native = nativeMock();
+    native.getPresentedNotificationsAsync.mockImplementation(() =>
+      Promise.resolve(shown('sub-abc-d1', 'sub-abc-t0', 'sub-other-d1', 'task-1')),
+    );
+    const core = load(native);
+
+    await core.dismissPresented('sub-abc-');
+
+    const dismissed = native.dismissNotificationAsync.mock.calls.map(([id]) => id);
+    expect(dismissed.sort()).toEqual(['sub-abc-d1', 'sub-abc-t0']);
+  });
+
+  it('never throws, whatever the platform says', async () => {
+    const native = nativeMock();
+    native.getPresentedNotificationsAsync.mockImplementation(() => Promise.resolve(shown('a-1', 'a-2')));
+    native.dismissNotificationAsync.mockImplementation(() => Promise.reject(new Error('gone')));
+    await expect(load(native).dismissPresented('a-')).resolves.toBeUndefined();
+
+    const refusing = nativeMock();
+    refusing.getPresentedNotificationsAsync.mockImplementation(() => Promise.reject(new Error('no')));
+    await expect(load(refusing).dismissPresented('a-')).resolves.toBeUndefined();
+  });
+
+  it('does nothing in Expo Go, and never loads the library', async () => {
+    const { core, required } = loadInExpoGo();
+    await expect(core.dismissPresented('a-')).resolves.toBeUndefined();
     expect(required).not.toHaveBeenCalled();
   });
 });

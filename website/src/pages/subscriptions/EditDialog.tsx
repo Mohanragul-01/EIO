@@ -16,7 +16,11 @@ import { TILE_COLOURS, readableOn, tileColor } from '@app/modules/subscriptions/
 import { findService, searchCatalogue, type Service } from '@app/modules/subscriptions/catalogue';
 import { cycleLabel, cycleOf, perMonthMinor, perYearMinor } from '@app/modules/subscriptions/cycles';
 import { CURRENCIES, currencyDef, formatRate, toInrMinor } from '@app/modules/subscriptions/currency';
-import { DEFAULT_REMINDER_SETTINGS, OFFSET_CHOICES } from '@app/modules/subscriptions/reminders';
+import {
+  DEFAULT_REMINDER_SETTINGS,
+  OFFSET_CHOICES,
+  offsetsToSave,
+} from '@app/modules/subscriptions/reminders';
 import {
   CHANNEL_LABEL,
   CHARGE_CHANNELS,
@@ -152,7 +156,7 @@ export function EditDialog({
       color,
       account_id: accountId || null,
       charge_channel: channel || null,
-      reminder_offsets: reminderMode === 'default' ? null : reminderMode === 'off' ? [] : offsets,
+      reminder_offsets: offsetsToSave(reminderMode, offsets),
       cycle_unit: cycle.unit,
       cycle_count: cycle.count,
       currency,

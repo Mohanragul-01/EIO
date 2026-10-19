@@ -11,7 +11,14 @@
  * is the cure: api.ts registers it as this module's launch resync, so every
  * signed-in launch rebuilds them from the database.
  */
-import { cancel, cancelPrefix, schedule, type Category, type Channel } from '../../core/notifications';
+import {
+  cancel,
+  cancelPrefix,
+  dismissPresented,
+  schedule,
+  type Category,
+  type Channel,
+} from '../../core/notifications';
 import {
   RENEWAL_CATEGORY,
   REMINDER_PREFIX,
@@ -50,10 +57,16 @@ const TRIAL_BUTTONS: Category = {
  *
  * The bare id is v2's single reminder, still on phones that scheduled one;
  * the prefix covers each offset's own reminder.
+ *
+ * Every caller has just changed this subscription (an edit, a payment, a
+ * pause, a delete), so one of its reminders still in the tray is out of date,
+ * and its buttons would act on the new state: it goes too. (v2's had no
+ * buttons, so the bare id is left to the person.)
  */
 export async function cancelReminders(subscriptionId: string): Promise<void> {
   await cancel(reminderId(subscriptionId));
   await cancelPrefix(`${reminderId(subscriptionId)}-`);
+  await dismissPresented(`${reminderId(subscriptionId)}-`);
 }
 
 /**

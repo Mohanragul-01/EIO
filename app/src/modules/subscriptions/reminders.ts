@@ -91,6 +91,21 @@ export function effectiveOffsets(
   return [...new Set([...valid, 0])].sort((a, b) => b - a);
 }
 
+/**
+ * What an edit form stores for its reminder choice: null follows the
+ * defaults, [] is Off, and Custom always carries the same day (0) - so a
+ * Custom choice with no days ticked still reminds on the morning, rather than
+ * being stored as [] and read back as Off.
+ */
+export function offsetsToSave(
+  mode: 'default' | 'custom' | 'off',
+  custom: readonly number[],
+): number[] | null {
+  if (mode === 'default') return null;
+  if (mode === 'off') return [];
+  return [...new Set([...custom, 0])].sort((a, b) => b - a);
+}
+
 /** Local wall-clock time `minutes` after midnight, `offset` days before `iso`. */
 function fireAt(iso: string, offset: number, minutes: number): Date {
   const [y, m, d] = iso.split('-').map(Number);

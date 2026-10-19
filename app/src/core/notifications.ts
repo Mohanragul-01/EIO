@@ -265,6 +265,28 @@ export async function cancelPrefix(prefix: string): Promise<void> {
   }
 }
 
+/**
+ * Take away notifications already SHOWING whose id starts with `prefix`.
+ * Cancelling only stops ones still to come; a reminder already in the tray
+ * keeps its buttons, and those would act on today's state (pay the next
+ * cycle). Call it when the thing a reminder was about has changed - not from
+ * a launch resync, which would clear reminders the person has not read yet.
+ */
+export async function dismissPresented(prefix: string): Promise<void> {
+  const mod = loadNotifications();
+  if (!mod) return;
+  try {
+    const shown = await mod.getPresentedNotificationsAsync();
+    await Promise.all(
+      shown
+        .filter((n) => n.request.identifier.startsWith(prefix))
+        .map((n) => mod.dismissNotificationAsync(n.request.identifier).catch(() => {})),
+    );
+  } catch {
+    // Unavailable (Android below 6, the web): nothing showing to take away.
+  }
+}
+
 /** Each module's "rebuild my reminders from the database", by module key. */
 const resyncs = new Map<string, () => Promise<void>>();
 

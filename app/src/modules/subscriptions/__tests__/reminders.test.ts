@@ -16,7 +16,7 @@ import type { Subscription } from '../types';
 
 type Native = ReturnType<typeof nativeMock>;
 
-function nativeMock(scheduled: { identifier: string }[] = []) {
+function nativeMock(scheduled: { identifier: string }[] = [], presented: string[] = []) {
   return {
     setNotificationHandler: jest.fn(),
     setNotificationChannelAsync: jest.fn(() => Promise.resolve()),
@@ -26,6 +26,10 @@ function nativeMock(scheduled: { identifier: string }[] = []) {
     ),
     cancelScheduledNotificationAsync: jest.fn((_id: string) => Promise.resolve()),
     getAllScheduledNotificationsAsync: jest.fn(() => Promise.resolve(scheduled)),
+    getPresentedNotificationsAsync: jest.fn(() =>
+      Promise.resolve(presented.map((identifier) => ({ request: { identifier } }))),
+    ),
+    dismissNotificationAsync: jest.fn((_id: string) => Promise.resolve()),
     getPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true, canAskAgain: true })),
     requestPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true })),
     AndroidImportance: { DEFAULT: 3 },
@@ -142,6 +146,32 @@ describe('scheduleReminders', () => {
     ];
     expect(request.trigger.channelId).toBe('renewals');
     expect(request.content.categoryIdentifier).toBe('subscription_renewal');
+  });
+});
+
+describe('cancelReminders', () => {
+  it("takes this subscription's reminders out of the tray too, and no one else's", async () => {
+    // A "renews tomorrow" still showing after you paid would offer Mark paid
+    // for a cycle that is already settled.
+    const native = nativeMock(
+      [],
+      ['subscription-renewal-abc-d1', 'subscription-renewal-abc-t0', 'subscription-renewal-other-d1'],
+    );
+    const notifications = load(native);
+
+    await notifications.cancelReminders('abc');
+
+    const dismissed = native.dismissNotificationAsync.mock.calls.map(([id]) => id);
+    expect(dismissed.sort()).toEqual(['subscription-renewal-abc-d1', 'subscription-renewal-abc-t0']);
+  });
+
+  it('is not what the launch resync does: opening the app leaves unread reminders showing', async () => {
+    const native = nativeMock([], ['subscription-renewal-abc-d1']);
+    const notifications = load(native);
+
+    await notifications.rescheduleAll([sub()], DEFAULT_REMINDER_SETTINGS);
+
+    expect(native.dismissNotificationAsync).not.toHaveBeenCalled();
   });
 });
 

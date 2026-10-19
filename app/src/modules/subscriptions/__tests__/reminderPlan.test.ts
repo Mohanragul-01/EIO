@@ -10,6 +10,7 @@
 import {
   DEFAULT_REMINDER_SETTINGS,
   effectiveOffsets,
+  offsetsToSave,
   reminderId,
   reminderPlan,
 } from '../reminders';
@@ -75,6 +76,25 @@ describe('effectiveOffsets', () => {
 
   it('defaults to three days and one day ahead, at nine', () => {
     expect(DEFAULT_REMINDER_SETTINGS).toEqual({ offsets: [3, 1], minutes: 540 });
+  });
+});
+
+describe('offsetsToSave (what the edit form stores)', () => {
+  it('stores null for the defaults and [] for Off', () => {
+    expect(offsetsToSave('default', [7])).toBeNull();
+    expect(offsetsToSave('off', [7])).toEqual([]);
+  });
+
+  it('keeps the same-day reminder when Custom has no days ticked', () => {
+    // [] is how Off is stored; a Custom choice with nothing ticked is not Off.
+    const saved = offsetsToSave('custom', []);
+    expect(saved).toEqual([0]);
+    expect(effectiveOffsets(sub({ reminder_offsets: saved }), SETTINGS)).toEqual([0]);
+  });
+
+  it('stores the ticked days with the same day, most days ahead first', () => {
+    expect(offsetsToSave('custom', [1, 7])).toEqual([7, 1, 0]);
+    expect(offsetsToSave('custom', [0, 3])).toEqual([3, 0]);
   });
 });
 

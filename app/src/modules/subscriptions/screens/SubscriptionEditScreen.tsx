@@ -47,7 +47,7 @@ import { cycleLabel, cycleOf, perMonthMinor, perYearMinor } from '../cycles';
 import { CURRENCIES, currencyDef, formatRate, toInrMinor } from '../currency';
 import { offsetsLabel, timeLabel } from '../format';
 import { ensurePermission } from '../notifications';
-import { DEFAULT_REMINDER_SETTINGS, effectiveOffsets } from '../reminders';
+import { DEFAULT_REMINDER_SETTINGS, effectiveOffsets, offsetsToSave } from '../reminders';
 import {
   CHANNEL_LABEL,
   CHARGE_CHANNELS,
@@ -333,8 +333,7 @@ export function SubscriptionEditScreen() {
       color: form.color,
       account_id: form.accountId,
       charge_channel: form.channel,
-      reminder_offsets:
-        form.reminderMode === 'default' ? null : form.reminderMode === 'off' ? [] : form.customOffsets,
+      reminder_offsets: offsetsToSave(form.reminderMode, form.customOffsets),
       cycle_unit: cycle.unit,
       cycle_count: cycle.count,
       currency: form.currency,
