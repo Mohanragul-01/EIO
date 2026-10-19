@@ -7,9 +7,39 @@
 import { getOwnerId } from '../../core/session';
 import { supabase } from '../../core/supabase';
 import { todayISO } from '../../core/date';
-import type { BucketInput, BucketItem, Cost } from './types';
+import type { BucketInput, BucketItem, BucketStep, Cost, DoneState } from './types';
 
 const TABLE = 'bucket_items';
+const STEPS = 'bucket_steps';
+
+/**
+ * Every column a v3 screen writes after creation, any subset of them.
+ *
+ * One patch type rather than a function per feature (setFocus, snooze,
+ * saveMemory...), because each of those would be the same three lines, and
+ * the hook's per-field rollback works on exactly this shape.
+ */
+export type ItemPatch = Partial<
+  Pick<
+    BucketItem,
+    | 'title'
+    | 'category'
+    | 'cost'
+    | 'note'
+    | 'is_done'
+    | 'done_on'
+    | 'done_precision'
+    | 'memory'
+    | 'place'
+    | 'again'
+    | 'snoozed_until'
+    | 'focus'
+    | 'target_on'
+    | 'target_precision'
+    | 'est_cost_minor'
+    | 'saved_minor'
+  >
+>;
 
 /**
  * The whole list.
@@ -50,7 +80,33 @@ export async function setDone(id: string, isDone: boolean): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-export async function createItem(input: BucketInput): Promise<BucketItem> {
+/**
+ * Write a whole done state - the tick, its date and how precisely the date is
+ * known - in one update, so Undo can restore a backdated date exactly.
+ */
+export async function setDoneState(id: string, state: DoneState): Promise<void> {
+  await patchItem(id, state);
+}
+
+/** Change any of an item's fields. */
+export async function patchItem(id: string, patch: ItemPatch): Promise<void> {
+  const { error } = await supabase.from(TABLE).update(patch).eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Swap one item off the Now shelf for another.
+ *
+ * Two writes and no transaction, so the order matters: the one leaving goes
+ * to Next FIRST. Interrupted between the two, the shelf holds four, which you
+ * can see and fix; the other order would leave six, past the cap.
+ */
+export async function swapNow(outId: string, inId: string): Promise<void> {
+  await patchItem(outId, { focus: 'next' });
+  await patchItem(inId, { focus: 'now' });
+}
+
+export async function createItem(input: BucketInput & ItemPatch): Promise<BucketItem> {
   const ownerId = await getOwnerId();
 
   const { data, error } = await supabase
@@ -73,9 +129,88 @@ export async function updateItem(id: string, input: Partial<BucketInput>): Promi
   if (error) throw new Error(error.message);
 }
 
+/** Deletes the item and, by cascade, its steps. Screens say so first. */
 export async function deleteItem(id: string): Promise<void> {
   const { error } = await supabase.from(TABLE).delete().eq('id', id);
   if (error) throw new Error(error.message);
+}
+
+/* STEPS -------------------------------------------------------------------- */
+
+/**
+ * Every step the owner has, in one request.
+ *
+ * Only planned items have steps, so this is a handful of rows, and the Now
+ * cards need them all at once to show each one's next step and its bar.
+ */
+export async function listSteps(): Promise<BucketStep[]> {
+  const ownerId = await getOwnerId();
+
+  const { data, error } = await supabase
+    .from(STEPS)
+    .select('*')
+    .eq('user_id', ownerId)
+    .order('item_id', { ascending: true })
+    .order('position', { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function addStep(itemId: string, title: string, position: number): Promise<BucketStep> {
+  const ownerId = await getOwnerId();
+
+  const { data, error } = await supabase
+    .from(STEPS)
+    .insert({ item_id: itemId, title, position, user_id: ownerId })
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function updateStep(
+  id: string,
+  patch: Partial<Pick<BucketStep, 'title' | 'is_done' | 'position'>>,
+): Promise<void> {
+  const { error } = await supabase.from(STEPS).update(patch).eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteStep(id: string): Promise<void> {
+  const { error } = await supabase.from(STEPS).delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Put a removed step back - same id, same place - for Undo.
+ *
+ * The id is kept so that anything still holding the step (the open sheet)
+ * refers to the row that comes back rather than a stranger with its title.
+ */
+export async function restoreStep(step: BucketStep): Promise<void> {
+  const { error } = await supabase.from(STEPS).insert({
+    id: step.id,
+    item_id: step.item_id,
+    user_id: step.user_id,
+    title: step.title,
+    is_done: step.is_done,
+    position: step.position,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Write new positions for steps that moved.
+ *
+ * Only the rows whose position changed - usually two. Each write is
+ * independent, so an interruption can leave two steps sharing a position,
+ * which sorts by creation time and is fixed by the next move: an odd order,
+ * never a lost step.
+ */
+export async function reorderSteps(moves: { id: string; position: number }[]): Promise<void> {
+  await Promise.all(moves.map(({ id, position }) => updateStep(id, { position })));
 }
 
 /**
@@ -86,11 +221,16 @@ export async function deleteItem(id: string): Promise<void> {
  * avoided exactly that - it fetched no titles, but it still pulled 818 rows
  * over mobile data every time the home screen loaded, to render one line.
  *
- * Three head requests instead: `head: true` sends no rows at all, only the
- * count in a header, and they run in parallel so it is still one round trip's
- * worth of waiting.
+ * Head requests instead: `head: true` sends no rows at all, only the count
+ * in a header, and they run in parallel so it is still one round trip's worth
+ * of waiting.
  */
-export async function overview(): Promise<{ total: number; done: number; freeLeft: number }> {
+export async function overview(): Promise<{
+  total: number;
+  done: number;
+  freeLeft: number;
+  nowCount: number;
+}> {
   const ownerId = await getOwnerId();
 
   const count = async (refine: (q: ReturnType<typeof baseQuery>) => typeof q = (q) => q) => {
@@ -99,13 +239,15 @@ export async function overview(): Promise<{ total: number; done: number; freeLef
     return n ?? 0;
   };
 
-  const [total, done, freeLeft] = await Promise.all([
+  const [total, done, freeLeft, nowCount] = await Promise.all([
     count(),
     count((q) => q.eq('is_done', true)),
     count((q) => q.eq('is_done', false).eq('cost', 'low' satisfies Cost)),
+    // What is on the Now shelf - done ones have left it.
+    count((q) => q.eq('is_done', false).eq('focus', 'now')),
   ]);
 
-  return { total, done, freeLeft };
+  return { total, done, freeLeft, nowCount };
 }
 
 /** A count-only query for this owner: no rows come back, just the number. */

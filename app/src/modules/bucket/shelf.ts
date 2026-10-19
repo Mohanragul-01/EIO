@@ -37,6 +37,10 @@ export function isShelfFull(items: BucketItem[]): boolean {
   return nowShelf(items).length >= NOW_CAP;
 }
 
+/** Position order, oldest first where two share one. */
+const stepOrder = (a: BucketStep, b: BucketStep) =>
+  a.position - b.position || a.created_at.localeCompare(b.created_at);
+
 /** Steps per item, in their order. */
 export function stepsByItem(steps: BucketStep[]): Map<string, BucketStep[]> {
   const grouped = new Map<string, BucketStep[]>();
@@ -45,15 +49,43 @@ export function stepsByItem(steps: BucketStep[]): Map<string, BucketStep[]> {
     grouped.set(step.item_id, rows);
     rows.push(step);
   });
-  grouped.forEach((rows) =>
-    rows.sort((a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at)),
-  );
+  grouped.forEach((rows) => rows.sort(stepOrder));
   return grouped;
+}
+
+/** Where a new step goes: after the last one. */
+export function nextStepPosition(steps: BucketStep[]): number {
+  return steps.reduce((max, step) => Math.max(max, step.position + 1), 0);
+}
+
+/**
+ * The position writes that move one step up or down.
+ *
+ * The whole list is renumbered 0..n-1 and only the rows that changed are
+ * returned - usually the two that swapped. Renumbering rather than trading two
+ * numbers means a clash left by an interrupted move (two steps on the same
+ * position) is repaired by the next move instead of living on.
+ */
+export function stepMoves(
+  steps: BucketStep[],
+  stepId: string,
+  direction: -1 | 1,
+): { id: string; position: number }[] {
+  const ordered = [...steps].sort(stepOrder);
+  const from = ordered.findIndex((step) => step.id === stepId);
+  const to = from + direction;
+  if (from < 0 || to < 0 || to >= ordered.length) return [];
+
+  [ordered[from], ordered[to]] = [ordered[to], ordered[from]];
+  return ordered
+    .map((step, position) => ({ id: step.id, position, was: step.position }))
+    .filter(({ position, was }) => position !== was)
+    .map(({ id, position }) => ({ id, position }));
 }
 
 /** What to do next: the first step not yet done. */
 export function nextStep(steps: BucketStep[]): BucketStep | null {
-  return [...steps].sort((a, b) => a.position - b.position).find((step) => !step.is_done) ?? null;
+  return [...steps].sort(stepOrder).find((step) => !step.is_done) ?? null;
 }
 
 export type ShelfProgress = {

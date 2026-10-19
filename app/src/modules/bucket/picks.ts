@@ -90,3 +90,34 @@ export function picksFor(
     .slice(0, count)
     .map(({ item }) => item);
 }
+
+/* WHAT THE CARD REMEMBERS ------------------------------------------------------
+ * Today's shuffle count and whether the card is folded, stored as JSON on the
+ * device (pickPrefs.ts). A new day starts unshuffled; the fold persists.
+ * Parsing never throws - storage can hand back nothing, garbage, or an older
+ * shape, and a preference must never be why the list fails to open.
+ */
+
+export type StoredPickPrefs = { day: string; roll: number; collapsed: boolean };
+export type PickPrefs = { roll: number; collapsed: boolean };
+
+export const FRESH_PICK_PREFS: PickPrefs = { roll: 0, collapsed: false };
+
+export function serialisePickPrefs(prefs: StoredPickPrefs): string {
+  return JSON.stringify(prefs);
+}
+
+export function parsePickPrefs(raw: string | null, today: string): PickPrefs {
+  if (!raw) return FRESH_PICK_PREFS;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return FRESH_PICK_PREFS;
+
+    const { day, roll, collapsed } = value as Partial<StoredPickPrefs>;
+    if (typeof roll !== 'number' || !Number.isInteger(roll) || roll < 0) return FRESH_PICK_PREFS;
+
+    return { roll: day === today ? roll : 0, collapsed: collapsed === true };
+  } catch {
+    return FRESH_PICK_PREFS;
+  }
+}

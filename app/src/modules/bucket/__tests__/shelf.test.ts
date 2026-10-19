@@ -5,7 +5,16 @@
  * What counts towards it, what order the cards come in, and what each card's
  * bar measures are the rules worth pinning.
  */
-import { NOW_CAP, isShelfFull, nextStep, nowShelf, shelfProgress, stepsByItem } from '../shelf';
+import {
+  NOW_CAP,
+  isShelfFull,
+  nextStep,
+  nextStepPosition,
+  nowShelf,
+  shelfProgress,
+  stepMoves,
+  stepsByItem,
+} from '../shelf';
 import type { BucketItem, BucketStep } from '../types';
 
 let seq = 0;
@@ -140,5 +149,51 @@ describe('shelfProgress', () => {
 
   it('has no bar when there is nothing to measure', () => {
     expect(shelfProgress(item(), [])).toBeNull();
+  });
+});
+
+describe('stepMoves', () => {
+  const steps = [
+    step({ id: 'a', position: 0 }),
+    step({ id: 'b', position: 1 }),
+    step({ id: 'c', position: 2 }),
+  ];
+
+  it('swaps a step with its neighbour, writing only what moved', () => {
+    expect(stepMoves(steps, 'b', -1)).toEqual([
+      { id: 'b', position: 0 },
+      { id: 'a', position: 1 },
+    ]);
+    expect(stepMoves(steps, 'b', 1)).toEqual([
+      { id: 'c', position: 1 },
+      { id: 'b', position: 2 },
+    ]);
+  });
+
+  it('does nothing at either end', () => {
+    expect(stepMoves(steps, 'a', -1)).toEqual([]);
+    expect(stepMoves(steps, 'c', 1)).toEqual([]);
+  });
+
+  it('repairs positions an interrupted move left shared', () => {
+    // Two steps on position 1 after a dropped connection: the next move
+    // renumbers the whole list, so the clash does not outlive it.
+    const clashed = [
+      step({ id: 'a', position: 0, created_at: '2026-01-01T00:00:00Z' }),
+      step({ id: 'b', position: 1, created_at: '2026-01-02T00:00:00Z' }),
+      step({ id: 'c', position: 1, created_at: '2026-01-03T00:00:00Z' }),
+    ];
+    expect(stepMoves(clashed, 'a', 1)).toEqual([
+      { id: 'b', position: 0 },
+      { id: 'a', position: 1 },
+      { id: 'c', position: 2 },
+    ]);
+  });
+});
+
+describe('nextStepPosition', () => {
+  it('goes after the last step, or first on an empty list', () => {
+    expect(nextStepPosition([])).toBe(0);
+    expect(nextStepPosition([step({ position: 0 }), step({ position: 4 })])).toBe(5);
   });
 });
