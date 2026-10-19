@@ -57,6 +57,7 @@ function blockFor(
   sets: SessionSet[],
   slot: RoutineExercise | undefined,
   previous: Previous,
+  unilateral = false,
 ): BlockState {
   const saved = sets
     .filter((s) => s.exercise_id === row.exercise_id)
@@ -67,9 +68,16 @@ function blockFor(
     routineTargetSets: slot?.target_sets ?? null,
     previousSets: previous[row.exercise_id]?.sets ?? [],
   });
+  // A one-sided exercise logs each set as a left and a right.
+  const sided = unilateral
+    ? drafts.flatMap((d) => [
+        { ...d, side: 'left' as const },
+        { ...newDraft(row.id, d.set_type), side: 'right' as const },
+      ])
+    : drafts;
   const rows: Row[] = [
     ...saved.map((set): Row => ({ kind: 'saved', key: set.id, set })),
-    ...drafts.map((draft): Row => ({ kind: 'draft', key: draft.key, draft })),
+    ...sided.map((draft): Row => ({ kind: 'draft', key: draft.key, draft })),
   ];
   return { id: row.id, exerciseId: row.exercise_id, sessionExercise: row, rows };
 }
@@ -175,7 +183,15 @@ export function useWorkoutSession(sessionId: string) {
       setSlots(slotRows);
       dispatch({
         type: 'load',
-        blocks: allBlocks.map((row) => blockFor(row, sets, slotMap[row.exercise_id], previousRows)),
+        blocks: allBlocks.map((row) =>
+          blockFor(
+            row,
+            sets,
+            slotMap[row.exercise_id],
+            previousRows,
+            exerciseRows.find((e) => e.id === row.exercise_id)?.is_unilateral,
+          ),
+        ),
       });
     } catch (e) {
       if (isCurrent()) setError(e instanceof Error ? e.message : 'Could not load this workout');
@@ -261,7 +277,15 @@ export function useWorkoutSession(sessionId: string) {
   // ROWS --------------------------------------------------------------------------
 
   const tick = useCallback(
-    async (blockId: string, key: string): Promise<TickResult> => {
+    /**
+     * `override` carries values decided at the moment of ticking (the hold
+     * timer's seconds), which have not reached the draft in state yet.
+     */
+    async (
+      blockId: string,
+      key: string,
+      override?: Partial<Omit<DraftRow, 'key'>>,
+    ): Promise<TickResult> => {
       const block = stateRef.current.blocks.find((b) => b.id === blockId);
       const index = block?.rows.findIndex((r) => r.key === key) ?? -1;
       const row = block?.rows[index];
@@ -269,8 +293,10 @@ export function useWorkoutSession(sessionId: string) {
       if (!block || !row || row.kind !== 'draft' || !exercise || inFlight.current.has(key)) {
         return { ok: false, reason: '' };
       }
+      if (override) dispatch({ type: 'updateDraft', blockId, key, patch: override });
+      const draft = override ? { ...row.draft, ...override } : row.draft;
 
-      const committed = commitDraft(row.draft, ghostFor(block, index), exercise);
+      const committed = commitDraft(draft, ghostFor(block, index), exercise);
       if (!committed.ok) return committed;
 
       inFlight.current.add(key);
@@ -387,10 +413,26 @@ export function useWorkoutSession(sessionId: string) {
     [sessionId, fail, load, isMounted],
   );
 
-  const addRow = useCallback((blockId: string, setType: SetType = 'normal', index?: number) => {
-    const draft = newDraft(blockId, setType);
-    dispatch({ type: 'addRow', blockId, row: { kind: 'draft', key: draft.key, draft }, index });
-  }, []);
+  /** Add a row; a one-sided exercise gets a left and a right. */
+  const addRow = useCallback(
+    (blockId: string, setType: SetType = 'normal', index?: number) => {
+      const block = stateRef.current.blocks.find((b) => b.id === blockId);
+      const sides =
+        block && exercisesById[block.exerciseId]?.is_unilateral
+          ? (['left', 'right'] as const)
+          : [null];
+      sides.forEach((side, i) => {
+        const draft = { ...newDraft(blockId, setType), side };
+        dispatch({
+          type: 'addRow',
+          blockId,
+          row: { kind: 'draft', key: draft.key, draft },
+          index: index === undefined ? undefined : index + i,
+        });
+      });
+    },
+    [exercisesById],
+  );
 
   const updateDraft = useCallback(
     (blockId: string, key: string, patch: Partial<Omit<DraftRow, 'key'>>) => {
@@ -448,12 +490,21 @@ export function useWorkoutSession(sessionId: string) {
         if (!isMounted()) return;
         setBaseline((b) => ({ ...b, ...base }));
         setPrevious((p) => ({ ...p, ...prev }));
-        dispatch({ type: 'addBlock', block: blockFor(row, [], slotsByExercise[exerciseId], prev) });
+        dispatch({
+          type: 'addBlock',
+          block: blockFor(
+            row,
+            [],
+            slotsByExercise[exerciseId],
+            prev,
+            exercisesById[exerciseId]?.is_unilateral,
+          ),
+        });
       } catch (e) {
         fail(e, 'Could not add that exercise');
       }
     },
-    [session, sessionId, slotsByExercise, isMounted, fail],
+    [session, sessionId, slotsByExercise, exercisesById, isMounted, fail],
   );
 
   /** Remove a block and every set logged in it. The screen confirms first if any. */
@@ -604,6 +655,8 @@ export function useWorkoutSession(sessionId: string) {
     bands,
     records,
     stats,
+    /** Each exercise's sets from other sessions, for bests. */
+    baseline,
     slotsByExercise,
     previousFor,
     ghostFor,

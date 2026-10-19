@@ -39,6 +39,7 @@ import { radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
 import { ExerciseBlock } from '../components/ExerciseBlock';
+import { HoldDial } from '../components/HoldDial';
 import { PickerSheet } from '../components/PickerSheet';
 import { REST_BAR_HEIGHT, RestBar } from '../components/RestBar';
 import { BlockMenu, LoadSheet, RestSheet, SetTypeSheet } from '../components/SessionSheets';
@@ -71,6 +72,7 @@ export function WorkoutSessionScreen() {
   const [loadFor, setLoadFor] = useState<RowTarget | null>(null);
   const [blockMenu, setBlockMenu] = useState<string | null>(null);
   const [restFor, setRestFor] = useState<string | null>(null);
+  const [holdFor, setHoldFor] = useState<RowTarget | null>(null);
   const [notes, setNotes] = useState('');
   const [notesSeededFor, setNotesSeededFor] = useState<string | null>(null);
 
@@ -137,8 +139,8 @@ export function WorkoutSessionScreen() {
   }, []);
 
   const onTick = useCallback(
-    async (blockId: string, key: string) => {
-      const result = await w.tick(blockId, key);
+    async (blockId: string, key: string, override?: { seconds: string }) => {
+      const result = await w.tick(blockId, key, override);
       if (!result.ok) {
         if (result.reason) toast.show({ message: result.reason });
         return;
@@ -184,6 +186,20 @@ export function WorkoutSessionScreen() {
   const menuForBlock = w.blocks.find((b) => b.id === blockMenu);
   const menuBlockIndex = w.blocks.findIndex((b) => b.id === blockMenu);
   const restBlock = w.blocks.find((b) => b.id === restFor);
+
+  // The hold timer's row: its goal (ghost), your best, and last time's.
+  const holdBlock = w.blocks.find((b) => b.id === holdFor?.blockId);
+  const holdIndex = holdBlock?.rows.findIndex((r) => r.key === holdFor?.key) ?? -1;
+  const holdGhost = holdBlock && holdIndex >= 0 ? w.ghostFor(holdBlock, holdIndex) : null;
+  const holdPrevious = holdBlock && holdIndex >= 0 ? w.previousFor(holdBlock, holdIndex) : null;
+  const holdBest = holdBlock
+    ? Math.max(
+        0,
+        ...(w.baseline[holdBlock.exerciseId] ?? [])
+          .filter((s) => s.set_type !== 'warmup')
+          .map((s) => s.duration_seconds ?? 0),
+      )
+    : 0;
 
   const restExerciseName = rest ? (w.exercisesById[rest.exerciseId]?.name ?? '') : '';
 
@@ -267,6 +283,7 @@ export function WorkoutSessionScreen() {
               onLoad={(key) => setLoadFor({ blockId: block.id, key })}
               onChangeDraft={(key, patch) => w.updateDraft(block.id, key, patch)}
               onDelete={(key) => onDelete(block.id, key)}
+              onHold={(key) => setHoldFor({ blockId: block.id, key })}
               onAddSet={() => w.addRow(block.id)}
               onNoteBlur={(note) => void w.setBlockNote(block.id, note)}
             />
@@ -336,6 +353,18 @@ export function WorkoutSessionScreen() {
         onSelect={(ids) => ids.forEach((id) => void w.addExercise(id))}
         onClose={() => setPicking(false)}
       />
+
+      {holdBlock && holdFor ? (
+        <HoldDial
+          visible
+          exerciseName={w.exercisesById[holdBlock.exerciseId]?.name ?? 'Hold'}
+          goalSeconds={holdGhost?.seconds ?? null}
+          bestSeconds={holdBest || null}
+          lastSeconds={holdPrevious?.duration_seconds ?? null}
+          onSave={(seconds) => void onTick(holdBlock.id, holdFor.key, { seconds: String(seconds) })}
+          onClose={() => setHoldFor(null)}
+        />
+      ) : null}
 
       {menuBlock && menuRow && menuValues ? (
         <SetTypeSheet

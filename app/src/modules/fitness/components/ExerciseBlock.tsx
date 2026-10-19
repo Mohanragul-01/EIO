@@ -46,6 +46,8 @@ type Props = {
   onLoad: (key: string) => void;
   onChangeDraft: (key: string, patch: Partial<Omit<DraftRow, 'key'>>) => void;
   onDelete: (key: string) => void;
+  /** A held exercise's value cell opens the hold timer. */
+  onHold: (key: string) => void;
   onAddSet: () => void;
   onNoteBlur: (note: string) => void;
 };
@@ -150,6 +152,7 @@ export function ExerciseBlock(props: Props) {
           onLoad={props.onLoad}
           onChangeDraft={props.onChangeDraft}
           onDelete={props.onDelete}
+          onHold={props.onHold}
         />
       ))}
 
@@ -181,6 +184,7 @@ function SetRow({
   onLoad,
   onChangeDraft,
   onDelete,
+  onHold,
 }: {
   row: Row;
   index: number;
@@ -196,6 +200,7 @@ function SetRow({
   onLoad: (key: string) => void;
   onChangeDraft: (key: string, patch: Partial<Omit<DraftRow, 'key'>>) => void;
   onDelete: (key: string) => void;
+  onHold: (key: string) => void;
 }) {
   const styles = useStyles();
   const { colors } = useTheme();
@@ -205,6 +210,7 @@ function SetRow({
   const type = typeOf(row);
   const saved = row.kind === 'saved';
   const record = primaryRecord(hits);
+  const side = row.kind === 'saved' ? row.set.side : row.draft.side;
 
   const letterColor: Record<SetType, string> = {
     warmup: colors.warning,
@@ -272,18 +278,35 @@ function SetRow({
       ? formatHoldShort(row.set.duration_seconds ?? 0)
       : String(row.set.reps ?? 0);
     valueCell = <Text style={[styles.colValue, styles.cellText, styles.savedText]}>{value}</Text>;
+  } else if (timed) {
+    // The timer is the input: tap to hold, and the seconds fill themselves in.
+    const shown = row.draft.seconds || (ghost.seconds ? String(ghost.seconds) : '');
+    valueCell = (
+      <Pressable
+        onPress={() => row.kind === 'draft' && onHold(row.key)}
+        disabled={row.kind !== 'draft'}
+        accessibilityRole="button"
+        accessibilityLabel={`Set ${label} hold${shown ? `, ${shown} seconds` : ''}. Open the timer`}
+        style={[styles.colValue, styles.holdCell]}
+      >
+        <Ionicons name="timer-outline" size={14} color={colors.accentCyan} />
+        <Text style={[styles.cellText, !row.draft.seconds && styles.ghostText]}>
+          {shown ? `${shown}s` : '—'}
+        </Text>
+      </Pressable>
+    );
   } else {
     valueCell = (
       <TextInput
-        value={timed ? row.draft.seconds : row.draft.reps}
-        onChangeText={(text) => onChangeDraft(row.key, timed ? { seconds: text } : { reps: text })}
-        placeholder={timed ? fmt(ghost.seconds) : fmt(ghost.reps)}
+        value={row.draft.reps}
+        onChangeText={(text) => onChangeDraft(row.key, { reps: text })}
+        placeholder={fmt(ghost.reps)}
         placeholderTextColor={colors.textFaint}
         keyboardType="number-pad"
         selectTextOnFocus
         editable={row.kind === 'draft'}
         style={[styles.colValue, styles.input]}
-        accessibilityLabel={`Set ${label} ${timed ? 'seconds' : 'reps'}`}
+        accessibilityLabel={`Set ${label} reps`}
       />
     );
   }
@@ -306,7 +329,7 @@ function SetRow({
         <Pressable
           onPress={() => onSetMenu(row.key)}
           accessibilityRole="button"
-          accessibilityLabel={`Set ${label}${record ? `, record: ${record.label}` : ''}. Change type or remove`}
+          accessibilityLabel={`Set ${label}${side ? (side === 'left' ? ', left side' : ', right side') : ''}${record ? `, record: ${record.label}` : ''}. Change type or remove`}
           style={styles.colSet}
         >
           {record ? (
@@ -317,6 +340,7 @@ function SetRow({
           ) : (
             <Text style={[styles.setLabel, { color: letterColor[type] }]}>{label}</Text>
           )}
+          {side ? <Text style={styles.side}>{side === 'left' ? 'L' : 'R'}</Text> : null}
         </Pressable>
 
         <Pressable
@@ -434,6 +458,19 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   colValue: { width: 60, textAlign: 'center' },
   colTick: { width: 52, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
   setLabel: { ...typography.title, ...typography.numeric },
+  side: { ...typography.overline, color: colors.textSecondary },
+  holdCell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    minHeight: 40,
+    marginHorizontal: 2,
+    borderRadius: radius.sm,
+    backgroundColor: colors.glass,
+  },
+  // Ghost seconds read as a suggestion, like an input's placeholder.
+  ghostText: { color: colors.textFaint },
   medal: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   prevText: { ...typography.caption, ...typography.numeric, textAlign: 'center' },
   prevSaved: { color: colors.textSecondary },
