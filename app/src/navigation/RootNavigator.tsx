@@ -11,9 +11,13 @@
  * a module ever gets large it can graduate to its own nested navigator without
  * changing how the home screen works.
  */
-import { NavigationContainer, type Theme as NavTheme } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  useNavigationContainerRef,
+  type Theme as NavTheme,
+} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import React from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
 import { useAuth } from '../core/auth';
@@ -40,6 +44,7 @@ import { SubscriptionsListScreen } from '../modules/subscriptions/screens/Subscr
 import { TodoEditScreen } from '../modules/todo/screens/TodoEditScreen';
 import { TodoListScreen } from '../modules/todo/screens/TodoListScreen';
 import type { RootStackParamList } from './types';
+import { useNotificationRoutes } from './useNotificationRoutes';
 import { makeStyles, useTheme } from '../core/ThemeContext';
 
 // Passing the param list here is what makes navigate() calls type-safe.
@@ -49,6 +54,14 @@ export function RootNavigator() {
   const styles = useStyles();
   const { colors, isDark } = useTheme();
   const { session, initializing } = useAuth();
+
+  // A tapped reminder opens the screen its data names (a subscription, its
+  // Mark paid sheet). Only once the navigator is ready, and ready for THIS
+  // person: the container remounts on every sign-in. Up here, above the early
+  // returns, because hooks must run on every render.
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  const [readyFor, setReadyFor] = useState<string | null>(null);
+  useNotificationRoutes(navigationRef, !!session && readyFor === session.user.id);
 
   /**
    *  THE AUTH GATE
@@ -82,7 +95,11 @@ export function RootNavigator() {
 
   return (
     // NavigationContainer owns the navigation state. Exactly one, at the root.
-    <NavigationContainer theme={makeNavigationTheme(colors, isDark)}>
+    <NavigationContainer
+      theme={makeNavigationTheme(colors, isDark)}
+      ref={navigationRef}
+      onReady={() => setReadyFor(session.user.id)}
+    >
       <Stack.Navigator
         // screenOptions applies to EVERY screen - set header styling once here
         // rather than repeating it per screen.

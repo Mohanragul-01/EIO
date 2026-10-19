@@ -39,7 +39,15 @@ export type RootStackParamList = {
   TransactionEdit: { id?: string };
 
   SubscriptionsList: undefined;
-  SubscriptionEdit: { id?: string };
+  /** `serviceKey` pre-fills a new one from the quick-add catalogue. */
+  SubscriptionEdit: { id?: string; serviceKey?: string };
+  /**
+   * One subscription. `action` arrives from a notification: 'pay' opens Mark
+   * paid, 'keep' and 'cancelled' answer a trial that is ending.
+   */
+  SubscriptionDetail: { id: string; action?: 'pay' | 'keep' | 'cancelled' };
+  /** Quick-add: search the catalogue, or add your own. */
+  SubscriptionCatalogue: undefined;
   FitnessList: undefined;
   BucketList: undefined;
   ProductsList: undefined;
