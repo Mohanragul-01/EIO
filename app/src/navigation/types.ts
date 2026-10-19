@@ -43,7 +43,11 @@ export type RootStackParamList = {
   FitnessList: undefined;
   BucketList: undefined;
   ProductsList: undefined;
-  ProductEdit: { productId?: string } | undefined;
+  /**
+   * `restockFrom` starts a new container pre-filled from that one ("Start a
+   * new one"); with `spare` it is bought ahead and not opened yet.
+   */
+  ProductEdit: { productId?: string; restockFrom?: string; spare?: boolean } | undefined;
   ProductDetail: { productId: string };
   /**
    * The session row already exists before this opens, so every set has a parent
