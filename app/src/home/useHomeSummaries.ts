@@ -17,13 +17,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLatestRun } from '../core/useLatestRun';
 
 import { formatMoney } from '../core/money';
-import { daysUntil } from '../core/date';
+import { daysUntil, todayISO } from '../core/date';
 import * as financeApi from '../modules/finance/api';
 import { formatBalance, runningBalance } from '../modules/finance/analytics';
 import * as fitnessApi from '../modules/fitness/api';
 import * as notesApi from '../modules/notes/api';
 import * as subscriptionsApi from '../modules/subscriptions/api';
-import { toMonthlyMinor } from '../modules/subscriptions/types';
+import { daysBetween, effectiveState, trialEndsOn } from '../modules/subscriptions/lifecycle';
+import { sections as subscriptionSections, summaryTotals } from '../modules/subscriptions/upcoming';
 import * as bucketApi from '../modules/bucket/api';
 import * as productsApi from '../modules/products/api';
 import * as todoApi from '../modules/todo/api';
@@ -76,24 +77,33 @@ async function financeSummary(): Promise<string> {
 
 async function subscriptionsSummary(): Promise<string> {
   const rows = await subscriptionsApi.listSubscriptions();
-  const active = rows.filter((s) => s.is_active);
-  if (active.length === 0) return 'Nothing tracked';
+  const today = todayISO();
+  const { sections } = subscriptionSections(rows, today);
+  if (sections.length === 0) return 'Nothing tracked';
 
-  // A renewal you have to act on beats the monthly total for attention.
-  const dueSoon = active.filter((s) => {
-    const days = daysUntil(s.next_due_date);
-    return days >= 0 && days <= 7;
-  }).length;
-  const overdue = active.filter((s) => daysUntil(s.next_due_date) < 0).length;
+  // In order of what costs money if ignored: an overdue renewal, a trial
+  // about to convert on its own, then what leaves this week.
+  const overdue = sections.find((s) => s.bucket === 'overdue');
+  if (overdue) return `${overdue.count} overdue`;
 
-  if (overdue > 0) return `${overdue} overdue`;
-  if (dueSoon > 0) return `${dueSoon} due this week`;
+  const endingTrial = rows
+    .filter((s) => {
+      const state = effectiveState(s, today);
+      return state === 'trial_over' || (state === 'trial' && daysBetween(today, trialEndsOn(s)) <= 3);
+    })
+    .sort((a, b) => trialEndsOn(a).localeCompare(trialEndsOn(b)))[0];
+  if (endingTrial) {
+    const days = daysBetween(today, trialEndsOn(endingTrial));
+    return days < 0
+      ? `${endingTrial.name} trial over`
+      : `${endingTrial.name} trial ends ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`}`;
+  }
 
-  const monthly = active.reduce(
-    (total, s) => total + toMonthlyMinor(s.amount_minor, s.billing_cycle),
-    0,
-  );
-  return `${formatMoney(monthly, { compact: true })} a month`;
+  const week = sections.find((s) => s.bucket === 'week');
+  if (week) return `${week.count} due this week · ${formatMoney(week.totalMinor, { compact: true })}`;
+
+  const totals = summaryTotals(rows, today);
+  return `${formatMoney(totals.perMonthMinor, { compact: true })} a month`;
 }
 
 async function fitnessSummary(): Promise<string> {
