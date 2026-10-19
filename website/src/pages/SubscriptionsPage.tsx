@@ -18,7 +18,7 @@
 import { useCallback, useMemo, useState } from 'react';
 
 import { categoryDef, DEFAULT_SUBSCRIPTION_CATEGORY } from '@app/core/categories';
-import { addDaysISO, monthBounds, todayISO } from '@app/core/date';
+import { addDaysISO, formatEventDate, monthBounds, todayISO } from '@app/core/date';
 import { formatMoney } from '@app/core/money';
 import {
   archivePatch,
@@ -34,6 +34,7 @@ import {
 } from '@app/modules/subscriptions/actions';
 import * as api from '@app/modules/subscriptions/api';
 import { cycleLabel, cycleOf, cycleSuffix } from '@app/modules/subscriptions/cycles';
+import { formatAmount } from '@app/modules/subscriptions/currency';
 import { priceParts, shortDate } from '@app/modules/subscriptions/format';
 import {
   PERIOD_LABEL,
@@ -228,6 +229,13 @@ export function SubscriptionsPage() {
   };
 
   const removePriceChange = async (change: PriceChange) => {
+    // Permanent (nothing puts it back), so asked first - as the phone does.
+    const ok = await confirm(
+      'Remove this price change?',
+      `${formatAmount(change.old_amount_minor, change.currency)} → ${formatAmount(change.new_amount_minor, change.currency)} on ${formatEventDate(change.effective_on)}. The current price stays as it is.`,
+      'Remove',
+    );
+    if (!ok) return;
     try {
       await api.deletePriceChange(change.id);
       await afterWrite();

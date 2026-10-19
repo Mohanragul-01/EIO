@@ -254,3 +254,27 @@ begin
       'create policy "%s_delete_own" on public.%I for delete using (user_id = auth.uid())', t, t);
   end loop;
 end $$;
+
+-- A price change must also belong to a subscription of YOURS: user_id alone
+-- would accept a row you own pointing at someone else's subscription id. The
+-- template's insert and update policies are replaced with ones that check it.
+drop policy if exists "subscription_price_changes_insert_own" on public.subscription_price_changes;
+create policy "subscription_price_changes_insert_own" on public.subscription_price_changes
+  for insert with check (
+    user_id = auth.uid()
+    and exists (
+      select 1 from public.subscriptions s
+      where s.id = subscription_id and s.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "subscription_price_changes_update_own" on public.subscription_price_changes;
+create policy "subscription_price_changes_update_own" on public.subscription_price_changes
+  for update using (user_id = auth.uid())
+  with check (
+    user_id = auth.uid()
+    and exists (
+      select 1 from public.subscriptions s
+      where s.id = subscription_id and s.user_id = auth.uid()
+    )
+  );
