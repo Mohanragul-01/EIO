@@ -77,11 +77,15 @@ export function RoutineEditScreen() {
 
           setName(routines.find((r) => r.id === routineId)?.name ?? '');
           setEntries(
-            routineExercises.map((row) => ({
+            routineExercises.flatMap((row) =>
+              row.exercise_id === null
+                ? []
+                : [{
               exercise_id: row.exercise_id,
               target_sets: row.target_sets ? String(row.target_sets) : '',
               target_reps: row.target_reps ? String(row.target_reps) : '',
-            })),
+                  }],
+            ),
           );
         }
       } catch (e) {

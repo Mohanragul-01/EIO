@@ -130,7 +130,7 @@ export function WorkoutSessionScreen() {
     api
       .listRoutineExercises(routineId)
       .then((rows) => {
-        if (active) setExerciseOrder(rows.map((row) => row.exercise_id));
+        if (active) setExerciseOrder(rows.flatMap((row) => (row.exercise_id ? [row.exercise_id] : [])));
       })
       .catch(() => {
         // A deleted routine leaves the session ad-hoc, which is fine.

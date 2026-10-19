@@ -329,7 +329,7 @@ function SessionDialog({
             const planned = await api.listRoutineExercises(session.routine_id);
             if (!active) return;
             planned.forEach((row) => {
-              if (!seen.includes(row.exercise_id)) seen.push(row.exercise_id);
+              if (row.exercise_id && !seen.includes(row.exercise_id)) seen.push(row.exercise_id);
             });
           } catch {
             // A deleted routine leaves the session ad-hoc, which is fine.
@@ -1298,11 +1298,17 @@ function RoutineDialog({
       .then((rows) => {
         if (!active) return;
         setEntries(
-          rows.map((row) => ({
-            exercise_id: row.exercise_id,
-            sets: row.target_sets === null ? '' : String(row.target_sets),
-            reps: row.target_reps === null ? '' : String(row.target_reps),
-          })),
+          rows.flatMap((row) =>
+            row.exercise_id === null
+              ? []
+              : [
+                  {
+                    exercise_id: row.exercise_id,
+                    sets: row.target_sets === null ? '' : String(row.target_sets),
+                    reps: row.target_reps === null ? '' : String(row.target_reps),
+                  },
+                ],
+          ),
         );
         setLoaded(true);
       })
