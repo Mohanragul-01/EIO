@@ -1,133 +1,114 @@
 /**
- * notifications.ts - renewal reminders for subscriptions.
+ * notifications.ts - renewal and trial reminders for subscriptions.
  *
- * What to remind about and when lives here; HOW (permission, channel, the
- * Expo Go guard, scheduling) lives in core/notifications, which every module
- * with reminders shares. See that file for why expo-notifications is never
- * imported directly.
+ * WHAT to remind about and when is reminders.ts (pure, tested). HOW -
+ * permission, channel, the Expo Go guard, scheduling - is core/notifications,
+ * which every module with reminders shares; see that file for why
+ * expo-notifications is never imported directly. This file joins the two.
  *
- * A reminder only exists on the phone that scheduled it, so a reinstall loses
- * them until something reschedules each one.
+ * A reminder only exists on the phone that scheduled it, so a reinstall, a
+ * new phone or an edit made on the website leaves them stale. rescheduleAll()
+ * is the cure: api.ts registers it as this module's launch resync, so every
+ * signed-in launch rebuilds them from the database.
  */
-import { fromISODate } from '../../core/date';
-import { cancel, cancelPrefix, schedule, type Channel } from '../../core/notifications';
+import { cancel, cancelPrefix, schedule, type Category, type Channel } from '../../core/notifications';
+import {
+  RENEWAL_CATEGORY,
+  REMINDER_PREFIX,
+  TRIAL_CATEGORY,
+  reminderId,
+  reminderPlan,
+  type ReminderContext,
+} from './reminders';
+import type { ReminderSettings, Subscription } from './types';
 
 export { ensurePermission, type PermissionState } from '../../core/notifications';
-
-/**
- * Days before the due date that reminders fire. Several, not one: v2 had a
- * single three-day reminder and dropped it whenever that moment had passed,
- * so a subscription added or edited two days before it renewed - the one
- * closest to being forgotten - got no reminder at all. 0 is the morning of.
- */
-export const REMINDER_OFFSETS = [3, 1, 0] as const;
-
-/** The hour it fires. Morning, so it lands before the day gets away from you. */
-const REMINDER_HOUR = 9;
+export { reminderId } from './reminders';
 
 /** The channel these have always used, kept so a phone that already has it
  *  keeps the person's settings for it. */
 const RENEWALS: Channel = { id: 'renewals', name: 'Renewal reminders' };
 
-/**
- * Deterministic notification id for a subscription.
- *
- * Derived from the row id rather than stored, which means cancelling never
- * needs a lookup and can never miss: there is exactly one possible id per
- * subscription, so rescheduling cannot leave an orphan behind. Storing the id
- * returned by the OS would have needed a column, and would go stale the moment
- * a write failed halfway.
- */
-export function reminderId(subscriptionId: string): string {
-  return `subscription-renewal-${subscriptionId}`;
-}
+/** "Mark paid" opens the payment sheet: the amount is worth a glance first. */
+const RENEWAL_BUTTONS: Category = {
+  id: RENEWAL_CATEGORY,
+  actions: [{ id: 'mark_paid', title: 'Mark paid' }],
+};
 
-/** One id per offset, under the subscription's own id so one prefix cancels all. */
-export function offsetReminderId(subscriptionId: string, offset: number): string {
-  return `${reminderId(subscriptionId)}-d${offset}`;
-}
+const TRIAL_BUTTONS: Category = {
+  id: TRIAL_CATEGORY,
+  actions: [
+    { id: 'keep', title: 'Keep it' },
+    { id: 'cancelled', title: 'I cancelled' },
+  ],
+};
 
 /**
- * When the reminder for a due date should fire, or null if that moment has
- * already passed.
+ * Cancel every reminder this subscription has. Always safe, including when
+ * none is scheduled, which is what lets every write path cancel-then-schedule
+ * without checking first.
  *
- * Returning null rather than a past date is the important part. Scheduling a
- * notification in the past either fires it immediately or is rejected,
- * depending on platform - so an overdue subscription would either buzz the
- * instant you saved it or silently fail. Neither is a reminder.
- *
- * Pure, and takes `now`, so the tests need no clock fixture. It is also the
- * only export here that does not touch the library at all, which is why it is
- * the part worth testing.
+ * The bare id is v2's single reminder, still on phones that scheduled one;
+ * the prefix covers each offset's own reminder.
  */
-export function reminderDateFor(
-  nextDueDate: string,
-  now: Date = new Date(),
-  leadDays: number = REMINDER_OFFSETS[0],
-): Date | null {
-  // fromISODate builds a LOCAL date, so the reminder lands on the intended day
-  // rather than shifting across midnight by timezone.
-  const due = fromISODate(nextDueDate);
-  const fireAt = new Date(due);
-  fireAt.setDate(fireAt.getDate() - leadDays);
-  fireAt.setHours(REMINDER_HOUR, 0, 0, 0);
-
-  return fireAt.getTime() > now.getTime() ? fireAt : null;
-}
-
-/**
- * Cancel any existing reminder for this subscription.
- *
- * Always safe to call, including when nothing is scheduled: cancelling an
- * unknown identifier is a no-op. That is what lets every write path do
- * cancel-then-schedule without first checking whether a reminder exists.
- */
-export async function cancelReminder(subscriptionId: string): Promise<void> {
-  // The bare id is v2's single reminder, still on phones that scheduled one.
+export async function cancelReminders(subscriptionId: string): Promise<void> {
   await cancel(reminderId(subscriptionId));
   await cancelPrefix(`${reminderId(subscriptionId)}-`);
 }
 
 /**
- * Schedule the reminder for a subscription, replacing any existing one.
- *
- * Returns whether a reminder now exists. False is a normal outcome, not a
- * failure: an inactive subscription, a due date closer than the lead time, a
- * device without permission, and Expo Go all legitimately end up with no
- * reminder. The subscription itself has already saved either way, so this must
- * never throw.
+ * Replace this subscription's reminders with its current plan. Resolves how
+ * many were scheduled. Zero is a normal outcome - a cancelled subscription, a
+ * phone without permission, Expo Go - and the subscription has saved either
+ * way, so this never throws.
  */
-export async function scheduleReminder(subscription: {
-  id: string;
-  name: string;
-  next_due_date: string;
-  is_active: boolean;
-  amount_minor: number;
-}): Promise<boolean> {
-  // Cancel first, unconditionally. Editing a subscription must not leave the
-  // old date's reminder behind, and this is the only path that guarantees it.
-  await cancelReminder(subscription.id);
+export async function scheduleReminders(
+  sub: Subscription,
+  settings: ReminderSettings,
+  context: ReminderContext = {},
+  now: Date = new Date(),
+): Promise<number> {
+  // Cancel first, unconditionally: an edited date or a pause must not leave
+  // the old plan's reminders behind.
+  await cancelReminders(sub.id);
+  return scheduleAll(sub, settings, context, now);
+}
 
-  if (!subscription.is_active) return false;
-
-  // Every offset whose moment is still ahead. Skipping the passed ones, not
-  // the whole subscription, is the fix: due in two days still gets the
-  // day-before and the morning-of.
-  let scheduled = false;
-  for (const offset of REMINDER_OFFSETS) {
-    const fireAt = reminderDateFor(subscription.next_due_date, new Date(), offset);
-    if (!fireAt) continue;
+async function scheduleAll(
+  sub: Subscription,
+  settings: ReminderSettings,
+  context: ReminderContext,
+  now: Date,
+): Promise<number> {
+  let scheduled = 0;
+  for (const reminder of reminderPlan(sub, settings, now, context)) {
     const ok = await schedule({
-      id: offsetReminderId(subscription.id, offset),
-      date: fireAt,
-      title: `${subscription.name} renews ${offset === 0 ? 'today' : offset === 1 ? 'tomorrow' : `in ${offset} days`}`,
-      body: 'Tap to see it.',
-      // Lets a future tap open straight to the subscription rather than the
-      // home screen.
-      data: { subscriptionId: subscription.id },
+      id: reminder.id,
+      date: reminder.date,
+      title: reminder.title,
+      body: reminder.body,
+      data: reminder.data,
       channel: RENEWALS,
+      category: reminder.kind === 'trial' ? TRIAL_BUTTONS : RENEWAL_BUTTONS,
     });
-    scheduled = scheduled || ok;
+    if (ok) scheduled++;
   }
   return scheduled;
+}
+
+/**
+ * Rebuild every subscription reminder from scratch: cancel all of them, then
+ * schedule each row's plan. Rebuilt rather than patched, so a subscription
+ * deleted on the website loses its reminders too.
+ */
+export async function rescheduleAll(
+  rows: Subscription[],
+  settings: ReminderSettings,
+  contextFor: (sub: Subscription) => ReminderContext = () => ({}),
+  now: Date = new Date(),
+): Promise<void> {
+  await cancelPrefix(REMINDER_PREFIX);
+  for (const sub of rows) {
+    await scheduleAll(sub, settings, contextFor(sub), now);
+  }
 }

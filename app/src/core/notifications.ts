@@ -123,6 +123,38 @@ async function ensureChannel(mod: Notifications, channel: Channel): Promise<void
 }
 
 /**
+ * A set of action buttons a notification can carry ("Mark paid"), registered
+ * with the OS under `id` before first use. The id may not contain ':' or '-'
+ * (expo-notifications). Each button opens the app; what it then does is up to
+ * whoever listens with onResponse.
+ */
+export type Category = { id: string; actions: { id: string; title: string }[] };
+
+/** Categories already registered this run, like channelsReady. */
+const categoriesReady = new Set<string>();
+
+/** Register a category once per run. Resolves whether it can be used. */
+async function ensureCategory(mod: Notifications, category: Category): Promise<boolean> {
+  if (categoriesReady.has(category.id)) return true;
+  try {
+    await mod.setNotificationCategoryAsync(
+      category.id,
+      category.actions.map((action) => ({
+        identifier: action.id,
+        buttonTitle: action.title,
+        // Into the app, where the action happens on a screen you can see and
+        // undo - not silently in the background.
+        options: { opensAppToForeground: true },
+      })),
+    );
+    categoriesReady.add(category.id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Ask for permission if it has not been decided, and report where we stand.
  *
  * Call it when the person turns a reminder on, never at launch: a prompt that
@@ -185,6 +217,8 @@ export async function schedule(input: {
   body: string;
   data?: Record<string, unknown>;
   channel?: Channel;
+  /** Action buttons on the notification. See Category. */
+  category?: Category;
 }): Promise<boolean> {
   const mod = loadNotifications();
   if (!mod) return false;
@@ -193,9 +227,17 @@ export async function schedule(input: {
   const channel = input.channel ?? DEFAULT_CHANNEL;
   try {
     await ensureChannel(mod, channel);
+    // Without its buttons a reminder is still a reminder, so a category that
+    // will not register is dropped rather than costing the notification.
+    const categoryReady = input.category ? await ensureCategory(mod, input.category) : false;
     await mod.scheduleNotificationAsync({
       identifier: input.id,
-      content: { title: input.title, body: input.body, data: input.data ?? {} },
+      content: {
+        title: input.title,
+        body: input.body,
+        data: input.data ?? {},
+        ...(categoryReady && input.category ? { categoryIdentifier: input.category.id } : {}),
+      },
       trigger: {
         type: mod.SchedulableTriggerInputTypes.DATE,
         date: input.date,
@@ -279,4 +321,72 @@ export async function runResync(): Promise<void> {
       // person editing the row reschedules it directly in the meantime.
     }
   }
+}
+
+/** What a tapped notification, or one of its buttons, hands back. */
+export type NotificationResponseInfo = {
+  /** The notification's own id. */
+  id: string;
+  /** The button pressed, or null for a tap on the notification itself. */
+  actionId: string | null;
+  data: Record<string, unknown>;
+};
+
+/**
+ * Responses already handed over this run. The tap that launched the app can
+ * reach us twice - once from the "last response" and once from the listener -
+ * and acting on it twice would open a sheet over itself.
+ */
+const handledResponses = new Set<string>();
+
+/**
+ * Be told when a notification is tapped or one of its buttons pressed,
+ * including the tap that launched the app (it arrives before anything is
+ * listening, so it is fetched once here). Returns an unsubscribe.
+ *
+ * Where to go is the listener's business: core does not know any screen.
+ */
+export function onResponse(listener: (response: NotificationResponseInfo) => void): () => void {
+  const mod = loadNotifications();
+  if (!mod) return () => {};
+
+  const deliver = (response: NotificationsModule.NotificationResponse) => {
+    const request = response.notification.request;
+    const key = `${request.identifier}|${response.actionIdentifier}|${response.notification.date ?? ''}`;
+    if (handledResponses.has(key)) return;
+    handledResponses.add(key);
+    listener({
+      id: request.identifier,
+      actionId:
+        response.actionIdentifier === mod.DEFAULT_ACTION_IDENTIFIER
+          ? null
+          : response.actionIdentifier,
+      data: (request.content.data ?? {}) as Record<string, unknown>,
+    });
+  };
+
+  let subscription: { remove: () => void } | null = null;
+  try {
+    subscription = mod.addNotificationResponseReceivedListener(deliver);
+  } catch {
+    subscription = null;
+  }
+
+  let active = true;
+  mod
+    .getLastNotificationResponseAsync()
+    .then((response) => {
+      if (!active || !response) return;
+      deliver(response);
+      // Cleared so the next launch does not replay a tap from this one.
+      return mod.clearLastNotificationResponseAsync();
+    })
+    .catch(() => {
+      // Nothing launched us from a notification, or the call is unavailable.
+    });
+
+  return () => {
+    active = false;
+    subscription?.remove();
+  };
 }
