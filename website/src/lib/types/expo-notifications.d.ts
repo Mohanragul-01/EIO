@@ -53,8 +53,27 @@ declare module 'expo-notifications' {
     trigger: { type: SchedulableTriggerInputTypes; date: Date; channelId?: string };
   }): Promise<string>;
 
-  // Action buttons and the responses to them (core/notifications: categories
-  // and onResponse).
+  // Buttons on a notification and the responses to them (core/notifications:
+  // categories, onResponse, onAnyResponse, listenForResponses).
+
+  export const DEFAULT_ACTION_IDENTIFIER: string;
+
+  export type NotificationResponse = {
+    actionIdentifier: string;
+    notification: {
+      date: number;
+      request: {
+        identifier: string;
+        content: {
+          title: string | null;
+          body: string | null;
+          data?: Record<string, unknown>;
+          categoryIdentifier: string | null;
+        };
+      };
+    };
+  };
+
   export function setNotificationCategoryAsync(
     identifier: string,
     actions: {
@@ -64,19 +83,12 @@ declare module 'expo-notifications' {
     }[],
   ): Promise<unknown>;
 
-  export const DEFAULT_ACTION_IDENTIFIER: string;
-
-  export type NotificationResponse = {
-    actionIdentifier: string;
-    notification: {
-      date: number;
-      request: { identifier: string; content: { data: Record<string, unknown> | null } };
-    };
-  };
-
   export function addNotificationResponseReceivedListener(
     listener: (response: NotificationResponse) => void,
   ): { remove: () => void };
-  export function getLastNotificationResponseAsync(): Promise<NotificationResponse | null>;
-  export function clearLastNotificationResponseAsync(): Promise<void>;
+
+  export function getLastNotificationResponse(): NotificationResponse | null;
+  export function clearLastNotificationResponse(): void;
+  export function dismissNotificationAsync(identifier: string): Promise<void>;
+  export function getPresentedNotificationsAsync(): Promise<{ request: { identifier: string } }[]>;
 }

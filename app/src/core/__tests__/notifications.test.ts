@@ -26,8 +26,9 @@ type NativeMock = {
   SchedulableTriggerInputTypes: { DATE: string };
   setNotificationCategoryAsync: jest.Mock;
   addNotificationResponseReceivedListener: jest.Mock;
-  getLastNotificationResponseAsync: jest.Mock;
-  clearLastNotificationResponseAsync: jest.Mock;
+  getLastNotificationResponse: jest.Mock;
+  clearLastNotificationResponse: jest.Mock;
+  dismissNotificationAsync: jest.Mock;
   DEFAULT_ACTION_IDENTIFIER: string;
 };
 
@@ -44,8 +45,9 @@ function nativeMock(granted = true): NativeMock {
     SchedulableTriggerInputTypes: { DATE: 'date' },
     setNotificationCategoryAsync: jest.fn(() => Promise.resolve({})),
     addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
-    getLastNotificationResponseAsync: jest.fn(() => Promise.resolve(null)),
-    clearLastNotificationResponseAsync: jest.fn(() => Promise.resolve()),
+    getLastNotificationResponse: jest.fn(() => null),
+    clearLastNotificationResponse: jest.fn(),
+    dismissNotificationAsync: jest.fn(() => Promise.resolve()),
     DEFAULT_ACTION_IDENTIFIER: 'expo.modules.notifications.actions.DEFAULT',
   };
 }
@@ -224,7 +226,11 @@ describe('categories (action buttons)', () => {
 
     expect(native.setNotificationCategoryAsync).toHaveBeenCalledTimes(1);
     expect(native.setNotificationCategoryAsync).toHaveBeenCalledWith('subscription_renewal', [
-      { identifier: 'mark_paid', buttonTitle: 'Mark paid', options: { opensAppToForeground: true } },
+      {
+        identifier: 'mark_paid',
+        buttonTitle: 'Mark paid',
+        options: { opensAppToForeground: true },
+      },
     ]);
     const request = native.scheduleNotificationAsync.mock.calls[0][0];
     expect(request.content.categoryIdentifier).toBe('subscription_renewal');
@@ -245,61 +251,82 @@ describe('categories (action buttons)', () => {
   });
 });
 
-describe('onResponse', () => {
-  const response = (actionIdentifier: string, data: Record<string, unknown> = { x: 1 }) => ({
+describe('onAnyResponse', () => {
+  // Every response, whatever its category: what the navigator uses to open
+  // the screen a notification's data names. (Per-category handlers are in
+  // notificationResponses.test.ts.)
+  const response = (actionIdentifier: string, date = 1000) => ({
     actionIdentifier,
-    notification: { request: { identifier: 'n-1', content: { data } } },
+    notification: {
+      date,
+      request: {
+        identifier: 'n-1',
+        content: { title: 'Netflix', body: 'Renews tomorrow', data: { x: 1 } },
+      },
+    },
+  });
+  const seenAs = (action: string | null) => ({
+    action,
+    notificationId: 'n-1',
+    title: 'Netflix',
+    body: 'Renews tomorrow',
+    data: { x: 1 },
   });
 
-  it('hands over a tap as no action, and a button by its id', async () => {
+  it('hands over a tap as no action, and a button by its id', () => {
     const native = nativeMock();
     const core = load(native);
     const seen: unknown[] = [];
 
-    core.onResponse((r) => seen.push(r));
-    await Promise.resolve();
+    core.onAnyResponse((r) => {
+      seen.push(r);
+    });
+    core.listenForResponses();
     const deliver = native.addNotificationResponseReceivedListener.mock.calls[0][0];
-    deliver(response('expo.modules.notifications.actions.DEFAULT'));
-    deliver(response('mark_paid'));
+    deliver(response('expo.modules.notifications.actions.DEFAULT', 1));
+    deliver(response('mark_paid', 2));
 
-    expect(seen).toEqual([
-      { id: 'n-1', actionId: null, data: { x: 1 } },
-      { id: 'n-1', actionId: 'mark_paid', data: { x: 1 } },
-    ]);
+    expect(seen).toEqual([seenAs(null), seenAs('mark_paid')]);
   });
 
-  it('delivers the response that launched the app, once', async () => {
+  it('keeps the response that launched the app until something listens, and hands it over once', () => {
+    // The listener starts at sign-in; the navigator subscribes only once it
+    // has mounted. The tap that opened the app must survive the gap.
     const native = nativeMock();
-    native.getLastNotificationResponseAsync.mockImplementation(() =>
-      Promise.resolve(response('mark_paid')),
-    );
+    native.getLastNotificationResponse.mockImplementation(() => response('mark_paid'));
+    const core = load(native);
+
+    core.listenForResponses();
+    const first = jest.fn();
+    const second = jest.fn();
+    core.onAnyResponse(first);
+    core.onAnyResponse(second);
+
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(first).toHaveBeenCalledWith(seenAs('mark_paid'));
+    expect(second).not.toHaveBeenCalled();
+    // Cleared, so the next launch does not replay it.
+    expect(native.clearLastNotificationResponse).toHaveBeenCalled();
+  });
+
+  it('stops handing responses to a listener once it unsubscribes', () => {
+    const native = nativeMock();
     const core = load(native);
     const listener = jest.fn();
 
-    core.onResponse(listener);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(listener).toHaveBeenCalledWith({ id: 'n-1', actionId: 'mark_paid', data: { x: 1 } });
-    // Cleared, so the next launch does not replay it.
-    expect(native.clearLastNotificationResponseAsync).toHaveBeenCalled();
-  });
-
-  it('stops listening when unsubscribed', () => {
-    const native = nativeMock();
-    const remove = jest.fn();
-    native.addNotificationResponseReceivedListener.mockImplementation(() => ({ remove }));
-    const core = load(native);
-
-    const stop = core.onResponse(jest.fn());
+    const stop = core.onAnyResponse(listener);
+    core.listenForResponses();
     stop();
+    native.addNotificationResponseReceivedListener.mock.calls[0][0](response('mark_paid'));
 
-    expect(remove).toHaveBeenCalledTimes(1);
+    expect(listener).not.toHaveBeenCalled();
   });
 
   it('does nothing in Expo Go, and never loads the library', () => {
     const { core, required } = loadInExpoGo();
-    const stop = core.onResponse(jest.fn());
+    const stop = core.onAnyResponse(jest.fn());
     expect(() => stop()).not.toThrow();
+    expect(() => core.listenForResponses()()).not.toThrow();
     expect(required).not.toHaveBeenCalled();
   });
 });

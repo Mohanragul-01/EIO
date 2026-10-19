@@ -15,36 +15,39 @@ const data = {
   actions: { mark_paid: { route: 'SubscriptionDetail', params: { id: 'abc', action: 'pay' } } },
 };
 
+/** The rest of a response, which routing does not read. */
+const tapped = { notificationId: 'n', title: null, body: null };
+
 describe('targetFor', () => {
   it('opens the route in the data for a tap', () => {
-    expect(targetFor({ id: 'n', actionId: null, data })).toEqual({
+    expect(targetFor({ ...tapped, action: null, data })).toEqual({
       route: 'SubscriptionDetail',
       params: { id: 'abc' },
     });
   });
 
   it('opens the button its own route', () => {
-    expect(targetFor({ id: 'n', actionId: 'mark_paid', data })).toEqual({
+    expect(targetFor({ ...tapped, action: 'mark_paid', data })).toEqual({
       route: 'SubscriptionDetail',
       params: { id: 'abc', action: 'pay' },
     });
   });
 
   it('falls back to the tap route for a button it does not know', () => {
-    expect(targetFor({ id: 'n', actionId: 'snooze', data })?.params).toEqual({ id: 'abc' });
+    expect(targetFor({ ...tapped, action: 'snooze', data })?.params).toEqual({ id: 'abc' });
   });
 
   it('does nothing for a notification without a route', () => {
     // v2's reminders carried only { subscriptionId }.
-    expect(targetFor({ id: 'n', actionId: null, data: { subscriptionId: 'abc' } })).toBeNull();
+    expect(targetFor({ ...tapped, action: null, data: { subscriptionId: 'abc' } })).toBeNull();
   });
 
   it('ignores malformed data rather than throwing', () => {
-    expect(targetFor({ id: 'n', actionId: null, data: { route: 7 } })).toBeNull();
-    expect(
-      targetFor({ id: 'n', actionId: null, data: { route: 'X', params: { id: 5 } } }),
-    ).toEqual({ route: 'X', params: {} });
-    expect(targetFor({ id: 'n', actionId: 'a', data: { route: 'X', actions: 'nope' } })).toEqual({
+    expect(targetFor({ ...tapped, action: null, data: { route: 7 } })).toBeNull();
+    expect(targetFor({ ...tapped, action: null, data: { route: 'X', params: { id: 5 } } })).toEqual(
+      { route: 'X', params: {} },
+    );
+    expect(targetFor({ ...tapped, action: 'a', data: { route: 'X', actions: 'nope' } })).toEqual({
       route: 'X',
       params: {},
     });

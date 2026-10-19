@@ -12,7 +12,7 @@
  * notification without a route - every one scheduled before this existed -
  * simply opens the app where it was.
  */
-import type { NotificationResponseInfo } from '../core/notifications';
+import type { NotificationResponse } from '../core/notifications';
 
 export type NotificationTarget = { route: string; params: Record<string, string> };
 
@@ -33,12 +33,12 @@ function asTarget(value: unknown): NotificationTarget | null {
   return { route, params: stringParams(params) };
 }
 
-export function targetFor(response: NotificationResponseInfo): NotificationTarget | null {
-  const { data, actionId } = response;
-  if (actionId) {
+export function targetFor(response: NotificationResponse): NotificationTarget | null {
+  const { data, action } = response;
+  if (action) {
     const actions = data.actions;
     if (actions && typeof actions === 'object') {
-      const own = asTarget((actions as Record<string, unknown>)[actionId]);
+      const own = asTarget((actions as Record<string, unknown>)[action]);
       if (own) return own;
     }
   }

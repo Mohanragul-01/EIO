@@ -14,7 +14,6 @@
 import {
   NavigationContainer,
   type LinkingOptions,
-  useNavigationContainerRef,
   type Theme as NavTheme,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -56,6 +55,7 @@ import { SubscriptionDetailScreen } from '../modules/subscriptions/screens/Subsc
 import { TodoEditScreen } from '../modules/todo/screens/TodoEditScreen';
 import { TodoListScreen } from '../modules/todo/screens/TodoListScreen';
 import type { RootStackParamList } from './types';
+import { flushPendingNavigation, navigationRef } from './navigationRef';
 import { useNotificationRoutes } from './useNotificationRoutes';
 import { makeStyles, useTheme } from '../core/ThemeContext';
 
@@ -100,7 +100,6 @@ export function RootNavigator() {
   // Mark paid sheet). Only once the navigator is ready, and ready for THIS
   // person: the container remounts on every sign-in. Up here, above the early
   // returns, because hooks must run on every render.
-  const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const [readyFor, setReadyFor] = useState<string | null>(null);
   useNotificationRoutes(navigationRef, !!session && readyFor === session.user.id);
 
@@ -136,7 +135,15 @@ export function RootNavigator() {
 
   return (
     // NavigationContainer owns the navigation state. Exactly one, at the root.
+    // The ref lets a notification tap navigate from outside a screen; onReady
+    // runs one that arrived before the container mounted (see navigationRef)
+    // and switches on tap routing for this signed-in session.
     <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        flushPendingNavigation();
+        setReadyFor(session.user.id);
+      }}
       theme={makeNavigationTheme(colors, isDark)}
       linking={linking}
       // Shown for the moment it takes to read the link that opened the app
@@ -147,8 +154,6 @@ export function RootNavigator() {
           <ActivityIndicator color={colors.primary} />
         </View>
       }
-      ref={navigationRef}
-      onReady={() => setReadyFor(session.user.id)}
     >
       <Stack.Navigator
         // screenOptions applies to EVERY screen - set header styling once here

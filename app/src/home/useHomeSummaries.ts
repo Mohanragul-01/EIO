@@ -28,20 +28,17 @@ import { sections as subscriptionSections, summaryTotals } from '../modules/subs
 import * as bucketApi from '../modules/bucket/api';
 import * as productsApi from '../modules/products/api';
 import * as todoApi from '../modules/todo/api';
+import { summarizeOpen, tileLine } from '../modules/todo/today';
 
 /** Keyed by the module key from the registry. */
 export type SummaryMap = Record<string, string>;
 
 async function todoSummary(): Promise<string> {
   // Across every frequency tab: the tile speaks for the whole module, and a
-  // count of just the Daily tab would read as the total and be wrong.
+  // count of just the Daily tab would read as the total and be wrong. The
+  // tile opens Today, so the line is in Today's terms: "2 overdue · 5 today".
   const open = await todoApi.listOpenTodos();
-  if (open.length === 0) return 'All clear';
-
-  const overdue = open.filter((t) => t.due_date && daysUntil(t.due_date) < 0).length;
-  // Overdue is the more urgent fact, so it wins the line when there is any.
-  if (overdue > 0) return `${overdue} overdue, ${open.length} open`;
-  return `${open.length} open`;
+  return tileLine(summarizeOpen(open, todayISO()));
 }
 
 async function notesSummary(): Promise<string> {

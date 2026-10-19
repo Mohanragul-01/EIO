@@ -138,7 +138,9 @@ export type IconName =
   | 'chat'
   // Notes v3
   | 'link'
-  | 'list';
+  | 'list'
+  // Tasks: a routine's streak, and skipping one occurrence.
+  | 'skip';
 
 /**
  * Path data per icon. Several use more than one subpath; they are joined with
@@ -314,6 +316,7 @@ const PATHS: Record<IconName, string> = {
   // Notes v3
   link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
   list: 'M9 6h11 M9 12h11 M9 18h11 M4.5 6h.01 M4.5 12h.01 M4.5 18h.01',
+  skip: 'M5 5.5l9 6.5-9 6.5z M18.5 5.5v13',
 };
 
 /**

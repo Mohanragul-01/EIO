@@ -5,12 +5,11 @@
  * Screens never talk to Supabase directly. They call functions from here.
  * Why that separation earns its keep:
  *   • One place to change if a column is renamed or a query is optimised.
- *   • Screens stay readable - `listTodos()` instead of ten lines of query
- *     builder inline in a component.
+ *   • Screens stay readable - `listTodosByFrequency()` instead of ten lines of
+ *     query builder inline in a component.
  *   • These functions are plain async functions, so they're trivial to test
- *     or reuse without rendering anything.
- *
- * Every later module gets its own api.ts shaped exactly like this one.
+ *     or reuse without rendering anything - see __tests__/api.test.ts, which
+ *     runs them over an in-memory table.
  *
  *  ERROR HANDLING
  * supabase-js does NOT throw on database errors. It resolves with
@@ -18,12 +17,74 @@
  * single most common Supabase bug - you get an empty list and no clue why. So
  * every function here checks it and throws, letting the calling screen decide
  * how to present the failure.
+ *
+ *  ORDER OF WRITES
+ * There are no transactions across calls, so every function that writes
+ * twice writes first and deletes last: an interruption leaves a stale row you
+ * can see, never a missing one you cannot get back.
  */
 import { supabase } from '../../core/supabase';
 import { getOwnerId } from '../../core/session';
-import { nextDueDate, type Frequency, type Todo, type TodoInput } from './types';
+import { todayISO } from '../../core/date';
+import { registerResync } from '../../core/notifications';
+import { normalizeInput, resetChecklist, ruleColumnsFor } from './input';
+import {
+  cancelDigests,
+  cancelReminders,
+  rebuildAll,
+  refreshDigestsSoon,
+  saveDigestSettings,
+  scheduleDigests,
+  syncReminders,
+  type DigestSettings,
+} from './notifications';
+import { localDayStartISO } from './today';
+import {
+  nextDueDate,
+  ruleOf,
+  scheduleBase,
+  seriesKey,
+  type Frequency,
+  type Outcome,
+  type Todo,
+  type TodoInput,
+} from './types';
 
 const TABLE = 'todos';
+
+/**
+ * Keep the phone's reminders in step with a write: reschedule the rows that
+ * changed, cancel the ones that went, and rebuild the digests shortly after.
+ * Fire and forget - a reminder is a side effect of saving, never a reason for
+ * the save to fail or wait. On the website every call here is a no-op.
+ */
+function remind(changed: readonly Todo[], removedIds: readonly string[] = []): void {
+  void (async () => {
+    try {
+      await syncReminders(changed);
+      await cancelReminders(removedIds);
+    } catch {
+      // Core never throws; this only guards against the unexpected.
+    }
+  })();
+  refreshDigestsSoon(listOpenTodos, todayISO);
+}
+
+/**
+ * Rebuild every task reminder from the database once per launch (core runs
+ * this only where reminders can fire). Registered here, at module load,
+ * because api.ts is imported by the screens the navigator registers at launch.
+ */
+registerResync('tasks', async () => {
+  await rebuildAll(await listAllOpen(), todayISO());
+});
+
+/** The columns a series history needs - small, since a daily routine has hundreds. */
+const HISTORY_COLUMNS =
+  'id, series_id, due_date, scheduled_for, completed_at, updated_at, outcome, is_done, frequency, repeat_every, repeat_weekdays, repeat_anchor_day, repeat_nth, repeat_from';
+
+/** Supabase returns at most this many rows per request (its default max_rows). */
+const PAGE = 1000;
 
 /**
  * Open tasks in one frequency tab.
@@ -32,9 +93,6 @@ const TABLE = 'todos';
  * never deleted, so over time they will outnumber open ones many times over;
  * fetching them all and hiding them on the phone would mean downloading a
  * growing pile of rows to render none of them.
- *
- * Sorted soonest-due first, with undated tasks last: an undated task is less
- * urgent than a dated one, not more.
  */
 export async function listTodosByFrequency(frequency: Frequency): Promise<Todo[]> {
   const ownerId = await getOwnerId();
@@ -58,16 +116,12 @@ export async function listTodosByFrequency(frequency: Frequency): Promise<Todo[]
 }
 
 /**
- * COMPLETED tasks in one frequency, newest first.
+ * COMPLETED tasks in one frequency, most recently closed first.
  *
- * Separate from listTodosByFrequency, which filters to open tasks in SQL,
- * because completed tasks are never deleted and will outnumber open ones many
- * times over. Fetching them together would mean downloading a growing pile of
- * finished work every time you open the list.
- *
- * So this is opt-in and BOUNDED. The phone never calls it - it only shows open
- * tasks - but a desktop screen has room for a "Done" view, and that view only
- * needs the recent past to be useful.
+ * Opt-in and BOUNDED, for the same reason the open list filters in SQL. Sorted
+ * by completed_at now that there is one: updated_at moved on any edit, so a
+ * typo fixed on an old task used to float it to the top of "recently done".
+ * v2 rows closed before migration 0020 have completed_at backfilled.
  */
 export async function listCompletedByFrequency(
   frequency: Frequency,
@@ -81,13 +135,131 @@ export async function listCompletedByFrequency(
     .eq('user_id', ownerId)
     .eq('frequency', frequency)
     .eq('is_done', true)
-    // By when it was completed, not when it was due: the useful order for
-    // finished work is most-recently-done first.
+    .order('completed_at', { ascending: false, nullsFirst: false })
     .order('updated_at', { ascending: false })
     .limit(limit);
 
   if (error) throw new Error(error.message);
   return data ?? [];
+}
+
+/**
+ * What the Today view shows, in one call: open tasks due today or earlier
+ * across every frequency, what was closed since local midnight, and the next
+ * dated task, for the "nothing left today" state to point at.
+ */
+export async function listToday(
+  today: string = todayISO(),
+): Promise<{ open: Todo[]; closedToday: Todo[]; next: Todo | null }> {
+  const ownerId = await getOwnerId();
+
+  const [open, closed, next] = await Promise.all([
+    supabase
+      .from(TABLE)
+      .select('*')
+      .eq('user_id', ownerId)
+      .eq('is_done', false)
+      .lte('due_date', today)
+      .order('due_date', { ascending: true })
+      .order('position', { ascending: true }),
+    supabase
+      .from(TABLE)
+      .select('*')
+      .eq('user_id', ownerId)
+      .eq('is_done', true)
+      .gte('completed_at', localDayStartISO(today))
+      .order('completed_at', { ascending: false }),
+    supabase
+      .from(TABLE)
+      .select('*')
+      .eq('user_id', ownerId)
+      .eq('is_done', false)
+      .gt('due_date', today)
+      .order('due_date', { ascending: true })
+      .order('due_time', { ascending: true, nullsFirst: false })
+      .limit(1),
+  ]);
+
+  if (open.error) throw new Error(open.error.message);
+  if (closed.error) throw new Error(closed.error.message);
+  if (next.error) throw new Error(next.error.message);
+  return { open: open.data ?? [], closedToday: closed.data ?? [], next: next.data?.[0] ?? null };
+}
+
+/**
+ * Every open task, across all four tabs, with only what the tile counts.
+ * Selecting two columns instead of `*` keeps the payload small, since this
+ * runs on every visit to the home screen.
+ */
+export async function listOpenTodos(): Promise<Pick<Todo, 'id' | 'due_date'>[]> {
+  const ownerId = await getOwnerId();
+
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select('id, due_date')
+    .eq('user_id', ownerId)
+    .eq('is_done', false);
+
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+/** Every open task in full: reminders are rebuilt from these, and the website's calendar projects repeats from them. */
+export async function listAllOpen(): Promise<Todo[]> {
+  const ownerId = await getOwnerId();
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select('*')
+    .eq('user_id', ownerId)
+    .eq('is_done', false)
+    .order('due_date', { ascending: true, nullsFirst: false });
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+/** Closed tasks whose due date falls in [start, end], for a month calendar. */
+export async function listClosedBetween(start: string, end: string): Promise<Todo[]> {
+  const ownerId = await getOwnerId();
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select('*')
+    .eq('user_id', ownerId)
+    .eq('is_done', true)
+    .gte('due_date', start)
+    .lte('due_date', end);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+/**
+ * The closed occurrences of the given series, oldest first: what streaks and
+ * the per-routine history are computed from.
+ *
+ * The first occurrence of a series has no series_id - its key IS its id - so
+ * the match is on either column.
+ *
+ * NEWEST FIRST, THEN REVERSED. Supabase caps a response at 1000 rows whatever
+ * limit is asked for, and a list screen asks for every routine's history at
+ * once - five daily routines pass 1000 in about 200 days. Asked oldest-first,
+ * the cap dropped the most recent rows, which are exactly the ones a current
+ * streak is made of.
+ */
+export async function listSeriesHistory(keys: string[]): Promise<Todo[]> {
+  if (keys.length === 0) return [];
+  const ownerId = await getOwnerId();
+  const list = [...new Set(keys)].join(',');
+
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select(HISTORY_COLUMNS)
+    .eq('user_id', ownerId)
+    .eq('is_done', true)
+    .or(`series_id.in.(${list}),id.in.(${list})`)
+    .order('due_date', { ascending: false })
+    .limit(PAGE);
+
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as Todo[]).reverse();
 }
 
 /**
@@ -112,13 +284,22 @@ export async function reorderTodos(orderedIds: string[]): Promise<void> {
 /**
  * Move a task to a different frequency.
  *
- * Separate from updateTodo because the board changes one column and nothing
- * else, and because a drag between columns must not touch the due date - a
- * weekly task dragged to Monthly is still due when it was due; only how often
- * it recurs has changed.
+ * Separate from updateTodo because a drag between columns must not touch the
+ * due date - a weekly task dragged to Monthly is still due when it was due;
+ * only how often it recurs has changed. The rule columns are re-settled for
+ * the new unit from that date (a weekday for weekly, a day of the month for
+ * monthly), or a weekly Mon/Thu task would arrive in Monthly with weekdays and
+ * no anchor, and drift at month end.
  */
-export async function setFrequency(id: string, frequency: Frequency): Promise<void> {
-  const { error } = await supabase.from(TABLE).update({ frequency }).eq('id', id);
+export async function setFrequency(
+  id: string,
+  frequency: Frequency,
+  dueDate: string | null = null,
+): Promise<void> {
+  const { error } = await supabase
+    .from(TABLE)
+    .update({ frequency, ...ruleColumnsFor(frequency, dueDate, todayISO()) })
+    .eq('id', id);
   if (error) throw new Error(error.message);
 }
 
@@ -143,8 +324,9 @@ export async function createTodo(input: TodoInput): Promise<Todo> {
   const { data, error } = await supabase
     .from(TABLE)
     // The owner id is stamped HERE, not in the form. Screens shouldn't have
-    // to know about identity at all.
-    .insert({ ...input, user_id: ownerId })
+    // to know about identity at all. The repeat columns are settled here too,
+    // so every client writes a complete rule (see input.ts).
+    .insert({ ...normalizeInput(input, todayISO()), user_id: ownerId })
     // .select().single() makes the insert return the row it just wrote,
     // including database-generated columns (id, created_at). One round trip
     // instead of insert-then-fetch.
@@ -152,52 +334,82 @@ export async function createTodo(input: TodoInput): Promise<Todo> {
     .single();
 
   if (error) throw new Error(error.message);
+  remind([data]);
   return data;
 }
 
+/**
+ * Save edits. A FULL input (the editor's, which always carries the title,
+ * frequency and repeat switch) has its rule settled like a new task's; a
+ * partial one - a reschedule, a ticked check item, new notes - is written as
+ * given.
+ */
 export async function updateTodo(id: string, input: Partial<TodoInput>): Promise<Todo> {
+  const isFull =
+    input.title !== undefined && input.frequency !== undefined && input.is_repeat !== undefined;
+  const values = isFull ? normalizeInput(input as TodoInput, todayISO()) : input;
+
   const { data, error } = await supabase
     .from(TABLE)
-    .update(input)
+    .update(values)
     .eq('id', id)
     .select()
     .single();
 
   if (error) throw new Error(error.message);
+  remind([data]);
   return data;
 }
 
 /**
- * Complete a task, and create its next occurrence if it repeats.
- *
- * Two deliberate choices here.
+ * Close a task as done or skipped, and create its next occurrence if it
+ * repeats. Returns that occurrence, or null.
  *
  * SOFT COMPLETE. The row is marked done, never deleted. Completion is history:
  * deleting it would throw away the only record that the thing ever happened,
- * and for a repeating task it would erase the whole trail. The tab query
- * filters on `is_done = false`, so done rows leave the list without leaving the
- * database.
+ * and for a repeating task it would erase the whole trail. A SKIP is closed
+ * the same way with outcome 'skipped', so history says it was passed over on
+ * purpose rather than done.
  *
- * ORDER OF WRITES. The completion is written first, then the next occurrence.
- * If the second write fails you are left with a completed task and no
- * successor, which is visible and fixable by adding one. The reverse order
- * would risk two open copies of the same repeating task, which is worse: you
- * would have to notice the duplicate to fix it.
+ * THE SUCCESSOR carries the rule, the time and reminder, the notes, the
+ * series, and the checklist with every item unticked (a weekly bills run
+ * starts each week from scratch). Priority goes back to normal: it described
+ * how urgent this occurrence was, and a task marked urgent once should not be
+ * urgent forever. Its date comes from the recurrence engine, which rolls an
+ * overdue repeat past today rather than one interval at a time.
  *
- * Returns the newly created occurrence, or null, so the caller can say what
- * happened without refetching.
+ * ORDER OF WRITES. The close is written first, then the successor. If the
+ * second write fails the task is reopened and the error rethrown: leaving it
+ * closed would end the recurrence SILENTLY, and the occurrence that never
+ * arrives is not something you notice until you have missed it.
  */
-export async function completeTask(todo: Todo): Promise<Todo | null> {
-  const { error } = await supabase.from(TABLE).update({ is_done: true }).eq('id', todo.id);
+export async function completeTask(
+  todo: Todo,
+  outcome: Exclude<Outcome, 'wont_do'> = 'done',
+): Promise<Todo | null> {
+  // Only an OPEN row is closed. Done on a reminder and then a tick on the
+  // stale row in the app would otherwise close it twice and create two
+  // successors - one routine, open twice.
+  const { data: closed, error } = await supabase
+    .from(TABLE)
+    .update({ is_done: true, outcome, completed_at: new Date().toISOString() })
+    .eq('id', todo.id)
+    .eq('is_done', false)
+    .select('id');
   if (error) throw new Error(error.message);
+  if (!closed || closed.length === 0) return null;
 
-  if (!todo.is_repeat) return null;
+  if (!todo.is_repeat) {
+    remind([], [todo.id]);
+    return null;
+  }
 
   const ownerId = await getOwnerId();
+  const today = todayISO();
+  // Stepped from where the schedule put this occurrence, not from where it
+  // was moved to (scheduleBase).
+  const next = nextDueDate(scheduleBase(todo), ruleOf(todo), { today, completedOn: today });
 
-  // Priority is deliberately NOT carried over. It describes how urgent this
-  // particular instance was, and a task you marked urgent once should not be
-  // urgent forever. Title and frequency are the identity of the recurrence.
   const { data, error: insertError } = await supabase
     .from(TABLE)
     .insert({
@@ -205,60 +417,164 @@ export async function completeTask(todo: Todo): Promise<Todo | null> {
       title: todo.title,
       frequency: todo.frequency,
       is_repeat: true,
-      due_date: nextDueDate(todo.due_date, todo.frequency),
+      due_date: next,
+      scheduled_for: next,
+      due_time: todo.due_time,
+      reminder_offset_min: todo.reminder_offset_min,
+      repeat_every: todo.repeat_every,
+      repeat_weekdays: todo.repeat_weekdays,
+      repeat_anchor_day: todo.repeat_anchor_day,
+      repeat_nth: todo.repeat_nth,
+      repeat_from: todo.repeat_from,
+      series_id: seriesKey(todo),
+      notes: todo.notes,
+      checklist: resetChecklist(todo.checklist ?? []),
       priority: 'normal',
+      // Keeps the routine where you put it on the board, rather than jumping
+      // to the top of its column every time it comes round.
+      position: todo.position,
     })
     .select()
     .single();
 
   if (insertError) {
-    // Put the task back to open before reporting the failure.
-    //
-    // These are two writes with no transaction between them, so the network
-    // can drop after the first. Leaving it completed would end the recurrence
-    // SILENTLY: the task looks done, and the next occurrence that never
-    // arrives is not something you notice until you have already missed it.
-    // Reopening turns that into a visible, retryable error instead - and if
-    // this rollback fails too, the thrown message is the same one you would
-    // have got anyway, so it is never worse than not trying.
-    await supabase.from(TABLE).update({ is_done: false }).eq('id', todo.id);
+    // Reopen before reporting. If this rollback fails too, the thrown message
+    // is the one you would have got anyway, so it is never worse than not
+    // trying.
+    await supabase
+      .from(TABLE)
+      .update({ is_done: false, outcome: null, completed_at: null })
+      .eq('id', todo.id);
     throw new Error(insertError.message);
   }
 
+  remind([data], [todo.id]);
   return data;
 }
 
-/**
- * Un-complete a task. Separate from completeTask because reopening must never
- * spawn an occurrence: that path exists to undo a mistaken tap.
- */
-export async function reopenTask(id: string): Promise<void> {
-  const { error } = await supabase.from(TABLE).update({ is_done: false }).eq('id', id);
-  if (error) throw new Error(error.message);
+/** Pass over one occurrence of a repeat without doing it. */
+export function skipTask(todo: Todo): Promise<Todo | null> {
+  return completeTask(todo, 'skipped');
 }
 
 /**
- * Every open task, across all four tabs, for the home screen tile.
- *
- * Separate from listTodosByFrequency because the tile summarises the whole
- * module rather than one tab, and only needs the due dates to count overdue
- * ones. Selecting two columns instead of `*` keeps the payload small, since
- * this runs on every visit to the home screen.
+ * Close a one-off task as abandoned. Kept, like everything closed, and
+ * reopenable; it simply does not count as done.
  */
-export async function listOpenTodos(): Promise<Pick<Todo, 'id' | 'due_date'>[]> {
-  const ownerId = await getOwnerId();
+export async function wontDoTask(todo: Todo): Promise<void> {
+  const { error } = await supabase
+    .from(TABLE)
+    .update({ is_done: true, outcome: 'wont_do', completed_at: new Date().toISOString() })
+    .eq('id', todo.id)
+    .eq('is_done', false);
+  if (error) throw new Error(error.message);
+  remind([], [todo.id]);
+}
 
+/**
+ * Reopen a closed task - the Undo after a tick, or a mistake found later in
+ * the Completed list. Never spawns an occurrence.
+ *
+ * A routine has ONE live occurrence. Closing a repeat created the next one,
+ * so reopening must take that one away again, or the routine is open twice
+ * (v2 did exactly that). What goes is every OTHER open occurrence of the
+ * series that is still untouched - created and never edited since, which is
+ * what equal created_at and updated_at mean. One you have edited is kept: two
+ * open rows you can see beat a change you made being quietly deleted.
+ *
+ * Reopen first, delete last: if the delete fails you have a visible
+ * duplicate, never a routine with nothing open.
+ *
+ * Returns the ids it removed, so a caller holding them in a list can drop
+ * them without a refetch.
+ */
+export async function reopenTask(id: string): Promise<{ reopened: Todo; removed: string[] }> {
+  const { data: reopened, error } = await supabase
+    .from(TABLE)
+    .update({ is_done: false, outcome: null, completed_at: null })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+
+  const row = reopened as Todo;
+  if (!row.is_repeat && !row.series_id) {
+    remind([row]);
+    return { reopened: row, removed: [] };
+  }
+
+  const key = seriesKey(row);
+  const { data: siblings, error: findError } = await supabase
+    .from(TABLE)
+    .select('id, created_at, updated_at')
+    .eq('is_done', false)
+    .neq('id', row.id)
+    // Same frequency too: migration 0020 joined v2 rows into series by title,
+    // so a daily and a weekly routine of the same name can share a key, and
+    // undoing a tick on one must not end the other.
+    .eq('frequency', row.frequency)
+    .or(`series_id.eq.${key},id.eq.${key}`);
+  if (findError) throw new Error(findError.message);
+
+  const removed = ((siblings ?? []) as { id: string; created_at: string; updated_at: string }[])
+    .filter((s) => s.created_at === s.updated_at)
+    .map((s) => s.id);
+  if (removed.length === 0) {
+    remind([row]);
+    return { reopened: row, removed };
+  }
+
+  const { error: deleteError } = await supabase.from(TABLE).delete().in('id', removed);
+  if (deleteError) throw new Error(deleteError.message);
+  remind([row], removed);
+  return { reopened: row, removed };
+}
+
+/**
+ * Move tasks to a new due date (or none), all at once - the Today view's
+ * "Reschedule" on the whole Overdue section is one request, not one per task.
+ *
+ * Only the date moves. A repeat's weekdays and anchor day live in their own
+ * columns, so the occurrence after this one is back on the schedule.
+ */
+export async function rescheduleTasks(ids: string[], dueDate: string | null): Promise<void> {
+  if (ids.length === 0) return;
   const { data, error } = await supabase
     .from(TABLE)
-    .select('id, due_date')
-    .eq('user_id', ownerId)
-    .eq('is_done', false);
-
+    .update({ due_date: dueDate })
+    .in('id', ids)
+    .select();
   if (error) throw new Error(error.message);
-  return data ?? [];
+  remind(data ?? []);
+}
+
+/**
+ * Complete by id, for the Done button on a reminder, where all that arrives is
+ * the id. A task already closed (ticked on the website meanwhile, or the
+ * button pressed twice) is left alone.
+ */
+export async function completeById(id: string): Promise<void> {
+  const todo = await getTodo(id);
+  if (todo.is_done) return;
+  await completeTask(todo, 'done');
+}
+
+/**
+ * Save the digest settings and act on them now: schedule the coming week's
+ * digests from what is open, or cancel them. Settings live on the device
+ * (notifications do); only the counts come from the database.
+ */
+export async function applyDigestSettings(settings: DigestSettings): Promise<void> {
+  await saveDigestSettings(settings);
+  if (!settings.enabled) {
+    await cancelDigests();
+    return;
+  }
+  await scheduleDigests(await listOpenTodos(), settings, todayISO());
 }
 
 export async function deleteTodo(id: string): Promise<void> {
   const { error } = await supabase.from(TABLE).delete().eq('id', id);
   if (error) throw new Error(error.message);
+  remind([], [id]);
 }

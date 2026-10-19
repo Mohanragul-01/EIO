@@ -1,20 +1,24 @@
 /**
- * TodoPage - a kanban board over the four frequencies.
+ * TodoPage - a kanban board over the tasks, and a month calendar of them.
  *
- * THE DESKTOP PAYOFF. The phone shows Daily, Weekly, Monthly and Yearly as
- * tabs, because four columns will not fit. A monitor fits them easily, and
+ * THE DESKTOP PAYOFF. The phone shows Today and the four frequencies one at a
+ * time, because four columns will not fit. A monitor fits them easily, and
  * seeing them together is a different thing from seeing them one at a time:
- * you can tell at a glance that Weekly has quietly grown to fifteen items while
- * Daily sits empty, which tab switching actively hides.
+ * you can tell at a glance that Weekly has quietly grown to fifteen items
+ * while Daily sits empty, which tab switching actively hides.
  *
- * DRAGGING ACROSS a column changes the task's frequency - that is what the
- * columns ARE. Dragging WITHIN one changes `position`, which exists only
- * because you arranged it: everything else about a task's order is decided by
- * the database, and this is the one part that is yours.
+ * GROUP BY. Frequency answers "what kind of work is this"; Due (Overdue,
+ * Today, Tomorrow, This week, Later, No date) and Priority answer "what is
+ * urgent". The columns are the frequencies by default because that is the
+ * model; the other two are read views of the same tasks.
  *
- * The order is stored, not local. A board whose arrangement lived in this
- * browser would silently disagree with the phone, and with this same board on
- * another machine.
+ * DRAGGING (Frequency only) across a column changes the task's frequency -
+ * that is what the columns ARE. Dragging WITHIN one changes `position`, which
+ * exists only because you arranged it. The order is stored, not local, so the
+ * phone and every browser agree. In the other groupings a drop has no single
+ * right meaning ("This week" is not a date), so they do not drag.
+ *
+ * Above the board, a one-line quick add with the phone's parser.
  */
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -39,77 +43,124 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-import { daysUntil, formatDueDate, isOverdue, todayISO } from '@app/core/date';
+import { todayISO } from '@app/core/date';
 import * as api from '@app/modules/todo/api';
+import { addDays, ruleOf, shortRule } from '@app/modules/todo/recurrence';
+import { groupBySeries, streakFor, type HistoryRow } from '@app/modules/todo/streaks';
+import { compareForDay, daysBetween, dueLabel } from '@app/modules/todo/today';
 import {
   FREQUENCIES,
   FREQUENCY_LABEL,
   PRIORITIES,
   PRIORITY_LABEL,
-  nextDueDate,
+  outcomeOf,
+  seriesKey,
   type Frequency,
   type Priority,
   type Todo,
-  type TodoInput,
 } from '@app/modules/todo/types';
 
 import { Icon } from '../components/Icon';
 import { Shell } from '../components/Shell';
 import { FilterBar, type FilterSpec } from '../components/FilterBar';
-import {
-  ChipPicker,
-  ErrorBanner,
-  Modal,
-  Segmented,
-  Spinner,
-  TextField,
-  useConfirm,
-} from '../components/ui';
+import { useToast } from '../components/Toast';
+import { ErrorBanner, Segmented, Spinner, useConfirm } from '../components/ui';
 import { useAsync } from '../lib/useAsync';
 import { useHotkeys } from '../lib/useHotkeys';
+import { QuickAddBar } from './todo/QuickAddBar';
+import { TaskCalendar } from './todo/TaskCalendar';
+import { TaskDialog } from './todo/TaskDialog';
 
 /**
- * Priority colour: red for high, blue for normal, green for low.
- *
- * All three are shown now. The earlier version coloured only "high", on the
- * reasoning that colouring everything makes nothing stand out - true of colour
- * used decoratively, but these are a SCALE, and a scale you can only read one
- * third of is not a scale. Three dots also make an uncoloured card mean
- * "something is wrong" rather than "probably normal".
- *
- * The rgb() values live in tokens.css, one pair per theme, so a dot never has
- * to know which theme is active.
+ * Priority colour: red for high, blue for normal, green for low. All three are
+ * shown - a scale you can only read one third of is not a scale. The rgb()
+ * values live in tokens.css, one pair per theme.
  */
 function priorityColor(priority: Priority): string {
   return `var(--priority-${priority})`;
 }
 
 type Status = 'open' | 'done' | 'all';
+type GroupBy = 'frequency' | 'due' | 'priority';
+type View = 'board' | 'calendar';
 type DueFilter = 'any' | 'overdue' | 'today' | 'week' | 'none';
 type PriorityFilter = 'any' | Priority;
 type RepeatFilter = 'any' | 'repeating' | 'once';
 
 type Board = Record<Frequency, Todo[]>;
 
+type DueBucket = 'overdue' | 'today' | 'tomorrow' | 'week' | 'later' | 'none';
+const DUE_BUCKETS: DueBucket[] = ['overdue', 'today', 'tomorrow', 'week', 'later', 'none'];
+const DUE_LABEL: Record<DueBucket, string> = {
+  overdue: 'Overdue',
+  today: 'Today',
+  tomorrow: 'Tomorrow',
+  week: 'This week',
+  later: 'Later',
+  none: 'No date',
+};
+
+function dueBucket(todo: Todo, today: string): DueBucket {
+  if (!todo.due_date) return 'none';
+  const days = daysBetween(today, todo.due_date);
+  if (days < 0) return 'overdue';
+  if (days === 0) return 'today';
+  if (days === 1) return 'tomorrow';
+  if (days <= 7) return 'week';
+  return 'later';
+}
+
+/** Soonest first, then the order a day is worked in. */
+function byDue(a: Todo, b: Todo): number {
+  if (a.due_date !== b.due_date) {
+    if (!a.due_date) return 1;
+    if (!b.due_date) return -1;
+    return a.due_date < b.due_date ? -1 : 1;
+  }
+  return compareForDay(a, b);
+}
+
+type ColumnSpec = {
+  id: string;
+  title: string;
+  todos: Todo[];
+  total: number;
+  overdue: number;
+  /** Drop target and sortable: Frequency grouping only. */
+  draggable: boolean;
+  onAdd?: () => void;
+  addLabel?: string;
+};
+
 export function TodoPage() {
+  const toast = useToast();
+  const today = todayISO();
+
   const [status, setStatus] = useState<Status>('open');
+  const [groupBy, setGroupBy] = useState<GroupBy>('frequency');
+  const [view, setView] = useState<View>('board');
   const [priority, setPriority] = useState<PriorityFilter>('any');
   const [due, setDue] = useState<DueFilter>('any');
   const [repeat, setRepeat] = useState<RepeatFilter>('any');
   const [query, setQuery] = useState('');
 
   const [editing, setEditing] = useState<Todo | 'new' | null>(null);
-  const [newIn, setNewIn] = useState<Frequency>('daily');
+  const [newIn, setNewIn] = useState<{ frequency: Frequency; dueDate: string | null }>({
+    frequency: 'daily',
+    dueDate: null,
+  });
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Bumped after any write, so the calendar reloads the month's closed tasks.
+  const [version, setVersion] = useState(0);
   const { confirm, dialog } = useConfirm();
 
-  useHotkeys({
-    onNew: () => {
-      setNewIn('daily');
-      setEditing('new');
-    },
-  });
+  const openNew = useCallback((frequency: Frequency = 'daily', dueDate: string | null = null) => {
+    setNewIn({ frequency, dueDate });
+    setEditing('new');
+  }, []);
+
+  useHotkeys({ onNew: () => openNew() });
 
   /**
    * Completed tasks are a SEPARATE, bounded query, and only run when a view
@@ -126,21 +177,32 @@ export function TodoPage() {
         : Promise.resolve(FREQUENCIES.map(() => [] as Todo[])),
     ]);
 
-    return Object.fromEntries(
+    // Streaks are decoration: without them the board still works.
+    let history = new Map<string, HistoryRow[]>();
+    try {
+      const keys = open.flat().filter((t) => t.is_repeat).map(seriesKey);
+      history = groupBySeries(await api.listSeriesHistory(keys));
+    } catch {
+      // Keep the empty map.
+    }
+
+    const columns = Object.fromEntries(
       FREQUENCIES.map((f, i) => [f, { open: open[i], done: done[i] }]),
     ) as Record<Frequency, { open: Todo[]; done: Todo[] }>;
+    return { columns, history };
   }, [wantsDone]);
 
   const { data, loading, error, reload } = useAsync(load, `todos-${wantsDone}`);
 
+  const refresh = useCallback(async () => {
+    setVersion((v) => v + 1);
+    await reload();
+  }, [reload]);
+
   /**
    * The board as shown, held locally so a drag can move a card the instant you
-   * drop it rather than after a round trip.
-   *
-   * Derived from `data` on every render rather than copied into state: an extra
-   * copy would need syncing back whenever a reload landed, and the two would
-   * disagree exactly when something had gone wrong. `pending` below is the one
-   * piece of local truth, and it is cleared as soon as the server confirms.
+   * drop it rather than after a round trip. `pending` is the one piece of local
+   * truth, cleared as soon as the server confirms.
    */
   const [pending, setPending] = useState<Board | null>(null);
 
@@ -150,15 +212,20 @@ export function TodoPage() {
       FREQUENCIES.map((f) => [
         f,
         status === 'open'
-          ? data[f].open
+          ? data.columns[f].open
           : status === 'done'
-            ? data[f].done
-            : [...data[f].open, ...data[f].done],
+            ? data.columns[f].done
+            : [...data.columns[f].open, ...data.columns[f].done],
       ]),
     ) as Board;
   }, [data, status]);
 
   const board = pending ?? serverBoard;
+
+  const allOpen = useMemo(
+    () => (data ? FREQUENCIES.flatMap((f) => data.columns[f].open) : []),
+    [data],
+  );
 
   /** Filters apply to what is DISPLAYED; dragging still reorders the real column. */
   const matches = useCallback(
@@ -173,7 +240,7 @@ export function TodoPage() {
           if (todo.due_date) return false;
         } else {
           if (!todo.due_date) return false;
-          const days = daysUntil(todo.due_date);
+          const days = daysBetween(today, todo.due_date);
           if (due === 'overdue' && days >= 0) return false;
           if (due === 'today' && days !== 0) return false;
           if (due === 'week' && (days < 0 || days > 7)) return false;
@@ -181,43 +248,87 @@ export function TodoPage() {
       }
 
       const needle = query.trim().toLowerCase();
-      if (needle && !todo.title.toLowerCase().includes(needle)) return false;
+      if (
+        needle &&
+        !todo.title.toLowerCase().includes(needle) &&
+        !(todo.notes ?? '').toLowerCase().includes(needle)
+      ) {
+        return false;
+      }
 
       return true;
     },
-    [priority, due, repeat, query],
+    [priority, due, repeat, query, today],
   );
-
-  const visible = useMemo<Board | null>(() => {
-    if (!board) return null;
-    return Object.fromEntries(
-      FREQUENCIES.map((f) => [f, board[f].filter(matches)]),
-    ) as Board;
-  }, [board, matches]);
 
   const filtersActive =
     priority !== 'any' || due !== 'any' || repeat !== 'any' || query.trim() !== '';
 
-  const openCount = useMemo(
-    () => (data ? FREQUENCIES.reduce((total, f) => total + data[f].open.length, 0) : 0),
-    [data],
+  const isOverdue = useCallback(
+    (t: Todo) => !t.is_done && t.due_date !== null && t.due_date < today,
+    [today],
   );
 
-  const overdueCount = useMemo(
-    () =>
-      data
-        ? FREQUENCIES.reduce(
-            (total, f) =>
-              total + data[f].open.filter((t) => t.due_date && isOverdue(t.due_date)).length,
-            0,
-          )
-        : 0,
-    [data],
-  );
+  const openCount = allOpen.length;
+  const overdueCount = allOpen.filter(isOverdue).length;
 
-  const shownCount = useMemo(
-    () => (visible ? FREQUENCIES.reduce((total, f) => total + visible[f].length, 0) : 0),
-    [visible],
+  /** The columns for the current grouping. */
+  const columns = useMemo<ColumnSpec[]>(() => {
+    if (!board) return [];
+    if (groupBy === 'frequency') {
+      return FREQUENCIES.map((f) => ({
+        id: f,
+        title: FREQUENCY_LABEL[f],
+        todos: board[f].filter(matches),
+        total: board[f].length,
+        overdue: board[f].filter(isOverdue).length,
+        draggable: true,
+        onAdd: () => openNew(f),
+        addLabel: `New ${FREQUENCY_LABEL[f].toLowerCase()} task`,
+      }));
+    }
+    const everything = FREQUENCIES.flatMap((f) => board[f]);
+    if (groupBy === 'due') {
+      return DUE_BUCKETS.map((bucket) => {
+        const inBucket = everything.filter((t) => dueBucket(t, today) === bucket).sort(byDue);
+        const addDate = bucket === 'today' ? today : bucket === 'tomorrow' ? addDays(today, 1) : null;
+        return {
+          id: bucket,
+          // With completed tasks showing, the past holds finished work too,
+          // and "Overdue" would call it late.
+          title: bucket === 'overdue' && status !== 'open' ? 'Earlier' : DUE_LABEL[bucket],
+          todos: inBucket.filter(matches),
+          total: inBucket.length,
+          overdue: inBucket.filter(isOverdue).length,
+          draggable: false,
+          onAdd: bucket === 'overdue' ? undefined : () => openNew('daily', addDate),
+          addLabel: `New task, ${DUE_LABEL[bucket].toLowerCase()}`,
+        };
+      });
+    }
+    return PRIORITIES.slice()
+      .reverse()
+      .map((p) => {
+        const inBucket = everything.filter((t) => t.priority === p).sort(byDue);
+        return {
+          id: p,
+          title: PRIORITY_LABEL[p],
+          todos: inBucket.filter(matches),
+          total: inBucket.length,
+          overdue: inBucket.filter(isOverdue).length,
+          draggable: false,
+        };
+      });
+  }, [board, groupBy, matches, isOverdue, today, openNew, status]);
+
+  const shownCount = columns.reduce((total, c) => total + c.todos.length, 0);
+
+  const streakOf = useCallback(
+    (todo: Todo) =>
+      todo.is_repeat && !todo.is_done && data
+        ? streakFor(data.history.get(seriesKey(todo)) ?? [], todo, today)
+        : null,
+    [data, today],
   );
 
   /* DRAG ------------------------------------------------------------------ */
@@ -227,20 +338,16 @@ export function TodoPage() {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       // A card is also a button - it opens the editor. Requiring a few pixels
-      // of travel is what separates "I clicked this" from "I am moving this";
-      // without it every click starts a drag and nothing ever opens.
+      // of travel is what separates "I clicked this" from "I am moving this".
       activationConstraint: { distance: 5 },
     }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const columnOf = useCallback(
-    (id: string, from: Board): Frequency | null => {
-      if (FREQUENCIES.includes(id as Frequency)) return id as Frequency;
-      return FREQUENCIES.find((f) => from[f].some((t) => t.id === id)) ?? null;
-    },
-    [],
-  );
+  const columnOf = useCallback((id: string, from: Board): Frequency | null => {
+    if (FREQUENCIES.includes(id as Frequency)) return id as Frequency;
+    return FREQUENCIES.find((f) => from[f].some((t) => t.id === id)) ?? null;
+  }, []);
 
   const onDragStart = (event: DragStartEvent) => {
     const id = String(event.active.id);
@@ -251,11 +358,8 @@ export function TodoPage() {
   };
 
   /**
-   * Move the card between columns WHILE dragging, not on drop.
-   *
-   * Without this the card stays in its old column until you let go, so you are
-   * aiming at a gap that does not visibly exist yet. Moving it live is what
-   * makes the drop position obvious before you commit to it.
+   * Move the card between columns WHILE dragging, not on drop, so the gap it
+   * will drop into is visible before you commit to it.
    */
   const onDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
@@ -307,7 +411,6 @@ export function TodoPage() {
       return;
     }
 
-    // Reorder within the column it has landed in.
     const items = source[column];
     const oldIndex = items.findIndex((t) => t.id === activeId);
     const overIndex = items.findIndex((t) => t.id === overId);
@@ -322,36 +425,36 @@ export function TodoPage() {
     const original = serverBoard;
     const movedColumn = original ? columnOf(activeId, original) !== column : false;
 
+    // Dropped where it started: nothing to write. Renumbering anyway would
+    // mark every task in the column as edited (see reorder_todos in 0020).
+    if (!movedColumn && nextItems === items && original && original[column] === items) {
+      setPending(null);
+      return;
+    }
+
     setActionError(null);
     try {
       // Frequency first: the row has to belong to the column before the
-      // column's order is written, or the reorder names a task that is not
-      // in it yet.
-      if (movedColumn) await api.setFrequency(activeId, column);
-
+      // column's order is written.
+      if (movedColumn) {
+        const moving = items.find((t) => t.id === activeId);
+        await api.setFrequency(activeId, column, moving?.due_date ?? null);
+      }
       await api.reorderTodos(nextItems.map((t) => t.id));
-
-      // If it came from another column, that one's numbering now has a hole in
-      // it. Harmless for ordering, but renumbering keeps the two columns from
-      // drifting apart over many moves.
       if (movedColumn && original) {
         const previous = columnOf(activeId, original);
         if (previous) await api.reorderTodos(next[previous].map((t) => t.id));
       }
-
       await reload();
       setPending(null);
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Could not save that move');
-      // Re-read rather than just dropping the optimistic board. A move is up to
-      // three writes, and the frequency change can land before the reorder
-      // fails - so the stale serverBoard is not the truth either, and falling
-      // back to it would show the card in the column it just left.
+      // Re-read rather than drop the optimistic board: a move is up to three
+      // writes, so the stale serverBoard is not the truth either.
       try {
         await reload();
       } catch {
-        // The reload failing too leaves the last known board on screen, which
-        // is the best available answer; the error above already says to retry.
+        // The error above already says to retry.
       }
       setPending(null);
     }
@@ -359,29 +462,63 @@ export function TodoPage() {
 
   /* ACTIONS --------------------------------------------------------------- */
 
-  const toggle = async (todo: Todo) => {
+  const run = async (todo: Todo, write: () => Promise<void>, failure: string) => {
     setBusyId(todo.id);
     setActionError(null);
     try {
-      if (todo.is_done) await api.reopenTask(todo.id);
-      else await api.completeTask(todo);
-      await reload();
+      await write();
+      await refresh();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Could not update that task');
+      setActionError(e instanceof Error ? e.message : failure);
     } finally {
       setBusyId(null);
     }
   };
 
-  const remove = async (todo: Todo) => {
-    if (!(await confirm('Delete task', `"${todo.title}" will be removed.`))) return;
-    setActionError(null);
-    try {
-      await api.deleteTodo(todo.id);
-      await reload();
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Could not delete that task');
+  const undo = (todo: Todo) => {
+    void run(todo, async () => void (await api.reopenTask(todo.id)), 'Could not undo that');
+  };
+
+  const toggle = (todo: Todo) => {
+    if (todo.is_done) {
+      void run(todo, async () => void (await api.reopenTask(todo.id)), 'Could not reopen that task');
+      return;
     }
+    void run(
+      todo,
+      async () => {
+        const next = await api.completeTask(todo);
+        toast.show({
+          message: next?.due_date ? `Completed · next ${dueLabel(next.due_date, null, today)}` : 'Completed',
+          actionLabel: 'Undo',
+          onAction: () => undo(todo),
+        });
+      },
+      'Could not complete that task',
+    );
+  };
+
+  const skip = (todo: Todo) => {
+    void run(
+      todo,
+      async () => {
+        const next = await api.skipTask(todo);
+        toast.show({
+          message: next?.due_date ? `Skipped · next ${dueLabel(next.due_date, null, today)}` : 'Skipped',
+          actionLabel: 'Undo',
+          onAction: () => undo(todo),
+        });
+      },
+      'Could not skip that task',
+    );
+  };
+
+  const remove = async (todo: Todo) => {
+    const message = todo.is_repeat
+      ? `"${todo.title}" is deleted for good. Its earlier completions stay in its history.`
+      : `"${todo.title}" is deleted for good.`;
+    if (!(await confirm('Delete task', message))) return;
+    void run(todo, () => api.deleteTodo(todo.id), 'Could not delete that task');
   };
 
   const filters: FilterSpec[] = [
@@ -423,109 +560,150 @@ export function TodoPage() {
     },
   ];
 
+  const renderColumns = () => (
+    <div className="columns">
+      {columns.map((column) => (
+        <Column
+          key={column.id}
+          spec={column}
+          filtered={filtersActive}
+          showOverdue={status !== 'done'}
+          busyId={busyId}
+          today={today}
+          streakOf={streakOf}
+          onToggle={toggle}
+          onSkip={skip}
+          onEdit={setEditing}
+          onDelete={(t) => void remove(t)}
+        />
+      ))}
+    </div>
+  );
+
   return (
     <Shell
       title="Tasks"
       subtitle={
-        loading
+        loading && !data
           ? 'Loading'
-          : filtersActive
-            ? `${shownCount} of ${openCount} shown`
+          : filtersActive && view === 'board'
+            ? `${shownCount} shown`
             : `${openCount} open${overdueCount > 0 ? ` · ${overdueCount} overdue` : ''}`
       }
       actions={
         <div className="row">
           <Segmented
-            value={status}
-            onChange={setStatus}
+            value={view}
+            onChange={setView}
             options={[
-              { value: 'open', label: 'Open' },
-              { value: 'done', label: 'Done' },
-              { value: 'all', label: 'All' },
+              { value: 'board', label: 'Board' },
+              { value: 'calendar', label: 'Calendar' },
             ]}
           />
-          <button
-            className="btn"
-            onClick={() => {
-              setNewIn('daily');
-              setEditing('new');
-            }}
-          >
+          <button className="btn" onClick={() => openNew()}>
             <Icon name="plus" /> New task
           </button>
         </div>
       }
     >
-      <FilterBar
-        search={{ value: query, onChange: setQuery, placeholder: 'Search tasks' }}
-        filters={filters}
-        onReset={
-          filtersActive
-            ? () => {
-                setPriority('any');
-                setDue('any');
-                setRepeat('any');
-                setQuery('');
-              }
-            : undefined
-        }
-      />
+      <QuickAddBar defaultFrequency="daily" defaultDueDate={null} onAdded={() => void refresh()} />
 
       <ErrorBanner message={error ?? actionError} />
 
-      {loading && !data ? (
-        <Spinner center />
+      {view === 'calendar' ? (
+        loading && !data ? (
+          <Spinner center />
+        ) : (
+          <TaskCalendar
+            open={allOpen}
+            today={today}
+            version={version}
+            onOpen={setEditing}
+            onToggle={toggle}
+            onAdded={() => void refresh()}
+          />
+        )
       ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCorners}
-          onDragStart={onDragStart}
-          onDragOver={onDragOver}
-          onDragEnd={(e) => void onDragEnd(e)}
-          onDragCancel={() => {
-            setDragging(null);
-            setPending(null);
-          }}
-        >
-          <div className="columns">
-            {FREQUENCIES.map((frequency) => (
-              <Column
-                key={frequency}
-                frequency={frequency}
-                todos={visible?.[frequency] ?? []}
-                total={board?.[frequency].length ?? 0}
-                filtered={filtersActive}
-                busyId={busyId}
-                onAdd={() => {
-                  setNewIn(frequency);
-                  setEditing('new');
-                }}
-                onToggle={(t) => void toggle(t)}
-                onEdit={setEditing}
-                onDelete={(t) => void remove(t)}
-              />
-            ))}
-          </div>
+        <>
+          <FilterBar
+            search={{ value: query, onChange: setQuery, placeholder: 'Search tasks' }}
+            filters={filters}
+            onReset={
+              filtersActive
+                ? () => {
+                    setPriority('any');
+                    setDue('any');
+                    setRepeat('any');
+                    setQuery('');
+                  }
+                : undefined
+            }
+            trailing={
+              <>
+                <span className="faint" style={{ fontSize: 12 }}>
+                  Group by
+                </span>
+                <Segmented
+                  value={groupBy}
+                  onChange={setGroupBy}
+                  options={[
+                    { value: 'frequency', label: 'Frequency' },
+                    { value: 'due', label: 'Due' },
+                    { value: 'priority', label: 'Priority' },
+                  ]}
+                />
+                <Segmented
+                  value={status}
+                  onChange={setStatus}
+                  options={[
+                    { value: 'open', label: 'Open' },
+                    { value: 'done', label: 'Done' },
+                    { value: 'all', label: 'All' },
+                  ]}
+                />
+              </>
+            }
+          />
 
-          {/*
-            The card follows the cursor detached from the list, so the gap it
-            will drop into stays visible underneath. Rendering the original in
-            place and moving it would hide the very thing you are aiming at.
-          */}
-          <DragOverlay dropAnimation={{ duration: 160, easing: 'cubic-bezier(0.2,0,0,1)' }}>
-            {dragging ? <TaskCard todo={dragging} overlay /> : null}
-          </DragOverlay>
-        </DndContext>
+          {loading && !data ? (
+            <Spinner center />
+          ) : groupBy === 'frequency' ? (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCorners}
+              onDragStart={onDragStart}
+              onDragOver={onDragOver}
+              onDragEnd={(e) => void onDragEnd(e)}
+              onDragCancel={() => {
+                setDragging(null);
+                setPending(null);
+              }}
+            >
+              {renderColumns()}
+
+              {/*
+                The card follows the cursor detached from the list, so the gap it
+                will drop into stays visible underneath.
+              */}
+              <DragOverlay dropAnimation={{ duration: 160, easing: 'cubic-bezier(0.2,0,0,1)' }}>
+                {dragging ? <TaskCard todo={dragging} today={today} overlay /> : null}
+              </DragOverlay>
+            </DndContext>
+          ) : (
+            renderColumns()
+          )}
+        </>
       )}
 
       {editing ? (
         <TaskDialog
           todo={editing === 'new' ? null : editing}
-          frequency={editing === 'new' ? newIn : editing.frequency}
+          frequency={editing === 'new' ? newIn.frequency : editing.frequency}
+          dueDate={editing === 'new' ? newIn.dueDate : undefined}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
-            void reload();
+            void refresh();
           }}
         />
       ) : null}
@@ -537,89 +715,99 @@ export function TodoPage() {
 
 /* COLUMN ------------------------------------------------------------------- */
 
-function Column({
-  frequency,
-  todos,
-  total,
-  filtered,
-  busyId,
-  onAdd,
-  onToggle,
-  onEdit,
-  onDelete,
-}: {
-  frequency: Frequency;
-  todos: Todo[];
-  total: number;
-  filtered: boolean;
+type CardActions = {
   busyId: string | null;
-  onAdd: () => void;
+  today: string;
+  streakOf: (todo: Todo) => ReturnType<typeof streakFor> | null;
   onToggle: (todo: Todo) => void;
+  onSkip: (todo: Todo) => void;
   onEdit: (todo: Todo) => void;
   onDelete: (todo: Todo) => void;
-}) {
+};
+
+function Column({
+  spec,
+  filtered,
+  showOverdue,
+  ...actions
+}: {
+  spec: ColumnSpec;
+  filtered: boolean;
+  showOverdue: boolean;
+} & CardActions) {
   // Registered by the column id, so an empty column is still a valid drop
   // target - otherwise you could never move the last task out of one.
-  const { setNodeRef, isOver } = useDroppable({ id: frequency });
+  const { setNodeRef, isOver } = useDroppable({ id: spec.id, disabled: !spec.draggable });
+  const { todos, total } = spec;
+
+  const cards = todos.map((todo) =>
+    spec.draggable ? (
+      <SortableTask key={todo.id} todo={todo} {...actions} />
+    ) : (
+      <TaskCard key={todo.id} todo={todo} {...actionsFor(todo, actions)} />
+    ),
+  );
 
   return (
-    <section className={`column${isOver ? ' drop-target' : ''}`} aria-label={FREQUENCY_LABEL[frequency]}>
+    <section className={`column${isOver ? ' drop-target' : ''}`} aria-label={spec.title}>
       <header className="column-head">
         <div className="row" style={{ gap: 'var(--space-sm)' }}>
-          <span className="column-title">{FREQUENCY_LABEL[frequency]}</span>
+          <span className="column-title">{spec.title}</span>
           <span className="column-count">
             {filtered && todos.length !== total ? `${todos.length}/${total}` : total}
           </span>
+          {/* A word and an icon, not just a red number. */}
+          {showOverdue && spec.overdue > 0 && spec.id !== 'overdue' ? (
+            <span className="column-overdue">
+              <Icon name="alert" size={12} />
+              {spec.overdue} overdue
+            </span>
+          ) : null}
         </div>
-        <button
-          className="icon-btn"
-          title={`New ${FREQUENCY_LABEL[frequency].toLowerCase()} task`}
-          aria-label={`New ${FREQUENCY_LABEL[frequency].toLowerCase()} task`}
-          onClick={onAdd}
-        >
-          <Icon name="plus" size={14} />
-        </button>
+        {spec.onAdd ? (
+          <button
+            className="icon-btn"
+            title={spec.addLabel}
+            aria-label={spec.addLabel}
+            onClick={spec.onAdd}
+          >
+            <Icon name="plus" size={14} />
+          </button>
+        ) : null}
       </header>
 
       <div className="column-body" ref={setNodeRef}>
-        <SortableContext items={todos.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-          {todos.length === 0 ? (
-            <div className="column-empty">
-              {filtered && total > 0 ? `${total} hidden by filters` : 'Nothing here'}
-            </div>
-          ) : (
-            todos.map((todo) => (
-              <SortableTask
-                key={todo.id}
-                todo={todo}
-                busy={busyId === todo.id}
-                onToggle={() => onToggle(todo)}
-                onEdit={() => onEdit(todo)}
-                onDelete={() => onDelete(todo)}
-              />
-            ))
-          )}
-        </SortableContext>
+        {todos.length === 0 ? (
+          <div className="column-empty">
+            {filtered && total > 0 ? `${total} hidden by filters` : 'Nothing here'}
+          </div>
+        ) : spec.draggable ? (
+          <SortableContext items={todos.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+            {cards}
+          </SortableContext>
+        ) : (
+          cards
+        )}
       </div>
     </section>
   );
 }
 
+function actionsFor(todo: Todo, actions: CardActions) {
+  return {
+    today: actions.today,
+    busy: actions.busyId === todo.id,
+    streak: actions.streakOf(todo)?.current ?? 0,
+    onToggle: () => actions.onToggle(todo),
+    onSkip: todo.is_repeat && !todo.is_done ? () => actions.onSkip(todo) : undefined,
+    onEdit: () => actions.onEdit(todo),
+    onDelete: () => actions.onDelete(todo),
+  };
+}
+
 /* CARD --------------------------------------------------------------------- */
 
-function SortableTask({
-  todo,
-  busy,
-  onToggle,
-  onEdit,
-  onDelete,
-}: {
-  todo: Todo;
-  busy: boolean;
-  onToggle: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
+function SortableTask({ todo, ...actions }: { todo: Todo } & CardActions) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: todo.id,
   });
@@ -627,14 +815,10 @@ function SortableTask({
   return (
     <TaskCard
       todo={todo}
-      busy={busy}
-      onToggle={onToggle}
-      onEdit={onEdit}
-      onDelete={onDelete}
+      {...actionsFor(todo, actions)}
       setNodeRef={setNodeRef}
       // The whole card is the handle, minus the controls, which stop
-      // propagation themselves. A dedicated grip would be tidier and would also
-      // mean every move starts with hitting a 12px target.
+      // propagation themselves.
       handleProps={{ ...attributes, ...listeners }}
       style={{
         transform: CSS.Translate.toString(transform),
@@ -649,9 +833,12 @@ function SortableTask({
 
 function TaskCard({
   todo,
+  today,
   busy,
   overlay,
+  streak = 0,
   onToggle,
+  onSkip,
   onEdit,
   onDelete,
   setNodeRef,
@@ -659,39 +846,51 @@ function TaskCard({
   style,
 }: {
   todo: Todo;
+  today: string;
   busy?: boolean;
   overlay?: boolean;
+  streak?: number;
   onToggle?: () => void;
+  onSkip?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
   setNodeRef?: (node: HTMLElement | null) => void;
   handleProps?: Record<string, unknown>;
   style?: React.CSSProperties;
 }) {
-  const overdue = !todo.is_done && todo.due_date !== null && isOverdue(todo.due_date);
+  const overdue = !todo.is_done && todo.due_date !== null && todo.due_date < today;
   const dueSoon =
-    !todo.is_done && todo.due_date !== null && !overdue && daysUntil(todo.due_date) <= 2;
+    !todo.is_done && todo.due_date !== null && !overdue && daysBetween(today, todo.due_date) <= 2;
+  const outcome = outcomeOf(todo);
+  const checked = todo.checklist?.filter((i) => i.done).length ?? 0;
+  const steps = todo.checklist?.length ?? 0;
 
   return (
     <article
       ref={setNodeRef}
       style={style}
-      className={`task-card${overlay ? ' dragging' : ''}`}
+      className={`task-card${overlay ? ' dragging' : ''}${todo.is_done ? ' closed' : ''}`}
       {...handleProps}
     >
       <button
         className={`check${todo.is_done ? ' on' : ''}`}
         onClick={(e) => {
-          // The card is a drag handle; a click on a control inside it is not a
-          // drag and must not become one.
+          // The card is a drag handle; a click on a control inside it is not
+          // a drag and must not become one.
           e.stopPropagation();
           onToggle?.();
         }}
         onPointerDown={(e) => e.stopPropagation()}
         disabled={busy || overlay}
-        aria-label={todo.is_done ? 'Reopen task' : 'Complete task'}
+        aria-label={todo.is_done ? `Reopen ${todo.title}` : `Complete ${todo.title}`}
       >
-        {todo.is_done ? <Icon name="check" size={11} strokeWidth={2.5} /> : null}
+        {todo.is_done ? (
+          <Icon
+            name={outcome === 'skipped' ? 'skip' : outcome === 'wont_do' ? 'close' : 'check'}
+            size={11}
+            strokeWidth={2.5}
+          />
+        ) : null}
       </button>
 
       <div className="grow" style={{ minWidth: 0 }}>
@@ -704,28 +903,44 @@ function TaskCard({
           <span className={`task-title${todo.is_done ? ' strike' : ''}`}>{todo.title}</span>
         </div>
 
-        <div className="row" style={{ gap: 6, marginTop: 2 }}>
+        <div className="task-meta">
           {todo.due_date ? (
             <span
-              className="task-due"
+              className="task-due task-meta-item"
               style={{
-                color: overdue
-                  ? 'var(--danger)'
-                  : dueSoon
-                    ? 'var(--warning)'
-                    : 'var(--text-faint)',
+                color: overdue ? 'var(--danger)' : dueSoon ? 'var(--warning)' : 'var(--text-faint)',
                 fontWeight: overdue ? 550 : 400,
               }}
             >
-              {formatDueDate(todo.due_date)}
+              {overdue ? <Icon name="alert" size={11} /> : null}
+              {dueLabel(todo.due_date, todo.due_time, today)}
             </span>
           ) : (
             <span className="task-due faint">No date</span>
           )}
 
+          {todo.is_done && outcome && outcome !== 'done' ? (
+            <span className="task-due faint">{outcome === 'skipped' ? 'Skipped' : "Won't do"}</span>
+          ) : null}
+
           {todo.is_repeat ? (
-            <span className="faint" title="Repeats when completed" style={{ display: 'inline-flex' }}>
+            <span className="task-due faint task-meta-item" title="Repeats when completed">
               <Icon name="repeat" size={11} />
+              {shortRule(ruleOf(todo))}
+            </span>
+          ) : null}
+
+          {steps > 0 ? (
+            <span className="task-due faint task-meta-item numeric" title="Checklist">
+              <Icon name="checklist" size={11} />
+              {checked}/{steps}
+            </span>
+          ) : null}
+
+          {streak >= 2 ? (
+            <span className="task-streak numeric" title={`${streak} in a row`}>
+              <Icon name="flame" size={11} />
+              {streak}
             </span>
           ) : null}
         </div>
@@ -733,6 +948,20 @@ function TaskCard({
 
       {overlay ? null : (
         <div className="row-actions" onPointerDown={(e) => e.stopPropagation()}>
+          {onSkip ? (
+            <button
+              className="icon-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSkip();
+              }}
+              title="Skip this time"
+              aria-label={`Skip ${todo.title} this time`}
+              disabled={busy}
+            >
+              <Icon name="skip" size={14} />
+            </button>
+          ) : null}
           <button
             className="icon-btn"
             onClick={(e) => {
@@ -740,7 +969,7 @@ function TaskCard({
               onEdit?.();
             }}
             title="Edit"
-            aria-label="Edit task"
+            aria-label={`Edit ${todo.title}`}
           >
             <Icon name="edit" size={14} />
           </button>
@@ -751,164 +980,12 @@ function TaskCard({
               onDelete?.();
             }}
             title="Delete"
-            aria-label="Delete task"
+            aria-label={`Delete ${todo.title}`}
           >
             <Icon name="trash" size={14} />
           </button>
         </div>
       )}
     </article>
-  );
-}
-
-/* DIALOG ------------------------------------------------------------------- */
-
-function TaskDialog({
-  todo,
-  frequency,
-  onClose,
-  onSaved,
-}: {
-  todo: Todo | null;
-  frequency: Frequency;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [title, setTitle] = useState(todo?.title ?? '');
-  const [dueDate, setDueDate] = useState(todo?.due_date ?? '');
-  const [priority, setPriority] = useState<Priority>(todo?.priority ?? 'normal');
-  const [freq, setFreq] = useState<Frequency>(todo?.frequency ?? frequency);
-  const [isRepeat, setIsRepeat] = useState(todo?.is_repeat ?? false);
-
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [titleError, setTitleError] = useState<string | null>(null);
-
-  const save = async () => {
-    const trimmed = title.trim();
-    if (!trimmed) return setTitleError('Give the task a title');
-
-    setTitleError(null);
-    setSaving(true);
-    setError(null);
-
-    const input: TodoInput = {
-      title: trimmed,
-      // '' from a cleared date input means "no due date", which is a different
-      // thing from an unset field and has to reach the database as null.
-      due_date: dueDate || null,
-      priority,
-      frequency: freq,
-      is_repeat: isRepeat,
-    };
-
-    try {
-      if (todo) await api.updateTodo(todo.id, input);
-      else await api.createTodo(input);
-      onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save that task');
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Modal
-      open
-      title={todo ? 'Edit task' : 'New task'}
-      onClose={onClose}
-      footer={
-        <>
-          <button className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn" onClick={() => void save()} disabled={saving}>
-            {saving ? <span className="spinner" /> : todo ? 'Save' : 'Create'}
-          </button>
-        </>
-      }
-    >
-      <TextField
-        label="Title"
-        value={title}
-        error={titleError}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="What needs doing?"
-        autoFocus
-        // Enter saves, so a one-line task never needs the mouse.
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') void save();
-        }}
-      />
-
-      <ChipPicker
-        label="Frequency"
-        value={freq}
-        onChange={setFreq}
-        options={FREQUENCIES.map((f) => ({ value: f, label: FREQUENCY_LABEL[f] }))}
-      />
-
-      <ChipPicker
-        label="Priority"
-        value={priority}
-        onChange={setPriority}
-        options={PRIORITIES.slice()
-          .reverse()
-          .map((p) => ({
-            value: p,
-            label: PRIORITY_LABEL[p],
-            color: priorityColor(p),
-          }))}
-      />
-
-      <div className="field">
-        <span className="label">Due date</span>
-        <div className="row">
-          <input
-            className="input"
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-          />
-          <button className="btn btn-secondary btn-sm" onClick={() => setDueDate(todayISO())}>
-            Today
-          </button>
-          {dueDate ? (
-            <button className="btn btn-ghost btn-sm" onClick={() => setDueDate('')}>
-              Clear
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      <label className="row" style={{ gap: 'var(--space-md)', cursor: 'pointer' }}>
-        <button
-          type="button"
-          className={`check${isRepeat ? ' on' : ''}`}
-          onClick={() => setIsRepeat(!isRepeat)}
-          aria-pressed={isRepeat}
-        >
-          {isRepeat ? <Icon name="check" size={11} strokeWidth={2.5} /> : null}
-        </button>
-        <span>
-          <div style={{ fontWeight: 500 }}>Repeat {FREQUENCY_LABEL[freq].toLowerCase()}</div>
-          <div className="faint" style={{ fontSize: 12 }}>
-            {/*
-              Showing the actual next date rather than describing the rule.
-              The anchoring is the subtle part - the next occurrence counts
-              from the task's OWN due date, not from when you tick it - and a
-              concrete date is the clearest way to say so.
-            */}
-            {isRepeat
-              ? `Completing it creates the next one, due ${formatDueDate(
-                  nextDueDate(dueDate || null, freq),
-                )}`
-              : 'Completing it just marks it done'}
-          </div>
-        </span>
-      </label>
-
-      <ErrorBanner message={error} />
-    </Modal>
   );
 }

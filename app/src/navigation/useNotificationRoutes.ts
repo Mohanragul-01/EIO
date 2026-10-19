@@ -9,7 +9,7 @@
 import type { NavigationContainerRefWithCurrent } from '@react-navigation/native';
 import { useEffect } from 'react';
 
-import { onResponse } from '../core/notifications';
+import { onAnyResponse } from '../core/notifications';
 import { targetFor } from './notificationTarget';
 import type { RootStackParamList } from './types';
 
@@ -19,7 +19,7 @@ export function useNotificationRoutes(
 ): void {
   useEffect(() => {
     if (!enabled) return;
-    return onResponse((response) => {
+    return onAnyResponse((response) => {
       const target = targetFor(response);
       if (!target || !navigationRef.isReady()) return;
       // A route this build does not have (a newer reminder, a removed screen)

@@ -123,38 +123,6 @@ async function ensureChannel(mod: Notifications, channel: Channel): Promise<void
 }
 
 /**
- * A set of action buttons a notification can carry ("Mark paid"), registered
- * with the OS under `id` before first use. The id may not contain ':' or '-'
- * (expo-notifications). Each button opens the app; what it then does is up to
- * whoever listens with onResponse.
- */
-export type Category = { id: string; actions: { id: string; title: string }[] };
-
-/** Categories already registered this run, like channelsReady. */
-const categoriesReady = new Set<string>();
-
-/** Register a category once per run. Resolves whether it can be used. */
-async function ensureCategory(mod: Notifications, category: Category): Promise<boolean> {
-  if (categoriesReady.has(category.id)) return true;
-  try {
-    await mod.setNotificationCategoryAsync(
-      category.id,
-      category.actions.map((action) => ({
-        identifier: action.id,
-        buttonTitle: action.title,
-        // Into the app, where the action happens on a screen you can see and
-        // undo - not silently in the background.
-        options: { opensAppToForeground: true },
-      })),
-    );
-    categoriesReady.add(category.id);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Ask for permission if it has not been decided, and report where we stand.
  *
  * Call it when the person turns a reminder on, never at launch: a prompt that
@@ -188,19 +156,6 @@ export async function ensurePermission(): Promise<PermissionState> {
   }
 }
 
-/**
- * Where permission stands, WITHOUT asking. For a screen that wants to say
- * "reminders are off" on open: asking there would be the launch-time prompt
- * ensurePermission() exists to avoid. Not yet asked reads as 'denied' - in
- * both cases nothing will fire - and a tap on that notice calls
- * ensurePermission(), which asks if it still can.
- */
-export async function permissionState(): Promise<PermissionState> {
-  const mod = loadNotifications();
-  if (!mod) return 'unsupported';
-  return (await isGranted(mod)) ? 'granted' : 'denied';
-}
-
 /** Whether reminders can fire right now, without asking. */
 async function isGranted(mod: Notifications): Promise<boolean> {
   try {
@@ -230,8 +185,14 @@ export async function schedule(input: {
   body: string;
   data?: Record<string, unknown>;
   channel?: Channel;
-  /** Action buttons on the notification. See Category. */
-  category?: Category;
+  /**
+   * Buttons on the notification: the id of a category registered with
+   * registerCategory, or a whole Category, registered here on first use (its
+   * buttons open the app unless it says otherwise). Optional and additive:
+   * a category that will not register is dropped, and the reminder still
+   * arrives, without buttons.
+   */
+  category?: string | Category;
 }): Promise<boolean> {
   const mod = loadNotifications();
   if (!mod) return false;
@@ -240,16 +201,19 @@ export async function schedule(input: {
   const channel = input.channel ?? DEFAULT_CHANNEL;
   try {
     await ensureChannel(mod, channel);
-    // Without its buttons a reminder is still a reminder, so a category that
-    // will not register is dropped rather than costing the notification.
-    const categoryReady = input.category ? await ensureCategory(mod, input.category) : false;
+    let categoryId: string | null = null;
+    if (typeof input.category === 'string') categoryId = input.category;
+    else if (input.category) {
+      const { id, actions, opensApp = true } = input.category;
+      categoryId = (await registerCategory(id, actions, { opensApp })) ? id : null;
+    }
     await mod.scheduleNotificationAsync({
       identifier: input.id,
       content: {
         title: input.title,
         body: input.body,
         data: input.data ?? {},
-        ...(categoryReady && input.category ? { categoryIdentifier: input.category.id } : {}),
+        ...(categoryId ? { categoryIdentifier: categoryId } : {}),
       },
       trigger: {
         type: mod.SchedulableTriggerInputTypes.DATE,
@@ -336,70 +300,218 @@ export async function runResync(): Promise<void> {
   }
 }
 
-/** What a tapped notification, or one of its buttons, hands back. */
-export type NotificationResponseInfo = {
-  /** The notification's own id. */
-  id: string;
+/**
+ * Whether a reminder scheduled now could fire: the library loads here and
+ * permission is granted. Never prompts. A module checks it before reading the
+ * database for reminders the phone would not show anyway.
+ */
+export async function canNotify(): Promise<boolean> {
+  return (await permissionState()) === 'granted';
+}
+
+/**
+ * Where permission stands, WITHOUT asking: for a screen that wants to say
+ * "reminders are off" on open (asking there would be the launch-time prompt
+ * ensurePermission() exists to avoid). Not yet asked reads as 'denied'.
+ */
+export async function permissionState(): Promise<PermissionState> {
+  const mod = loadNotifications();
+  if (!mod) return 'unsupported';
+  return (await isGranted(mod)) ? 'granted' : 'denied';
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * ACTING ON A NOTIFICATION
+ * ══════════════════════════════════════════════════════════════════════════
+ * Added for Tasks (Done and Snooze on a reminder, a digest that opens Today),
+ * shaped so any module can use it:
+ *
+ *   registerCategory('task_reminder', [{ id: 'done', title: 'Done' }, ...])
+ *   onResponse('task_reminder', ({ action, data }) => ...)   // action null = a tap
+ *   schedule({ ..., category: 'task_reminder' })
+ *
+ * and the app root calls listenForResponses() once per signed-in session.
+ *
+ * BUTTONS ACT WITHOUT OPENING THE APP (opensAppToForeground: false), which is
+ * the point of a Done button. The cost, on Android: when the system has
+ * already killed the app's process there is no JavaScript to run the handler
+ * until the app is next opened. The library keeps the latest response for
+ * that moment, and listenForResponses picks it up at launch. Getting it run
+ * immediately would need a headless background task (expo-task-manager),
+ * which this app does not install.
+ *
+ * Expo Go: like everything above, nothing here loads the library there.
+ */
+
+export type NotificationButton = { id: string; title: string };
+
+/**
+ * A category with its buttons, for schedule() to register on first use.
+ * `opensApp` (default true there): a button that needs a screen - "Mark paid"
+ * opens a sheet you can check and undo - versus one that just acts ("Done").
+ */
+export type Category = { id: string; actions: NotificationButton[]; opensApp?: boolean };
+
+export type NotificationResponse = {
   /** The button pressed, or null for a tap on the notification itself. */
-  actionId: string | null;
+  action: string | null;
+  /** The notification's own id, as given to schedule(). */
+  notificationId: string;
+  title: string | null;
+  body: string | null;
   data: Record<string, unknown>;
 };
 
-/**
- * Responses already handed over this run. The tap that launched the app can
- * reach us twice - once from the "last response" and once from the listener -
- * and acting on it twice would open a sheet over itself.
- */
-const handledResponses = new Set<string>();
+type ResponseHandler = (response: NotificationResponse) => void | Promise<void>;
+
+/** Categories registered this run; the platform keeps them, so once is enough. */
+const categoriesReady = new Set<string>();
 
 /**
- * Be told when a notification is tapped or one of its buttons pressed,
- * including the tap that launched the app (it arrives before anything is
- * listening, so it is fetched once here). Returns an unsubscribe.
+ * Register the buttons a category of notification carries. Resolves whether
+ * they are in place; false (Expo Go, the web, a refusing platform) only means
+ * the notification arrives without buttons.
  *
- * Where to go is the listener's business: core does not know any screen.
+ * Category ids must not contain ':' or '-' (the library's rule).
  */
-export function onResponse(listener: (response: NotificationResponseInfo) => void): () => void {
+export async function registerCategory(
+  id: string,
+  buttons: NotificationButton[],
+  options: { opensApp?: boolean } = {},
+): Promise<boolean> {
+  if (categoriesReady.has(id)) return true;
+  const mod = loadNotifications();
+  if (!mod) return false;
+  try {
+    await mod.setNotificationCategoryAsync(
+      id,
+      buttons.map((button) => ({
+        identifier: button.id,
+        buttonTitle: button.title,
+        options: { opensAppToForeground: options.opensApp ?? false },
+      })),
+    );
+    categoriesReady.add(id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Listeners for EVERY response, whatever its category: the navigator uses one
+ * to open the screen a notification's data names. A response that arrives
+ * with none listening (the tap that launched the app, before the navigator
+ * has mounted) is kept until one subscribes.
+ */
+const anyListeners = new Set<ResponseHandler>();
+let waiting: NotificationResponse[] = [];
+
+export function onAnyResponse(listener: ResponseHandler): () => void {
+  anyListeners.add(listener);
+  const backlog = waiting;
+  waiting = [];
+  backlog.forEach((response) => {
+    Promise.resolve(listener(response)).catch(() => {});
+  });
+  return () => {
+    anyListeners.delete(listener);
+  };
+}
+
+/** Each category's handler. Registering one again replaces it, as resyncs do. */
+const responders = new Map<string, ResponseHandler>();
+
+/**
+ * Handle presses and taps on notifications of a category. Register at module
+ * load, from a file the app imports at launch, so a response that launched the
+ * app finds its handler waiting.
+ */
+export function onResponse(category: string, handler: ResponseHandler): void {
+  responders.set(category, handler);
+}
+
+/**
+ * Responses already handled, across listener restarts. The library keeps the
+ * most recent response for as long as the app runs, so without this a second
+ * sign-in in the same run would act on an old Done again.
+ */
+const handled = new Set<string>();
+
+/**
+ * Start delivering responses to their category's handler. Call once per
+ * signed-in session, at the app root (handlers read the database as the
+ * signed-in person). Returns the stop function.
+ *
+ * Also handles the response that LAUNCHED the app: the native side records it
+ * before any JavaScript listener exists, so it is read once here. The same
+ * response can then arrive through the listener as well, which is why each is
+ * remembered by notification, action and delivery time and handled once.
+ */
+export function listenForResponses(): () => void {
   const mod = loadNotifications();
   if (!mod) return () => {};
 
-  const deliver = (response: NotificationsModule.NotificationResponse) => {
-    const request = response.notification.request;
-    const key = `${request.identifier}|${response.actionIdentifier}|${response.notification.date ?? ''}`;
-    if (handledResponses.has(key)) return;
-    handledResponses.add(key);
-    listener({
-      id: request.identifier,
-      actionId:
-        response.actionIdentifier === mod.DEFAULT_ACTION_IDENTIFIER
-          ? null
-          : response.actionIdentifier,
-      data: (request.content.data ?? {}) as Record<string, unknown>,
-    });
+  const route = (raw: NotificationsModule.NotificationResponse) => {
+    try {
+      const request = raw.notification.request;
+      const key = `${request.identifier}|${raw.actionIdentifier}|${raw.notification.date}`;
+      if (handled.has(key)) return;
+      handled.add(key);
+      // Taken: a later restart must not read it back as the launch response.
+      mod.clearLastNotificationResponse?.();
+
+      const action =
+        raw.actionIdentifier === mod.DEFAULT_ACTION_IDENTIFIER ? null : raw.actionIdentifier;
+      // A button press leaves the notification in the tray on Android (only a
+      // tap on the body dismisses itself), which would read as "it did not
+      // work".
+      if (action !== null) mod.dismissNotificationAsync(request.identifier).catch(() => {});
+
+      const response: NotificationResponse = {
+        action,
+        notificationId: request.identifier,
+        title: request.content.title,
+        body: request.content.body,
+        data: (request.content.data ?? {}) as Record<string, unknown>,
+      };
+
+      const category = request.content.categoryIdentifier;
+      const handler = category ? responders.get(category) : undefined;
+      if (handler) {
+        Promise.resolve(handler(response)).catch(() => {
+          // A failed handler (no network for a Done) leaves the row as it was,
+          // which the person sees next time they look. Nothing else to do.
+        });
+      }
+
+      if (anyListeners.size === 0) {
+        // The newest few are enough: nobody wants five old taps replayed.
+        waiting = [...waiting, response].slice(-3);
+      } else {
+        anyListeners.forEach((listener) => {
+          Promise.resolve(listener(response)).catch(() => {});
+        });
+      }
+    } catch {
+      // A malformed response or a handler that threw synchronously: the
+      // listener must survive it for the next one.
+    }
   };
 
-  let subscription: { remove: () => void } | null = null;
+  let subscription: { remove: () => void };
   try {
-    subscription = mod.addNotificationResponseReceivedListener(deliver);
+    subscription = mod.addNotificationResponseReceivedListener(route);
   } catch {
-    subscription = null;
+    return () => {};
   }
 
-  let active = true;
-  mod
-    .getLastNotificationResponseAsync()
-    .then((response) => {
-      if (!active || !response) return;
-      deliver(response);
-      // Cleared so the next launch does not replay a tap from this one.
-      return mod.clearLastNotificationResponseAsync();
-    })
-    .catch(() => {
-      // Nothing launched us from a notification, or the call is unavailable.
-    });
+  try {
+    const launch = mod.getLastNotificationResponse?.();
+    if (launch) route(launch);
+  } catch {
+    // Not available on this platform: there is no launch response to handle.
+  }
 
-  return () => {
-    active = false;
-    subscription?.remove();
-  };
+  return () => subscription.remove();
 }
