@@ -180,7 +180,7 @@ export function uuidV4(random: () => number = Math.random): string {
   });
 }
 
-export function newGroupId(): string {
+export function newUuid(): string {
   const native = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto?.randomUUID;
   return native ? native.call((globalThis as { crypto?: object }).crypto) : uuidV4();
 }

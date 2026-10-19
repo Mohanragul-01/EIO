@@ -20,9 +20,29 @@ const point = (
   date: string,
   kind: LedgerPoint['kind'],
   amount_minor: number,
-): LedgerPoint => ({ date, kind, amount_minor });
+  transfer_direction: LedgerPoint['transfer_direction'] = null,
+): LedgerPoint => ({
+  date,
+  kind,
+  amount_minor,
+  category: kind === 'transfer' ? 'transfer' : 'food',
+  account_id: null,
+  transfer_direction,
+});
 
 describe('runningBalance', () => {
+  it('ignores transfers, even a lone half of one', () => {
+    // Moving money between your own accounts changes nothing you have.
+    expect(
+      runningBalance([
+        point('2026-01-05', 'income', 5000),
+        point('2026-01-06', 'transfer', 3000, 'out'),
+        point('2026-01-06', 'transfer', 3000, 'in'),
+        point('2026-01-07', 'transfer', 999, 'out'),
+      ]),
+    ).toBe(5000);
+  });
+
   it('is income minus expense', () => {
     expect(
       runningBalance([
@@ -96,6 +116,34 @@ describe('monthlyTotals', () => {
     const result = monthlyTotals([], 3, january);
     expect(result.map((m) => m.month)).toEqual(['2025-11', '2025-12', '2026-01']);
   });
+
+  it('leaves transfers out of both bars', () => {
+    const result = monthlyTotals(
+      [point('2026-08-02', 'transfer', 7000, 'out'), point('2026-08-02', 'transfer', 7000, 'in')],
+      1,
+      now,
+    );
+    expect(result[0]).toMatchObject({ incomeMinor: 0, expenseMinor: 0 });
+  });
+
+  it('buckets by finance month when the month starts on a salary day', () => {
+    // Start on the 25th: 26 July is August's, 24 August is August's, 25 August
+    // is September's - and today (30 August) is in September's period.
+    const result = monthlyTotals(
+      [
+        point('2026-07-26', 'expense', 100),
+        point('2026-08-24', 'expense', 200),
+        point('2026-08-25', 'expense', 400),
+      ],
+      2,
+      now,
+      25,
+    );
+    expect(result.map((m) => [m.month, m.label, m.expenseMinor])).toEqual([
+      ['2026-08', 'Aug', 300],
+      ['2026-09', 'Sep', 400],
+    ]);
+  });
 });
 
 describe('toCsv', () => {
@@ -105,14 +153,33 @@ describe('toCsv', () => {
     category: 'food',
     note: 'Lunch',
     amount_minor: 24950,
+    account_id: null,
+    transfer_direction: null,
     ...over,
+  });
+
+  it('names the account, and says which way a transfer went', () => {
+    const names = new Map([['h', 'HDFC'], ['c', 'Cash, petty']]);
+    const csv = toCsv(
+      [
+        row({ account_id: 'h' }),
+        row({ kind: 'transfer', category: 'transfer', note: 'ATM', transfer_direction: 'out', account_id: 'h' }),
+        row({ kind: 'transfer', category: 'transfer', note: 'ATM', transfer_direction: 'in', account_id: 'c' }),
+      ],
+      (id) => names.get(id) ?? '',
+    );
+    const lines = csv.trim().split('\n');
+    expect(lines[1]).toBe('2026-08-30,expense,food,Lunch,249.50,HDFC');
+    expect(lines[2]).toBe('2026-08-30,transfer out,transfer,ATM,249.50,HDFC');
+    expect(lines[3]).toBe('2026-08-30,transfer in,transfer,ATM,249.50,"Cash, petty"');
   });
 
   it('writes a header and converts paise to rupees', () => {
     const csv = toCsv([row()]);
     const [header, line] = csv.trim().split('\n');
-    expect(header).toBe('date,type,category,note,amount');
-    expect(line).toBe('2026-08-30,expense,food,Lunch,249.50');
+    expect(header).toBe('date,type,category,note,amount,account');
+    // No account name given: the column is there, empty.
+    expect(line).toBe('2026-08-30,expense,food,Lunch,249.50,');
   });
 
   it('always uses two decimal places', () => {
@@ -143,7 +210,7 @@ describe('toCsv', () => {
   });
 
   it('produces a header-only file for no rows', () => {
-    expect(toCsv([])).toBe('date,type,category,note,amount\n');
+    expect(toCsv([])).toBe('date,type,category,note,amount,account\n');
   });
 });
 
