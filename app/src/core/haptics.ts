@@ -10,8 +10,16 @@
  * because haptics decorate an action and must not be able to break it. A tick
  * that saves a set calls success(); on a phone without a vibration motor, or
  * on the web, that call fails - and the set must save regardless.
+ *
+ * ANDROID GETS THE SYSTEM HAPTICS, not the vibrator. impactAsync and
+ * notificationAsync drive Android's raw Vibrator, which the SDK 57 docs advise
+ * against: performAndroidHapticsAsync goes through the view's haptic feedback
+ * instead, so it feels like the rest of the phone, needs no VIBRATE permission
+ * and follows the phone's own "touch feedback" setting. Platform is read at
+ * call time rather than at import, so tests can exercise both paths.
  */
 import * as Haptics from 'expo-haptics';
+import { Platform } from 'react-native';
 
 function safely(run: () => Promise<void>): void {
   try {
@@ -24,13 +32,25 @@ function safely(run: () => Promise<void>): void {
 }
 
 export function tap(): void {
-  safely(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light));
+  safely(() =>
+    Platform.OS === 'android'
+      ? Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Virtual_Key)
+      : Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light),
+  );
 }
 
 export function success(): void {
-  safely(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success));
+  safely(() =>
+    Platform.OS === 'android'
+      ? Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Confirm)
+      : Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success),
+  );
 }
 
 export function warning(): void {
-  safely(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning));
+  safely(() =>
+    Platform.OS === 'android'
+      ? Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Reject)
+      : Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning),
+  );
 }
