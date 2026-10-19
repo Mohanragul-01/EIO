@@ -30,6 +30,7 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider } from './src/core/auth';
+import { ToastProvider } from './src/core/components';
 import { ThemeProvider, useTheme } from './src/core/ThemeContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 
@@ -65,9 +66,13 @@ export default function App() {
         */}
         <KeyboardProvider>
           <ThemeProvider>
-            <AuthProvider>
-              <Root ready={fontsLoaded || !!fontError} />
-            </AuthProvider>
+            {/* Inside the theme (it draws with it) and outside the navigator,
+                so a toast survives the screen that raised it going back. */}
+            <ToastProvider>
+              <AuthProvider>
+                <Root ready={fontsLoaded || !!fontError} />
+              </AuthProvider>
+            </ToastProvider>
           </ThemeProvider>
         </KeyboardProvider>
       </SafeAreaProvider>
