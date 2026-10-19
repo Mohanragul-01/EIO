@@ -321,6 +321,20 @@ export function formatDaysLeft(days: number | null): string {
   return `about ${months} month${months === 1 ? '' : 's'}`;
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * "3 Nov", or "3 Jan 2027" when the year is not today's. Day first, with
+ * fixed month names rather than the phone's locale, because it is also baked
+ * into notification text at scheduling time and must read the same on every
+ * device - and in the tests.
+ */
+export function formatDayMonth(iso: string, today?: string): string {
+  const [year, month, day] = iso.split('-').map(Number);
+  const base = `${day} ${MONTHS[month - 1]}`;
+  return today && today.slice(0, 4) !== iso.slice(0, 4) ? `${base} ${year}` : base;
+}
+
 /**
  * Trims trailing zeroes: 30.00 reads as 30, 30.50 as 30.5.
  *
