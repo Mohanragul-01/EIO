@@ -20,6 +20,14 @@ jest.mock('../../../core/supabase', () => ({
   },
 }));
 jest.mock('../../../core/session', () => ({ getOwnerId: () => Promise.resolve('user-1') }));
+// Reminders are a side effect of writing; their own tests are in reminders.test.ts.
+jest.mock('../notifications', () => ({
+  syncReminders: jest.fn(() => Promise.resolve()),
+  cancelReminders: jest.fn(() => Promise.resolve()),
+  rebuildAll: jest.fn(() => Promise.resolve()),
+  refreshDigestsSoon: jest.fn(),
+}));
+jest.mock('../../../core/notifications', () => ({ registerResync: jest.fn() }));
 
 beforeEach(() => {
   mockDb = createFakeSupabase();
@@ -29,6 +37,11 @@ beforeEach(() => {
 afterEach(() => {
   jest.useRealTimers();
 });
+
+const reminders = jest.requireMock('../notifications') as {
+  syncReminders: jest.Mock;
+  cancelReminders: jest.Mock;
+};
 
 const openRows = () => mockDb.rows().filter((row) => !row.is_done);
 
@@ -233,5 +246,46 @@ describe('listToday', () => {
     expect(result.open.map((t) => t.id)).toEqual([overdue.id, today.id]);
     expect(result.closedToday.map((t) => t.id)).toEqual([done.id]);
     expect(result.next?.id).toBe(later.id);
+  });
+});
+
+
+describe('reminders follow the writes', () => {
+  it("completing a repeat cancels its reminder and schedules the successor's", async () => {
+    const task = await repeatingTask({ due_time: '19:00:00', reminder_offset_min: 0 });
+    reminders.syncReminders.mockClear();
+    reminders.cancelReminders.mockClear();
+
+    const next = (await api.completeTask(task)) as Todo;
+    await Promise.resolve();
+
+    expect(reminders.syncReminders).toHaveBeenCalledWith([next]);
+    expect(reminders.cancelReminders).toHaveBeenCalledWith([task.id]);
+  });
+
+  it('undo reschedules the reopened task and cancels the removed successor', async () => {
+    const task = await repeatingTask();
+    const next = (await api.completeTask(task)) as Todo;
+    reminders.syncReminders.mockClear();
+    reminders.cancelReminders.mockClear();
+
+    await api.reopenTask(task.id);
+    await Promise.resolve();
+
+    expect(reminders.syncReminders.mock.calls[0][0].map((t: Todo) => t.id)).toEqual([task.id]);
+    expect(reminders.cancelReminders).toHaveBeenCalledWith([next.id]);
+  });
+
+  it('a reschedule reschedules every moved task', async () => {
+    const a = await repeatingTask({ due_date: '2026-10-01' });
+    reminders.syncReminders.mockClear();
+
+    await api.rescheduleTasks([a.id], '2026-10-21');
+    await Promise.resolve();
+
+    expect(reminders.syncReminders.mock.calls[0][0][0]).toMatchObject({
+      id: a.id,
+      due_date: '2026-10-21',
+    });
   });
 });

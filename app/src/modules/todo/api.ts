@@ -26,7 +26,9 @@
 import { supabase } from '../../core/supabase';
 import { getOwnerId } from '../../core/session';
 import { todayISO } from '../../core/date';
+import { registerResync } from '../../core/notifications';
 import { normalizeInput, resetChecklist } from './input';
+import { cancelReminders, rebuildAll, refreshDigestsSoon, syncReminders } from './notifications';
 import { localDayStartISO } from './today';
 import {
   nextDueDate,
@@ -39,6 +41,33 @@ import {
 } from './types';
 
 const TABLE = 'todos';
+
+/**
+ * Keep the phone's reminders in step with a write: reschedule the rows that
+ * changed, cancel the ones that went, and rebuild the digests shortly after.
+ * Fire and forget - a reminder is a side effect of saving, never a reason for
+ * the save to fail or wait. On the website every call here is a no-op.
+ */
+function remind(changed: readonly Todo[], removedIds: readonly string[] = []): void {
+  void (async () => {
+    try {
+      await syncReminders(changed);
+      await cancelReminders(removedIds);
+    } catch {
+      // Core never throws; this only guards against the unexpected.
+    }
+  })();
+  refreshDigestsSoon(listOpenTodos, todayISO);
+}
+
+/**
+ * Rebuild every task reminder from the database once per launch (core runs
+ * this only where reminders can fire). Registered here, at module load,
+ * because api.ts is imported by the screens the navigator registers at launch.
+ */
+registerResync('tasks', async () => {
+  await rebuildAll(await listAllOpen(), todayISO());
+});
 
 /** The columns a series history needs - small, since a daily routine has hundreds. */
 const HISTORY_COLUMNS =
@@ -278,6 +307,7 @@ export async function createTodo(input: TodoInput): Promise<Todo> {
     .single();
 
   if (error) throw new Error(error.message);
+  remind([data]);
   return data;
 }
 
@@ -300,6 +330,7 @@ export async function updateTodo(id: string, input: Partial<TodoInput>): Promise
     .single();
 
   if (error) throw new Error(error.message);
+  remind([data]);
   return data;
 }
 
@@ -335,7 +366,10 @@ export async function completeTask(
     .eq('id', todo.id);
   if (error) throw new Error(error.message);
 
-  if (!todo.is_repeat) return null;
+  if (!todo.is_repeat) {
+    remind([], [todo.id]);
+    return null;
+  }
 
   const ownerId = await getOwnerId();
   const today = todayISO();
@@ -377,6 +411,7 @@ export async function completeTask(
     throw new Error(insertError.message);
   }
 
+  remind([data], [todo.id]);
   return data;
 }
 
@@ -395,6 +430,7 @@ export async function wontDoTask(todo: Todo): Promise<void> {
     .update({ is_done: true, outcome: 'wont_do', completed_at: new Date().toISOString() })
     .eq('id', todo.id);
   if (error) throw new Error(error.message);
+  remind([], [todo.id]);
 }
 
 /**
@@ -424,7 +460,10 @@ export async function reopenTask(id: string): Promise<{ reopened: Todo; removed:
   if (error) throw new Error(error.message);
 
   const row = reopened as Todo;
-  if (!row.is_repeat && !row.series_id) return { reopened: row, removed: [] };
+  if (!row.is_repeat && !row.series_id) {
+    remind([row]);
+    return { reopened: row, removed: [] };
+  }
 
   const key = seriesKey(row);
   const { data: siblings, error: findError } = await supabase
@@ -438,10 +477,14 @@ export async function reopenTask(id: string): Promise<{ reopened: Todo; removed:
   const removed = ((siblings ?? []) as { id: string; created_at: string; updated_at: string }[])
     .filter((s) => s.created_at === s.updated_at)
     .map((s) => s.id);
-  if (removed.length === 0) return { reopened: row, removed };
+  if (removed.length === 0) {
+    remind([row]);
+    return { reopened: row, removed };
+  }
 
   const { error: deleteError } = await supabase.from(TABLE).delete().in('id', removed);
   if (deleteError) throw new Error(deleteError.message);
+  remind([row], removed);
   return { reopened: row, removed };
 }
 
@@ -454,8 +497,13 @@ export async function reopenTask(id: string): Promise<{ reopened: Todo; removed:
  */
 export async function rescheduleTasks(ids: string[], dueDate: string | null): Promise<void> {
   if (ids.length === 0) return;
-  const { error } = await supabase.from(TABLE).update({ due_date: dueDate }).in('id', ids);
+  const { data, error } = await supabase
+    .from(TABLE)
+    .update({ due_date: dueDate })
+    .in('id', ids)
+    .select();
   if (error) throw new Error(error.message);
+  remind(data ?? []);
 }
 
 /**
@@ -472,4 +520,5 @@ export async function completeById(id: string): Promise<void> {
 export async function deleteTodo(id: string): Promise<void> {
   const { error } = await supabase.from(TABLE).delete().eq('id', id);
   if (error) throw new Error(error.message);
+  remind([], [id]);
 }
