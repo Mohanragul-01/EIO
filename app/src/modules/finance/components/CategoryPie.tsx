@@ -20,7 +20,7 @@ import { PieChart } from 'react-native-chart-kit';
 
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { spacing } from '../../../core/theme';
-import type { CategoryTotal } from '../useTransactions';
+import type { CategoryTotal } from '../summary';
 
 type CategoryPieProps = {
   categoryTotals: CategoryTotal[];

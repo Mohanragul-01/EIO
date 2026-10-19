@@ -5,7 +5,14 @@
  * counter, many times a day. Every one it gets wrong is a mis-filed rupee
  * nobody notices, so "no answer" is preferred to a guess.
  */
-import { categoryForNote, lastTransfer, lastUsed, normalizeNote, noteSuggestions } from '../defaults';
+import {
+  categoryForNote,
+  lastTransfer,
+  lastUsed,
+  normalizeNote,
+  noteSuggestions,
+  orderByUse,
+} from '../defaults';
 import type { Transaction } from '../types';
 
 let seq = 0;
@@ -99,5 +106,39 @@ describe('noteSuggestions', () => {
   it('keeps to the limit and the kind', () => {
     expect(noteSuggestions('', recent, 'income').map((s) => s.note)).toEqual(['October salary']);
     expect(noteSuggestions('c', recent, 'expense', 1)).toHaveLength(1);
+  });
+});
+
+describe('orderByUse', () => {
+  const catalogue = [{ key: 'food' }, { key: 'groceries' }, { key: 'transport' }, { key: 'rent' }];
+
+  it('puts the categories you use most first, keeping catalogue order for ties and the unused', () => {
+    expect(orderByUse(catalogue, recent, 'expense').map((c) => c.key)).toEqual([
+      'food',
+      'groceries',
+      'transport',
+      'rent',
+    ]);
+    const moreTransport = [
+      row({ category: 'transport' }),
+      row({ category: 'transport' }),
+      row({ category: 'transport' }),
+      ...recent,
+    ];
+    expect(orderByUse(catalogue, moreTransport, 'expense').map((c) => c.key)).toEqual([
+      'transport',
+      'food',
+      'groceries',
+      'rent',
+    ]);
+  });
+
+  it('counts only the kind asked for', () => {
+    expect(orderByUse(catalogue, recent, 'income').map((c) => c.key)).toEqual([
+      'food',
+      'groceries',
+      'transport',
+      'rent',
+    ]);
   });
 });

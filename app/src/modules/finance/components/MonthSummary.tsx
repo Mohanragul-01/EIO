@@ -1,120 +1,49 @@
 /**
- * MonthSummary - the month switcher, the headline totals, and the category
- * breakdown bars.
+ * MonthSummary - the headline totals, how they compare with last month, and
+ * where the money went.
  *
  * On the bars: this is a share-of-total breakdown, so a set of labelled bars
- * beats a pie chart. Comparing two adjacent bar lengths is something people
- * do accurately; comparing two pie slice angles is something people do badly.
- * It also needs no charting library, so nothing extra ships in the bundle.
+ * beats a pie chart for reading amounts. Comparing two adjacent bar lengths is
+ * something people do accurately; comparing two slice angles is something
+ * people do badly. The pie stays above them for proportion at a glance.
+ *
+ * Every figure here leaves transfers out (summary.ts): moving money between
+ * your own accounts is not spending.
  */
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import {
-  Animated,
-  Pressable,
-  Text,
-  useAnimatedValue,
-  View,
-} from 'react-native';
+import { Animated, Pressable, Text, useAnimatedValue, View } from 'react-native';
 
 import { GlassCard } from '../../../core/components';
 import { formatMoney } from '../../../core/money';
-import { formatBalance } from '../analytics';
-import { CategoryPie } from './CategoryPie';
-import { radius, spacing } from '../../../core/theme';
-import type { CategoryTotal } from '../useTransactions';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
-
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
+import { radius, spacing } from '../../../core/theme';
+import { deltaSpoken, type CategoryTotal, type Delta, type PeriodSummary } from '../summary';
+import { CategoryPie } from './CategoryPie';
+import { DeltaText } from './DeltaText';
 
 type MonthSummaryProps = {
-  year: number;
-  month: number;
-  /** Income minus expense across every transaction ever. */
-  balanceMinor: number;
-  spentMinor: number;
-  earnedMinor: number;
-  netMinor: number;
-  categoryTotals: CategoryTotal[];
-  isCurrentMonth: boolean;
-  onStepMonth: (delta: number) => void;
+  summary: PeriodSummary;
+  deltas: { spent: Delta | null; earned: Delta | null; byCategory: Map<string, Delta | null> };
+  /** Last month, as 'Sep' and 'September'. */
+  versus: string;
+  versusLong: string;
+  onOpenCategory: (key: string) => void;
 };
 
-export function MonthSummary({
-  year,
-  month,
-  balanceMinor,
-  spentMinor,
-  earnedMinor,
-  netMinor,
-  categoryTotals,
-  isCurrentMonth,
-  onStepMonth,
-}: MonthSummaryProps) {
+export function MonthSummary({ summary, deltas, versus, versusLong, onOpenCategory }: MonthSummaryProps) {
   const styles = useStyles();
   const { colors } = useTheme();
+  const { spentMinor, earnedMinor, netMinor, categoryTotals } = summary;
+
   return (
     <View>
-      {/*
-        Balance first, and outside the month switcher on purpose. Everything
-        below changes when you step a month; this does not, and nesting it in
-        there would suggest otherwise.
-      */}
-      <GlassCard style={styles.balanceCard}>
-        <Text style={styles.balanceLabel}>Balance</Text>
-        <Text
-          style={[
-            styles.balanceValue,
-            { color: balanceMinor < 0 ? colors.danger : colors.text },
-          ]}
-        >
-          {formatBalance(balanceMinor)}
-        </Text>
-        <Text style={styles.balanceCaption}>Everything in, minus everything out</Text>
-      </GlassCard>
-
-      {/*  Month switcher  */}
-      <View style={styles.monthRow}>
-        <Pressable
-          onPress={() => onStepMonth(-1)}
-          hitSlop={12}
-          style={styles.arrow}
-          accessibilityRole="button"
-          accessibilityLabel="Previous month"
-        >
-          <Ionicons name="chevron-back" size={18} color={colors.textSecondary} />
-        </Pressable>
-
-        <View style={styles.monthLabel}>
-          <Text style={styles.monthName}>{MONTH_NAMES[month - 1]}</Text>
-          <Text style={styles.monthYear}>{year}</Text>
-        </View>
-
-        {/* Forward is disabled in the current month - there's no future data
-            to look at, and letting people wander into empty months reads as
-            a bug rather than a feature. */}
-        <Pressable
-          onPress={() => !isCurrentMonth && onStepMonth(1)}
-          hitSlop={12}
-          disabled={isCurrentMonth}
-          style={[styles.arrow, isCurrentMonth && styles.arrowDisabled]}
-          accessibilityRole="button"
-          accessibilityLabel="Next month"
-          accessibilityState={{ disabled: isCurrentMonth }}
-        >
-          <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-        </Pressable>
-      </View>
-
-      {/*  Headline totals  */}
       <GlassCard style={styles.totals}>
         <View style={styles.totalsRow}>
           <View style={styles.totalBlock}>
             <Text style={styles.totalLabel}>Spent</Text>
             <Text style={styles.totalSpent}>{formatMoney(spentMinor, { compact: true })}</Text>
+            <DeltaText delta={deltas.spent} versus={versus} versusLong={versusLong} style={styles.delta} />
           </View>
 
           <View style={styles.divider} />
@@ -122,6 +51,7 @@ export function MonthSummary({
           <View style={styles.totalBlock}>
             <Text style={styles.totalLabel}>Received</Text>
             <Text style={styles.totalIncome}>{formatMoney(earnedMinor, { compact: true })}</Text>
+            <DeltaText delta={deltas.earned} versus={versus} versusLong={versusLong} style={styles.delta} />
           </View>
         </View>
 
@@ -131,20 +61,26 @@ export function MonthSummary({
           <View style={styles.netRow}>
             <Text style={styles.netLabel}>Net</Text>
             <Text style={[styles.netValue, { color: netMinor >= 0 ? colors.success : colors.danger }]}>
-              {netMinor >= 0 ? '+' : '-'}
+              {netMinor >= 0 ? '+' : '−'}
               {formatMoney(Math.abs(netMinor), { compact: true })}
             </Text>
           </View>
         ) : null}
       </GlassCard>
 
-      {/*  Category breakdown  */}
       {categoryTotals.length > 0 ? (
         <View style={styles.breakdown}>
           <Text style={styles.breakdownLabel}>Where it went</Text>
           <CategoryPie categoryTotals={categoryTotals} />
           {categoryTotals.map((category) => (
-            <CategoryBar key={category.key} category={category} />
+            <CategoryBar
+              key={category.key}
+              category={category}
+              delta={deltas.byCategory.get(category.key) ?? null}
+              versus={versus}
+              versusLong={versusLong}
+              onPress={() => onOpenCategory(category.key)}
+            />
           ))}
         </View>
       ) : null}
@@ -152,12 +88,24 @@ export function MonthSummary({
   );
 }
 
-function CategoryBar({ category }: { category: CategoryTotal }) {
+function CategoryBar({
+  category,
+  delta,
+  versus,
+  versusLong,
+  onPress,
+}: {
+  category: CategoryTotal;
+  delta: Delta | null;
+  versus: string;
+  versusLong: string;
+  onPress: () => void;
+}) {
   const styles = useStyles();
+  const { colors } = useTheme();
   /**
-   * The bar grows from zero on mount. `useNativeDriver: false` is required
-   * here because we're animating WIDTH, which is a layout property the native
-   * driver can't handle - unlike opacity and transform. It's a short, small
+   * The bar grows from zero on mount. `useNativeDriver: false` because this
+   * animates WIDTH, a layout property the native driver cannot handle. A short
    * animation on a handful of rows, so the cost is fine.
    */
   const width = useAnimatedValue(0);
@@ -170,8 +118,24 @@ function CategoryBar({ category }: { category: CategoryTotal }) {
     }).start();
   }, [category.share, width]);
 
+  const percent = Math.round(category.share * 100);
+  const spoken = [
+    category.label,
+    formatMoney(category.totalMinor, { compact: true }),
+    `${percent}% of spending`,
+    delta ? deltaSpoken(delta, versusLong) : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
+
   return (
-    <View style={styles.categoryRow}>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.categoryRow, pressed && styles.pressed]}
+      accessibilityRole="button"
+      accessibilityLabel={spoken}
+      accessibilityHint={`Opens ${category.label} for this month and the last six`}
+    >
       <View style={[styles.categoryIcon, { backgroundColor: category.color + '1F' }]}>
         <Ionicons name={category.icon as never} size={15} color={category.color} />
       </View>
@@ -179,9 +143,7 @@ function CategoryBar({ category }: { category: CategoryTotal }) {
       <View style={styles.categoryBody}>
         <View style={styles.categoryTop}>
           <Text style={styles.categoryLabel}>{category.label}</Text>
-          <Text style={styles.categoryAmount}>
-            {formatMoney(category.totalMinor, { compact: true })}
-          </Text>
+          <Text style={styles.categoryAmount}>{formatMoney(category.totalMinor, { compact: true })}</Text>
         </View>
 
         <View style={styles.track}>
@@ -190,81 +152,35 @@ function CategoryBar({ category }: { category: CategoryTotal }) {
               styles.fill,
               {
                 backgroundColor: category.color,
-                // Interpolating a 0-1 share into a percentage string is how
-                // you animate a proportional width in React Native.
-                width: width.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ['0%', '100%'],
-                }),
+                width: width.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
               },
             ]}
           />
         </View>
+
+        <View style={styles.categoryFoot}>
+          <DeltaText delta={delta} versus={versus} versusLong={versusLong} />
+          <Text style={styles.categoryPercent}>{percent}%</Text>
+        </View>
       </View>
 
-      <Text style={styles.categoryPercent}>{Math.round(category.share * 100)}%</Text>
-    </View>
+      <Ionicons name="chevron-forward" size={14} color={colors.textFaint} style={styles.chevron} />
+    </Pressable>
   );
 }
 
 const useStyles = makeStyles(({ colors, typography }) => ({
-  balanceCard: {
-    marginBottom: spacing.xl,
-  },
-  balanceLabel: {
-    ...typography.overline,
-  },
-  balanceValue: {
-    ...typography.display,
-    fontSize: 30,
-    marginTop: spacing.xs,
-  },
-  balanceCaption: {
-    ...typography.caption,
-    fontSize: 11.5,
-    marginTop: 2,
-  },
-  monthRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.xl,
-  },
-  arrow: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.glass,
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
-  },
-  arrowDisabled: {
-    opacity: 0.3,
-  },
-  monthLabel: {
-    alignItems: 'center',
-  },
-  monthName: {
-    ...typography.h2,
-  },
-  monthYear: {
-    ...typography.caption,
-    fontSize: 11.5,
-  },
-
   totals: {},
   totalsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   totalBlock: {
     flex: 1,
   },
   divider: {
     width: 1,
-    height: 34,
+    alignSelf: 'stretch',
     backgroundColor: colors.glassBorder,
     marginHorizontal: spacing.lg,
   },
@@ -274,13 +190,18 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   },
   totalSpent: {
     ...typography.h2,
+    ...typography.numeric,
     fontSize: 19,
     marginTop: 4,
   },
   totalIncome: {
     ...typography.h2,
+    ...typography.numeric,
     fontSize: 19,
     color: colors.success,
+    marginTop: 4,
+  },
+  delta: {
     marginTop: 4,
   },
   netRow: {
@@ -298,6 +219,7 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   },
   netValue: {
     ...typography.title,
+    ...typography.numeric,
     fontSize: 15,
   },
 
@@ -311,7 +233,12 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   categoryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    minHeight: 48,
+    marginBottom: spacing.md,
+    borderRadius: radius.sm,
+  },
+  pressed: {
+    opacity: 0.6,
   },
   categoryIcon: {
     width: 30,
@@ -336,6 +263,7 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   },
   categoryAmount: {
     ...typography.caption,
+    ...typography.numeric,
     color: colors.text,
     fontSize: 13,
   },
@@ -349,12 +277,21 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     height: '100%',
     borderRadius: radius.pill,
   },
+  categoryFoot: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+    minHeight: 15,
+  },
   categoryPercent: {
     ...typography.caption,
+    ...typography.numeric,
     fontSize: 11,
+    lineHeight: 15,
     color: colors.textFaint,
-    width: 34,
-    textAlign: 'right',
+  },
+  chevron: {
     marginLeft: spacing.sm,
   },
 }));

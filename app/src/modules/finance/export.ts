@@ -31,12 +31,13 @@ export async function exportTransactionsCsv(range?: {
   start: string;
   end: string;
 }): Promise<ExportResult> {
-  const rows = await api.listForExport(range);
+  const [rows, accounts] = await Promise.all([api.listForExport(range), api.listAccounts()]);
   // Refuse rather than producing a file with only a header row, which looks
   // like a broken export.
   if (rows.length === 0) return { status: 'empty' };
 
-  const csv = toCsv(rows);
+  const names = new Map(accounts.map((a) => [a.id, a.name]));
+  const csv = toCsv(rows, (id) => names.get(id) ?? '');
 
   const file = new File(Paths.cache, exportFilename());
   // Overwrite: two exports on the same day share a filename, and the newer one

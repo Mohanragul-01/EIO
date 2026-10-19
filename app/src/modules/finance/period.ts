@@ -151,6 +151,11 @@ export function periodTitle(period: Period): string {
   return `${MONTH_NAMES[period.month - 1]} ${period.year}`;
 }
 
+/** 'September', for a sentence ("18% more than September"). */
+export function longMonth(period: Period): string {
+  return MONTH_NAMES[period.month - 1];
+}
+
 /** 'Oct', for chart axes and "vs Sep". */
 export function shortMonth(period: Period): string {
   return MONTH_NAMES[period.month - 1].slice(0, 3);

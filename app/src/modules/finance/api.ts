@@ -374,11 +374,27 @@ export async function listQuickAdds(): Promise<QuickAdd[]> {
   return data ?? [];
 }
 
-export async function createQuickAdd(input: QuickAddInput, position: number): Promise<QuickAdd> {
+/**
+ * Pin a quick-add. Without a position it goes after the last pin, which costs
+ * one small read - the add form pins without having the list loaded.
+ */
+export async function createQuickAdd(input: QuickAddInput, position?: number): Promise<QuickAdd> {
   const ownerId = await getOwnerId();
+  let at = position;
+  if (at === undefined) {
+    const { data: last, error: lastError } = await supabase
+      .from('finance_templates')
+      .select('position')
+      .eq('user_id', ownerId)
+      .order('position', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    fail(lastError);
+    at = ((last?.position as number | undefined) ?? -1) + 1;
+  }
   const { data, error } = await supabase
     .from('finance_templates')
-    .insert({ ...input, position, user_id: ownerId })
+    .insert({ ...input, position: at, user_id: ownerId })
     .select()
     .single();
   fail(error);

@@ -11,6 +11,7 @@ import {
   describeTransfer,
   matchAccount,
   netBalance,
+  parseSignedAmount,
   signedFlow,
   summarizeAccounts,
   uuidV4,
@@ -221,5 +222,20 @@ describe('describeTransfer', () => {
     ]);
     expect(describeTransfer('h', 'c', byId)).toBe('HDFC → Cash');
     expect(describeTransfer('h', null, byId)).toBe('HDFC → No account');
+  });
+});
+
+describe('parseSignedAmount', () => {
+  it('reads an opening balance that may be negative, and treats blank as zero', () => {
+    expect(parseSignedAmount('1,500.50')).toBe(150050);
+    expect(parseSignedAmount('-500')).toBe(-50000);
+    expect(parseSignedAmount('−₹250')).toBe(-25000);
+    expect(parseSignedAmount('  ')).toBe(0);
+  });
+
+  it('refuses what is not an amount', () => {
+    expect(parseSignedAmount('abc')).toBeNull();
+    expect(parseSignedAmount('--5')).toBeNull();
+    expect(parseSignedAmount('-')).toBeNull();
   });
 });

@@ -17,6 +17,7 @@
  * by construction, and the headline balance never moves when you shuffle money
  * between your own accounts.
  */
+import { parseAmountToMinor } from '../../core/money';
 import {
   TRANSFER_CATEGORY,
   type Account,
@@ -223,4 +224,20 @@ export function describeTransfer(
 ): string {
   const name = (id: string | null) => (id && accountsById.get(id)?.name) || 'No account';
   return `${name(fromId)} → ${name(toId)}`;
+}
+
+/**
+ * An opening balance as typed. Unlike an entry's amount it may be negative -
+ * an overdrawn account starts below zero - and blank means zero, because most
+ * accounts are added on the day you start logging them. Null for anything
+ * that is not an amount, so the form can say so rather than save ₹0.
+ */
+export function parseSignedAmount(text: string): number | null {
+  const trimmed = text.trim();
+  if (!trimmed) return 0;
+  // The typographic minus too: it is what some keyboards and pastes produce.
+  const negative = /^[-−]/.test(trimmed);
+  const minor = parseAmountToMinor(negative ? trimmed.slice(1) : trimmed);
+  if (minor === null) return null;
+  return negative ? -minor : minor;
 }

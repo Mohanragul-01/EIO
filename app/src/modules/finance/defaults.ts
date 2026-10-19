@@ -105,3 +105,24 @@ export function noteSuggestions(
 
   return [...starts, ...contains].slice(0, limit);
 }
+
+/**
+ * The category grid, most used first (Wallet's "most used categories"), so the
+ * one you want is usually in the top row. Counted over `recent` for this kind;
+ * ties and unused categories keep the catalogue's order. The form works this
+ * out once when it opens, so a tile never moves under your finger.
+ */
+export function orderByUse<T extends { key: string }>(
+  catalogue: T[],
+  recent: Recent[],
+  kind: EntryKind,
+): T[] {
+  const uses = new Map<string, number>();
+  recent.forEach((row) => {
+    if (row.kind === kind) uses.set(row.category, (uses.get(row.category) ?? 0) + 1);
+  });
+  return catalogue
+    .map((item, index) => ({ item, index, count: uses.get(item.key) ?? 0 }))
+    .sort((a, b) => b.count - a.count || a.index - b.index)
+    .map(({ item }) => item);
+}
