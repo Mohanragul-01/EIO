@@ -45,3 +45,6 @@ app/android/
 # website build output
 website/dist/
 website/.vite/
+
+# Scratch workspaces for plan execution (ledgers, briefs, review packages).
+.superpowers/
