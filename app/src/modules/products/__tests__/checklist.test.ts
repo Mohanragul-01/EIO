@@ -33,7 +33,7 @@ const product = (over: Partial<Product> = {}): Product => ({
   ...over,
 });
 
-const use = (product_id: string, used_on: string, created_at = `${used_on}T08:00:00Z`): ProductUse => ({
+const entry = (product_id: string, used_on: string, created_at = `${used_on}T08:00:00Z`): ProductUse => ({
   id: `${product_id}-${used_on}-${created_at}`,
   product_id,
   user_id: 'u1',
@@ -48,7 +48,7 @@ const daysAgo = (productId: string, ...days: number[]) =>
   days.map((d) => {
     const date = new Date(2026, 9, 19 - d);
     const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    return use(productId, iso);
+    return entry(productId, iso);
   });
 
 describe('todayChecklist', () => {
@@ -67,14 +67,14 @@ describe('todayChecklist', () => {
     const p = product({ id: 'a' });
     const twiceADay = [
       ...daysAgo('a', 1, 2, 3, 4),
-      use('a', '2026-10-18', '2026-10-18T20:00:00Z'),
+      entry('a', '2026-10-18', '2026-10-18T20:00:00Z'),
     ];
     expect(todayChecklist([p], twiceADay, TODAY)).toEqual([]);
   });
 
   it('ignores uses eight days ago and today when deciding', () => {
     const p = product({ id: 'a' });
-    const uses = [...daysAgo('a', 1, 2, 3, 4, 8), use('a', TODAY)];
+    const uses = [...daysAgo('a', 1, 2, 3, 4, 8), entry('a', TODAY)];
     expect(todayChecklist([p], uses, TODAY)).toEqual([]);
   });
 
@@ -87,8 +87,8 @@ describe('todayChecklist', () => {
 
   it('marks a row done when today already has a use, newest first', () => {
     const p = product({ id: 'a' });
-    const morning = use('a', TODAY, '2026-10-19T03:00:00Z');
-    const evening = use('a', TODAY, '2026-10-19T15:00:00Z');
+    const morning = entry('a', TODAY, '2026-10-19T03:00:00Z');
+    const evening = entry('a', TODAY, '2026-10-19T15:00:00Z');
     const [row] = todayChecklist([p], [...daysAgo('a', 1, 2, 3, 4, 5), morning, evening], TODAY);
 
     expect(row.done).toBe(true);
@@ -124,7 +124,7 @@ describe('todayChecklist', () => {
       ...daysAgo('z', 1, 2, 3, 4, 5),
       ...daysAgo('w', 1, 2, 3, 4, 5),
       ...daysAgo('c', 1, 2, 3, 4, 5),
-      use('c', TODAY),
+      entry('c', TODAY),
     ];
     const rows = todayChecklist([zinc, creatine, ashwagandha], uses, TODAY);
     expect(rows.map((r) => r.product.name)).toEqual(['ashwagandha', 'Creatine', 'Zinc']);
@@ -135,7 +135,7 @@ describe('todayChecklist', () => {
     // 28 Oct to 3 Nov, whatever the clocks did in between.
     const p = product({ id: 'a' });
     const uses = ['2026-10-28', '2026-10-30', '2026-11-01', '2026-11-02', '2026-11-03'].map((d) =>
-      use('a', d),
+      entry('a', d),
     );
     expect(todayChecklist([p], uses, '2026-11-04')).toHaveLength(1);
     expect(todayChecklist([p], uses, '2026-11-05')).toHaveLength(0);

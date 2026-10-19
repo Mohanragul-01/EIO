@@ -32,9 +32,9 @@ import {
 } from './types';
 import {
   expiryConflict,
-  useByLabel,
-  useByOf,
-  useByState,
+  usableLabel,
+  usableState,
+  usableUntil,
   type ExpiryConflict,
   type UseByState,
 } from './useBy';
@@ -84,7 +84,7 @@ export function buildOutlooks(products: Product[], uses: ProductUse[], today: st
         ? priorEstimate(product, previous, today)
         : null;
     const spare = spareFor(product, products);
-    const useBy = useByOf(product);
+    const useBy = usableUntil(product);
     const waiting = spare !== null;
 
     return {
@@ -97,7 +97,7 @@ export function buildOutlooks(products: Product[], uses: ProductUse[], today: st
       previous,
       spare,
       useBy,
-      useByState: useByState(useBy, today),
+      useByState: usableState(useBy, today),
       // Measured days only: an estimate is not firm enough to warn on.
       conflict: expiryConflict(projection.daysLeft, useBy, today),
       needsReorder: urgency === 'critical' && !waiting,
@@ -151,7 +151,7 @@ export function chipsFor(outlook: Outlook, today: string): Chip[] {
 
   const useByChip: Chip = {
     kind: outlook.useByState === 'expired' ? 'expired' : 'use-by',
-    label: useByLabel(outlook.useBy, today),
+    label: usableLabel(outlook.useBy, today),
   };
 
   const emptyOn = outlook.projection.emptyOn;

@@ -45,7 +45,7 @@ const product = (over: Partial<Product> = {}): Product => ({
   ...over,
 });
 
-const use = (product_id: string, used_on: string, quantity: number): ProductUse => ({
+const entry = (product_id: string, used_on: string, quantity: number): ProductUse => ({
   id: `${product_id}-${used_on}-${quantity}`,
   product_id,
   user_id: 'u1',
@@ -59,13 +59,13 @@ const use = (product_id: string, used_on: string, quantity: number): ProductUse 
 // left: 1 day. Reorder now.
 const nearlyEmpty = (id: string, over: Partial<Product> = {}) => ({
   product: product({ id, ...over }),
-  uses: [use(id, '2026-10-10', 900)],
+  uses: [entry(id, '2026-10-10', 900)],
 });
 
 // 100 g used over 10 days = 10 g/day, 900 g left: 90 days. Plenty.
 const plenty = (id: string, over: Partial<Product> = {}) => ({
   product: product({ id, ...over }),
-  uses: [use(id, '2026-10-10', 100)],
+  uses: [entry(id, '2026-10-10', 100)],
 });
 
 describe('buildOutlooks', () => {
@@ -115,7 +115,7 @@ describe('buildOutlooks', () => {
   it('drops the estimate once the rate is measured', () => {
     const old = product({ id: 'old', opened_on: '2026-08-29', finished_on: '2026-10-09' });
     const current = product({ id: 'new', opened_on: '2026-10-10', previous_id: 'old' });
-    const [, outlook] = buildOutlooks([old, current], [use('new', '2026-10-10', 100)], TODAY);
+    const [, outlook] = buildOutlooks([old, current], [entry('new', '2026-10-10', 100)], TODAY);
     expect(outlook.projection.daysLeft).toBe(90);
     expect(outlook.estimate).toBeNull();
   });
@@ -185,7 +185,7 @@ describe('reorderSummary', () => {
     // Reorder now; with a lead of 2 it is Running low.
     const low = {
       product: product({ id: 'l', name: 'Zinc', reorder_lead_days: 2 }),
-      uses: [use('l', '2026-10-10', 600)],
+      uses: [entry('l', '2026-10-10', 600)],
     };
     const done = product({ id: 'f', name: 'Old', finished_on: '2026-10-01', opened_on: '2026-09-01' });
 

@@ -121,14 +121,15 @@ async function bucketSummary(): Promise<string> {
 }
 
 async function productsSummary(): Promise<string> {
-  const products = await productsApi.listProducts();
-  const open = products.filter((p) => !p.finished_on);
-  if (open.length === 0) return 'Nothing tracked';
+  // Open containers and their uses only, so the count of what to reorder
+  // comes from the same outlook the module shows - a spare on the shelf
+  // clears it here too.
+  const { inUse, toReorder } = await productsApi.overview();
+  if (inUse === 0) return 'Nothing tracked';
 
-  // The projection needs every product's usage history, which is more than a
-  // tile should fetch. A count is the honest thing to show here; the module
-  // itself works out what needs reordering.
-  return `${open.length} in use`;
+  // Something to order today beats a count of what is fine.
+  if (toReorder > 0) return `${toReorder} to reorder`;
+  return `${inUse} in use`;
 }
 
 const LOADERS: Record<string, () => Promise<string>> = {

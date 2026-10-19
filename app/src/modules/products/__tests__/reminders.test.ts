@@ -37,7 +37,7 @@ const product = (over: Partial<Product> = {}): Product => ({
   ...over,
 });
 
-const use = (product_id: string, used_on: string, quantity: number): ProductUse => ({
+const entry = (product_id: string, used_on: string, quantity: number): ProductUse => ({
   id: `${product_id}-${used_on}`,
   product_id,
   user_id: 'u1',
@@ -53,7 +53,7 @@ describe('planReminders', () => {
   it('plans the reorder morning and the empty day for a measured container', () => {
     // 10 g a day, 900 g left: empty on 17 Jan, reorder 7 days before.
     const p = product({ id: 'a' });
-    const plan = planReminders(buildOutlooks([p], [use('a', '2026-10-10', 100)], TODAY), MORNING);
+    const plan = planReminders(buildOutlooks([p], [entry('a', '2026-10-10', 100)], TODAY), MORNING);
 
     expect(plan.map((r) => [r.id, r.date.getTime()])).toEqual([
       ['product-a-reorder', at9(2027, 1, 10).getTime()],
@@ -67,7 +67,7 @@ describe('planReminders', () => {
 
   it("uses the product's own lead time", () => {
     const p = product({ id: 'a', reorder_lead_days: 14 });
-    const [reorder] = planReminders(buildOutlooks([p], [use('a', '2026-10-10', 100)], TODAY), MORNING);
+    const [reorder] = planReminders(buildOutlooks([p], [entry('a', '2026-10-10', 100)], TODAY), MORNING);
     expect(reorder.date.getTime()).toBe(at9(2027, 1, 3).getTime());
     expect(reorder.body).toBe('About 14 days left at your pace, empty around 17 Jan.');
   });
@@ -75,7 +75,7 @@ describe('planReminders', () => {
   it('plans nothing that has already passed', () => {
     // 90 g a day, 100 g left: empty tomorrow, so the reorder morning is gone.
     const p = product({ id: 'a' });
-    const plan = planReminders(buildOutlooks([p], [use('a', '2026-10-10', 900)], TODAY), MORNING);
+    const plan = planReminders(buildOutlooks([p], [entry('a', '2026-10-10', 900)], TODAY), MORNING);
     expect(plan.map((r) => r.id)).toEqual(['product-a-empty']);
     expect(plan[0].date.getTime()).toBe(at9(2026, 10, 20).getTime());
   });
@@ -84,7 +84,7 @@ describe('planReminders', () => {
     // 55 g a day, 450 g left: empty on 27 Oct, and a lead of 8 days crosses
     // into Reorder now today.
     const p = product({ id: 'a', reorder_lead_days: 8 });
-    const outlooks = buildOutlooks([p], [use('a', '2026-10-10', 550)], TODAY);
+    const outlooks = buildOutlooks([p], [entry('a', '2026-10-10', 550)], TODAY);
 
     expect(planReminders(outlooks, MORNING).map((r) => r.id)).toEqual([
       'product-a-reorder',
@@ -99,7 +99,7 @@ describe('planReminders', () => {
     const p = product({ id: 'a' });
     const spare = product({ id: 's', opened_on: null });
     const plan = planReminders(
-      buildOutlooks([p, spare], [use('a', '2026-10-10', 100)], TODAY),
+      buildOutlooks([p, spare], [entry('a', '2026-10-10', 100)], TODAY),
       MORNING,
     );
     expect(plan.map((r) => r.id)).toEqual(['product-a-empty']);
@@ -110,7 +110,7 @@ describe('planReminders', () => {
     const finished = product({ id: 'f', finished_on: '2026-10-18' });
     const spare = product({ id: 's', name: 'Zinc', opened_on: null });
     const fresh = product({ id: 'n', name: 'Creatine', opened_on: TODAY });
-    const uses = [use('f', '2026-10-10', 100)];
+    const uses = [entry('f', '2026-10-10', 100)];
     expect(planReminders(buildOutlooks([finished, spare, fresh], uses, TODAY), MORNING)).toEqual([]);
   });
 
@@ -121,7 +121,7 @@ describe('planReminders', () => {
     const today = '2026-10-29';
     // 10 days open, 750 used: 75/day, 250 left: 3 days, empty 1 Nov.
     const plan = planReminders(
-      buildOutlooks([p], [use('a', '2026-10-20', 750)], today),
+      buildOutlooks([p], [entry('a', '2026-10-20', 750)], today),
       new Date(2026, 9, 29, 7, 0, 0),
     );
     expect(plan.map((r) => [r.id, r.date.getHours(), r.date.getDate()])).toEqual([

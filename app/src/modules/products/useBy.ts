@@ -45,7 +45,7 @@ export function addMonthsISO(iso: string, months: number): string {
  * A spare has no period-after-opening clock yet, so only its printed date
  * applies. A finished container has none at all: it is gone.
  */
-export function useByOf(product: {
+export function usableUntil(product: {
   opened_on: string | null;
   finished_on: string | null;
   expires_on: string | null;
@@ -70,7 +70,7 @@ export type UseByState = 'soon' | 'expired';
  * through the day itself - "use by 3 Jan" still means usable on the 3rd - and
  * "expired" from the day after.
  */
-export function useByState(useBy: string | null, today: string): UseByState | null {
+export function usableState(useBy: string | null, today: string): UseByState | null {
   if (!useBy) return null;
   const days = daysBetween(today, useBy);
   if (days < 0) return 'expired';
@@ -79,7 +79,7 @@ export function useByState(useBy: string | null, today: string): UseByState | nu
 }
 
 /** "Use by 3 Jan", "Use by today", "Expired 18 Oct". */
-export function useByLabel(useBy: string, today: string): string {
+export function usableLabel(useBy: string, today: string): string {
   const days = daysBetween(today, useBy);
   if (days < 0) return `Expired ${formatDayMonth(useBy, today)}`;
   if (days === 0) return 'Use by today';

@@ -13,9 +13,9 @@ import {
   expiryConflict,
   formatExpiryInput,
   parseExpiry,
-  useByLabel,
-  useByOf,
-  useByState,
+  usableLabel,
+  usableUntil,
+  usableState,
 } from '../useBy';
 
 describe('addMonthsISO', () => {
@@ -35,74 +35,74 @@ describe('addMonthsISO', () => {
   });
 });
 
-describe('useByOf', () => {
+describe('usableUntil', () => {
   const base = { opened_on: '2026-01-10', finished_on: null, expires_on: null, pao_months: null };
 
   it('has none when neither date is known', () => {
-    expect(useByOf(base)).toBeNull();
+    expect(usableUntil(base)).toBeNull();
   });
 
   it('is the printed date alone, or opening plus the period after opening alone', () => {
-    expect(useByOf({ ...base, expires_on: '2027-03-31' })).toBe('2027-03-31');
-    expect(useByOf({ ...base, pao_months: 6 })).toBe('2026-07-10');
+    expect(usableUntil({ ...base, expires_on: '2027-03-31' })).toBe('2027-03-31');
+    expect(usableUntil({ ...base, pao_months: 6 })).toBe('2026-07-10');
   });
 
   it('is the earlier of the two: opening can only bring the end forward', () => {
-    expect(useByOf({ ...base, expires_on: '2026-05-01', pao_months: 6 })).toBe('2026-05-01');
-    expect(useByOf({ ...base, expires_on: '2027-05-01', pao_months: 6 })).toBe('2026-07-10');
+    expect(usableUntil({ ...base, expires_on: '2026-05-01', pao_months: 6 })).toBe('2026-05-01');
+    expect(usableUntil({ ...base, expires_on: '2027-05-01', pao_months: 6 })).toBe('2026-07-10');
   });
 
   it('starts no PAO clock on a spare', () => {
-    expect(useByOf({ ...base, opened_on: null, pao_months: 6 })).toBeNull();
-    expect(useByOf({ ...base, opened_on: null, pao_months: 6, expires_on: '2027-01-31' })).toBe(
+    expect(usableUntil({ ...base, opened_on: null, pao_months: 6 })).toBeNull();
+    expect(usableUntil({ ...base, opened_on: null, pao_months: 6, expires_on: '2027-01-31' })).toBe(
       '2027-01-31',
     );
   });
 
   it('stops mattering once finished', () => {
-    expect(useByOf({ ...base, finished_on: '2026-02-01', expires_on: '2026-03-01' })).toBeNull();
+    expect(usableUntil({ ...base, finished_on: '2026-02-01', expires_on: '2026-03-01' })).toBeNull();
   });
 });
 
-describe('useByState', () => {
+describe('usableState', () => {
   const today = '2026-10-19';
 
   it('says nothing more than 30 days out', () => {
-    expect(useByState('2026-11-19', today)).toBeNull();
+    expect(usableState('2026-11-19', today)).toBeNull();
   });
 
   it('warns from exactly 30 days before', () => {
-    expect(useByState('2026-11-18', today)).toBe('soon');
+    expect(usableState('2026-11-18', today)).toBe('soon');
   });
 
   it('is still usable on the use-by day itself', () => {
-    expect(useByState('2026-10-19', today)).toBe('soon');
+    expect(usableState('2026-10-19', today)).toBe('soon');
   });
 
   it('is expired from the day after', () => {
-    expect(useByState('2026-10-18', today)).toBe('expired');
+    expect(usableState('2026-10-18', today)).toBe('expired');
   });
 
   it('has no state without a date', () => {
-    expect(useByState(null, today)).toBeNull();
+    expect(usableState(null, today)).toBeNull();
   });
 });
 
-describe('useByLabel', () => {
+describe('usableLabel', () => {
   const today = '2026-10-19';
 
   it('names the day, and the year only when it is not this one', () => {
-    expect(useByLabel('2026-11-03', today)).toBe('Use by 3 Nov');
-    expect(useByLabel('2027-01-03', today)).toBe('Use by 3 Jan 2027');
+    expect(usableLabel('2026-11-03', today)).toBe('Use by 3 Nov');
+    expect(usableLabel('2027-01-03', today)).toBe('Use by 3 Jan 2027');
   });
 
   it('says today and tomorrow in words', () => {
-    expect(useByLabel('2026-10-19', today)).toBe('Use by today');
-    expect(useByLabel('2026-10-20', today)).toBe('Use by tomorrow');
+    expect(usableLabel('2026-10-19', today)).toBe('Use by today');
+    expect(usableLabel('2026-10-20', today)).toBe('Use by tomorrow');
   });
 
   it('says expired once past', () => {
-    expect(useByLabel('2026-10-18', today)).toBe('Expired 18 Oct');
+    expect(usableLabel('2026-10-18', today)).toBe('Expired 18 Oct');
   });
 });
 
