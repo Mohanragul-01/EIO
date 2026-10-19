@@ -23,14 +23,15 @@ import {
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { AuthProvider } from './src/core/auth';
+import { AuthProvider, useAuth } from './src/core/auth';
 import { ToastProvider } from './src/core/components';
+import { runResync } from './src/core/notifications';
 import { ThemeProvider, useTheme } from './src/core/ThemeContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 
@@ -87,6 +88,17 @@ export default function App() {
  */
 function Root({ ready }: { ready: boolean }) {
   const { colors, isDark } = useTheme();
+  const { session } = useAuth();
+  const userId = session?.user.id;
+
+  // Rebuild every module's reminders once per launch, once someone is signed
+  // in: local notifications live on the phone, so a reinstall or a reminder
+  // edited on the website leaves them stale until something reschedules them.
+  // Keyed on the user, so signing in as someone else rebuilds for them. It
+  // never throws and never prompts; see core/notifications.
+  useEffect(() => {
+    if (userId) void runResync();
+  }, [userId]);
 
   const onLayoutRootView = useCallback(() => {
     if (ready) {

@@ -18,3 +18,4 @@ export { Tabs } from './Tabs';
 export { SwipeTabs } from './SwipeTabs';
 export { ToastProvider, useToast } from './Toast';
 export { MonthCalendar, type CalendarDay } from './MonthCalendar';
+export { Sheet } from './Sheet';

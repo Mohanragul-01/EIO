@@ -14,11 +14,10 @@
 import React, { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 
-import { Button, SegmentedControl, TextField } from '../../../core/components';
+import { Button, SegmentedControl, Sheet, TextField } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { radius, spacing } from '../../../core/theme';
 import { COSTS, COST_LABEL, type BucketInput, type BucketItem, type Cost } from '../types';
-import { Sheet } from './Sheet';
 
 type ItemSheetProps = {
   visible: boolean;

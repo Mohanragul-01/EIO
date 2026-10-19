@@ -14,11 +14,10 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
-import { SegmentedControl } from '../../../core/components';
+import { SegmentedControl, Sheet } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { radius, spacing } from '../../../core/theme';
 import { COSTS, COST_SHORT, type Cost } from '../types';
-import { Sheet } from './Sheet';
 
 export type Status = 'todo' | 'done' | 'all';
 

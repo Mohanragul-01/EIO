@@ -1,58 +1,18 @@
 /**
  * notifications.ts - renewal reminders for subscriptions.
  *
- * WHY THIS LIVES IN THE MODULE, NOT IN core/. Only Subscriptions needs
- * notifications today. The sharing rule says a thing moves down into core when
- * a SECOND module needs it, not in anticipation of one. When Todo reminders
- * arrive, the permission and channel handling here is what moves; the
- * subscription-specific scheduling stays.
+ * What to remind about and when lives here; HOW (permission, channel, the
+ * Expo Go guard, scheduling) lives in core/notifications, which every module
+ * with reminders shares. See that file for why expo-notifications is never
+ * imported directly.
  *
- * NO SERVER IS INVOLVED. These are local notifications, scheduled on the
- * device by the OS. Nothing fires while the app is uninstalled, and nothing is
- * pushed from anywhere. That also means a reminder only exists on the phone
- * that scheduled it: reinstall the app and the reminders are gone until each
- * subscription is edited again.
- *
- * ══════════════════════════════════════════════════════════════════════════
- * WHY expo-notifications IS REQUIRED LAZILY AND NEVER IMPORTED AT THE TOP
- * ══════════════════════════════════════════════════════════════════════════
- * The library resolves its native module at MODULE SCOPE:
- *
- *     export default requireNativeModule('ExpoNotificationScheduler');
- *
- * requireNativeModule throws when that native module is absent, which is the
- * case in Expo Go. A static `import` is hoisted and evaluated before any code
- * in this file runs, so a try/catch around the usage cannot catch it - the
- * throw escapes the module entirely.
- *
- * That mattered far beyond this module. useHomeSummaries imports
- * subscriptions/api, which imports this file, so a static import took down the
- * HOME SCREEN at app start in Expo Go, with an error naming notifications.
- *
- * So: types are imported with `import type`, which the compiler erases and
- * which therefore costs nothing at runtime, and the real module is require()d
- * inside a guarded loader at the moment it is first needed.
- *
- * AND A try/catch AROUND THAT require IS NOT ENOUGH EITHER. Two facts combine:
- *
- *   1. expo-notifications' DevicePushTokenAutoRegistration side-effect module
- *      calls warnOfExpoGoPushUsage at import, which on Android in Expo Go
- *      THROWS rather than warning.
- *   2. Metro's guardedLoadModule catches errors thrown during module evaluation
- *      and hands them to ErrorUtils.reportFatalError instead of rethrowing,
- *      then returns undefined.
- *
- * So the require never throws to the caller: Metro swallows it and raises a
- * red screen, and our catch only fires later on the resulting undefined. The
- * only way to avoid the crash is to never require the library at all where it
- * cannot work, which is what the Expo Go check below does. It uses the same
- * signal the library itself uses to decide to throw.
+ * A reminder only exists on the phone that scheduled it, so a reinstall loses
+ * them until something reschedules each one.
  */
-import { isRunningInExpoGo } from 'expo';
-import type * as NotificationsModule from 'expo-notifications';
-import { Platform } from 'react-native';
-
 import { fromISODate } from '../../core/date';
+import { cancel, schedule, type Channel } from '../../core/notifications';
+
+export { ensurePermission, type PermissionState } from '../../core/notifications';
 
 /** Days before the due date that the reminder fires. Fixed for v2. */
 export const REMINDER_LEAD_DAYS = 3;
@@ -60,70 +20,9 @@ export const REMINDER_LEAD_DAYS = 3;
 /** The hour it fires. Morning, so it lands before the day gets away from you. */
 const REMINDER_HOUR = 9;
 
-type Notifications = typeof NotificationsModule;
-
-/**
- * Cached result of trying to load the library.
- *
- * `undefined` means not yet attempted, `null` means attempted and unavailable.
- * Distinguishing the two keeps us from retrying a require that has already
- * thrown once, on every single call.
- */
-let cached: Notifications | null | undefined;
-
-/** Whether the notification handler has been installed on the loaded module. */
-let handlerInstalled = false;
-
-/**
- * Load expo-notifications, or return null on a runtime that lacks it.
- *
- * The handler is installed here rather than at module scope, for the same
- * reason as the require: it can only run once the module actually exists.
- * Without a handler, a notification arriving while the app is foregrounded is
- * delivered silently - precisely the case where you are most likely to be
- * looking at the app and wondering why nothing happened.
- */
-function loadNotifications(): Notifications | null {
-  if (cached !== undefined) return cached;
-
-  /**
-   * Bail BEFORE the require, not inside a try around it. See the file header:
-   * Metro reports a module-evaluation throw as a fatal error rather than
-   * letting it propagate, so by the time any catch here could run, the red
-   * screen has already been raised.
-   *
-   * isRunningInExpoGo comes from `expo` itself and is the same check
-   * expo-notifications uses to decide whether to throw, so this cannot drift
-   * out of step with it.
-   */
-  if (isRunningInExpoGo()) {
-    cached = null;
-    return null;
-  }
-
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- see file header
-    const mod = require('expo-notifications') as Notifications;
-    cached = mod;
-
-    if (!handlerInstalled) {
-      mod.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowBanner: true,
-          shouldShowList: true,
-          shouldPlaySound: true,
-          shouldSetBadge: false,
-        }),
-      });
-      handlerInstalled = true;
-    }
-  } catch {
-    // Expo Go, or a build without the native module. Reminders are simply off.
-    cached = null;
-  }
-
-  return cached;
-}
+/** The channel these have always used, kept so a phone that already has it
+ *  keeps the person's settings for it. */
+const RENEWALS: Channel = { id: 'renewals', name: 'Renewal reminders' };
 
 /**
  * Deterministic notification id for a subscription.
@@ -166,48 +65,6 @@ export function reminderDateFor(
   return fireAt.getTime() > now.getTime() ? fireAt : null;
 }
 
-/** Android needs an explicit channel or scheduled notifications are silent. */
-async function ensureChannel(mod: Notifications): Promise<void> {
-  if (Platform.OS !== 'android') return;
-  await mod.setNotificationChannelAsync('renewals', {
-    name: 'Renewal reminders',
-    importance: mod.AndroidImportance.DEFAULT,
-    sound: 'default',
-  });
-}
-
-export type PermissionState = 'granted' | 'denied' | 'unsupported';
-
-/**
- * Ask for permission if it has not been decided, and report where we stand.
- *
- * 'unsupported' is its own state rather than being folded into 'denied',
- * because they need different words: denied is something you can fix in
- * Settings, unsupported means this build cannot do reminders at all and no
- * setting will help.
- */
-export async function ensurePermission(): Promise<PermissionState> {
-  const mod = loadNotifications();
-  if (!mod) return 'unsupported';
-
-  try {
-    const current = await mod.getPermissionsAsync();
-    if (current.granted) return 'granted';
-
-    // Only prompt when the OS says asking is still allowed. Requesting a
-    // permanently denied permission does nothing on Android and shows a no-op
-    // dialog on iOS.
-    if (current.canAskAgain) {
-      const requested = await mod.requestPermissionsAsync();
-      return requested.granted ? 'granted' : 'denied';
-    }
-    return 'denied';
-  } catch {
-    // Present but non-functional, which Expo Go can also be.
-    return 'unsupported';
-  }
-}
-
 /**
  * Cancel any existing reminder for this subscription.
  *
@@ -216,15 +73,7 @@ export async function ensurePermission(): Promise<PermissionState> {
  * cancel-then-schedule without first checking whether a reminder exists.
  */
 export async function cancelReminder(subscriptionId: string): Promise<void> {
-  const mod = loadNotifications();
-  if (!mod) return;
-
-  try {
-    await mod.cancelScheduledNotificationAsync(reminderId(subscriptionId));
-  } catch {
-    // Nothing scheduled, or notifications unavailable. Either way there is
-    // nothing to clean up and nothing worth telling the user.
-  }
+  await cancel(reminderId(subscriptionId));
 }
 
 /**
@@ -243,9 +92,6 @@ export async function scheduleReminder(subscription: {
   is_active: boolean;
   amount_minor: number;
 }): Promise<boolean> {
-  const mod = loadNotifications();
-  if (!mod) return false;
-
   // Cancel first, unconditionally. Editing a subscription must not leave the
   // old date's reminder behind, and this is the only path that guarantees it.
   await cancelReminder(subscription.id);
@@ -255,28 +101,14 @@ export async function scheduleReminder(subscription: {
   const fireAt = reminderDateFor(subscription.next_due_date);
   if (!fireAt) return false;
 
-  try {
-    await ensureChannel(mod);
-    await mod.scheduleNotificationAsync({
-      identifier: reminderId(subscription.id),
-      content: {
-        title: `${subscription.name} renews soon`,
-        body: `Due in ${REMINDER_LEAD_DAYS} days.`,
-        // Lets a future tap open straight to the subscription rather than the
-        // home screen. Nothing reads it yet; it costs nothing to record now.
-        data: { subscriptionId: subscription.id },
-      },
-      trigger: {
-        type: mod.SchedulableTriggerInputTypes.DATE,
-        date: fireAt,
-        channelId: 'renewals',
-      },
-    });
-    return true;
-  } catch {
-    // Permission revoked between the check and the call, or a scheduler that
-    // exists but refuses. The subscription saved fine; this is not an error to
-    // put in front of the user.
-    return false;
-  }
+  return schedule({
+    id: reminderId(subscription.id),
+    date: fireAt,
+    title: `${subscription.name} renews soon`,
+    body: `Due in ${REMINDER_LEAD_DAYS} days.`,
+    // Lets a future tap open straight to the subscription rather than the
+    // home screen. Nothing reads it yet; it costs nothing to record now.
+    data: { subscriptionId: subscription.id },
+    channel: RENEWALS,
+  });
 }
