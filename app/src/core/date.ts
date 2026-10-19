@@ -130,6 +130,46 @@ export function monthBounds(year: number, month: number): { start: string; end: 
   };
 }
 
+/**
+ * Move a (year, month) pair by whole months, with month 1-12. Worked in
+ * absolute months so December + 1 lands in January of the next year without
+ * a special case, in either direction.
+ */
+export function addMonths(
+  year: number,
+  month: number,
+  delta: number,
+): { year: number; month: number } {
+  const absolute = year * 12 + (month - 1) + delta;
+  return { year: Math.floor(absolute / 12), month: (absolute % 12 + 12) % 12 + 1 };
+}
+
+/**
+ * The days a month calendar shows, as whole weeks of 'YYYY-MM-DD' (month 1-12).
+ * Leading and trailing days from the neighbouring months fill the first and
+ * last weeks, so every row has seven cells and a month can need four to six.
+ *
+ * Each day is built as a fresh local date from (year, month, day) rather than
+ * by adding 24 hours, which on a daylight-saving change would land on 23:00
+ * the previous day, or skip one.
+ */
+export function monthGrid(year: number, month: number, weekStartsOn: 0 | 1 = 1): string[][] {
+  const first = new Date(year, month - 1, 1);
+  // How many days of the previous month the first row borrows.
+  const lead = (first.getDay() - weekStartsOn + 7) % 7;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const cells = Math.ceil((lead + daysInMonth) / 7) * 7;
+
+  const weeks: string[][] = [];
+  for (let i = 0; i < cells; i++) {
+    if (i % 7 === 0) weeks.push([]);
+    // Day 1 - lead may be zero or negative; Date rolls it into the previous
+    // month, and a day past the end rolls into the next.
+    weeks[weeks.length - 1].push(toISODate(new Date(year, month - 1, 1 - lead + i)));
+  }
+  return weeks;
+}
+
 /** Units any recurring thing in the app can repeat on. */
 export type IntervalUnit = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 

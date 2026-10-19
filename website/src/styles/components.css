@@ -690,3 +690,56 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 @keyframes toast-out {
   to { opacity: 0; transform: translateY(4px); }
 }
+
+/* MONTH CALENDAR ----------------------------------------------------------- */
+
+.cal-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+.cal-title { flex: 1; font-size: var(--text-md); font-weight: 600; }
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.cal-weekday {
+  padding: var(--space-xs) 0;
+  text-align: center;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cal-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 2px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  transition: background var(--transition), border-color var(--transition);
+}
+button.cal-day:hover { background: var(--surface-2); }
+button.cal-day:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.cal-day-outside { color: var(--text-faint); }
+.cal-day-today { border-color: var(--primary); }
+.cal-day-selected,
+button.cal-day-selected:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+}

@@ -4,11 +4,13 @@
  */
 import {
   addDaysISO,
+  addMonths,
   daysUntil,
   formatDueDate,
   formatEventDate,
   fromISODate,
   isOverdue,
+  monthGrid,
   toISODate,
   todayISO,
 } from '../date';
@@ -61,5 +63,64 @@ describe('due vs event wording', () => {
     // The bug this guards against: a purchase three days ago rendering as
     // "3 days overdue" because it went through the due-date formatter.
     expect(formatEventDate(addDaysISO(-3))).not.toContain('overdue');
+  });
+});
+
+describe('monthGrid', () => {
+  const weekday = (iso: string) => fromISODate(iso).getDay();
+
+  it('covers the month in whole weeks starting on Monday', () => {
+    const grid = monthGrid(2026, 10, 1);
+    // 1 October 2026 is a Thursday, so the grid opens on Monday 28 September.
+    expect(grid[0][0]).toBe('2026-09-28');
+    expect(weekday(grid[0][0])).toBe(1);
+    expect(grid.flat()).toContain('2026-10-01');
+    expect(grid.flat()).toContain('2026-10-31');
+    for (const week of grid) expect(week).toHaveLength(7);
+  });
+
+  it('crosses into a new year', () => {
+    const grid = monthGrid(2027, 1, 1);
+    expect(grid.flat()).toContain('2027-01-01');
+    expect(grid.flat()).toContain('2027-01-31');
+    // 1 January 2027 is a Friday: the leading days are December 2026.
+    expect(grid[0][0]).toBe('2026-12-28');
+  });
+
+  it('includes 29 February in a leap year', () => {
+    expect(monthGrid(2028, 2, 1).flat()).toContain('2028-02-29');
+  });
+
+  it('uses six rows when the month needs them', () => {
+    // 1 August 2026 is a Saturday and August has 31 days.
+    expect(monthGrid(2026, 8, 1)).toHaveLength(6);
+  });
+
+  it('starts every row on Sunday when asked to', () => {
+    for (const week of monthGrid(2026, 10, 0)) expect(weekday(week[0])).toBe(0);
+  });
+
+  it('lists consecutive days with no gaps or repeats', () => {
+    // A DST change inside the month must not skip or double a day.
+    const days = monthGrid(2026, 3, 1).flat();
+    for (let i = 1; i < days.length; i++) {
+      const gap = (fromISODate(days[i]).getTime() - fromISODate(days[i - 1]).getTime()) / 86_400_000;
+      expect(Math.round(gap)).toBe(1);
+    }
+  });
+});
+
+describe('addMonths', () => {
+  it('rolls December forward into January of the next year', () => {
+    expect(addMonths(2026, 12, 1)).toEqual({ year: 2027, month: 1 });
+  });
+
+  it('rolls January back into December of the previous year', () => {
+    expect(addMonths(2027, 1, -1)).toEqual({ year: 2026, month: 12 });
+  });
+
+  it('handles jumps of more than a year either way', () => {
+    expect(addMonths(2026, 10, 15)).toEqual({ year: 2028, month: 1 });
+    expect(addMonths(2026, 10, -22)).toEqual({ year: 2024, month: 12 });
   });
 });
