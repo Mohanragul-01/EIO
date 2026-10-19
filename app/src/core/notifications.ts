@@ -185,6 +185,12 @@ export async function schedule(input: {
   body: string;
   data?: Record<string, unknown>;
   channel?: Channel;
+  /**
+   * A category registered with registerCategory: its buttons appear on the
+   * notification, and a press or a tap reaches the handler given to onResponse
+   * for it. Optional, and additive: without it a reminder is what it was.
+   */
+  category?: string;
 }): Promise<boolean> {
   const mod = loadNotifications();
   if (!mod) return false;
@@ -195,7 +201,12 @@ export async function schedule(input: {
     await ensureChannel(mod, channel);
     await mod.scheduleNotificationAsync({
       identifier: input.id,
-      content: { title: input.title, body: input.body, data: input.data ?? {} },
+      content: {
+        title: input.title,
+        body: input.body,
+        data: input.data ?? {},
+        ...(input.category ? { categoryIdentifier: input.category } : {}),
+      },
       trigger: {
         type: mod.SchedulableTriggerInputTypes.DATE,
         date: input.date,
@@ -279,4 +290,172 @@ export async function runResync(): Promise<void> {
       // person editing the row reschedules it directly in the meantime.
     }
   }
+}
+
+/**
+ * Whether a reminder scheduled now could fire: the library loads here and
+ * permission is granted. Never prompts. A module checks it before reading the
+ * database for reminders the phone would not show anyway.
+ */
+export async function canNotify(): Promise<boolean> {
+  const mod = loadNotifications();
+  return !!mod && (await isGranted(mod));
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * ACTING ON A NOTIFICATION
+ * ══════════════════════════════════════════════════════════════════════════
+ * Added for Tasks (Done and Snooze on a reminder, a digest that opens Today),
+ * shaped so any module can use it:
+ *
+ *   registerCategory('task_reminder', [{ id: 'done', title: 'Done' }, ...])
+ *   onResponse('task_reminder', ({ action, data }) => ...)   // action null = a tap
+ *   schedule({ ..., category: 'task_reminder' })
+ *
+ * and the app root calls listenForResponses() once per signed-in session.
+ *
+ * BUTTONS ACT WITHOUT OPENING THE APP (opensAppToForeground: false), which is
+ * the point of a Done button. The cost, on Android: when the system has
+ * already killed the app's process there is no JavaScript to run the handler
+ * until the app is next opened. The library keeps the latest response for
+ * that moment, and listenForResponses picks it up at launch. Getting it run
+ * immediately would need a headless background task (expo-task-manager),
+ * which this app does not install.
+ *
+ * Expo Go: like everything above, nothing here loads the library there.
+ */
+
+export type NotificationButton = { id: string; title: string };
+
+export type NotificationResponse = {
+  /** The button pressed, or null for a tap on the notification itself. */
+  action: string | null;
+  /** The notification's own id, as given to schedule(). */
+  notificationId: string;
+  title: string | null;
+  body: string | null;
+  data: Record<string, unknown>;
+};
+
+type ResponseHandler = (response: NotificationResponse) => void | Promise<void>;
+
+/** Categories registered this run; the platform keeps them, so once is enough. */
+const categoriesReady = new Set<string>();
+
+/**
+ * Register the buttons a category of notification carries. Resolves whether
+ * they are in place; false (Expo Go, the web, a refusing platform) only means
+ * the notification arrives without buttons.
+ *
+ * Category ids must not contain ':' or '-' (the library's rule).
+ */
+export async function registerCategory(
+  id: string,
+  buttons: NotificationButton[],
+): Promise<boolean> {
+  if (categoriesReady.has(id)) return true;
+  const mod = loadNotifications();
+  if (!mod) return false;
+  try {
+    await mod.setNotificationCategoryAsync(
+      id,
+      buttons.map((button) => ({
+        identifier: button.id,
+        buttonTitle: button.title,
+        options: { opensAppToForeground: false },
+      })),
+    );
+    categoriesReady.add(id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Each category's handler. Registering one again replaces it, as resyncs do. */
+const responders = new Map<string, ResponseHandler>();
+
+/**
+ * Handle presses and taps on notifications of a category. Register at module
+ * load, from a file the app imports at launch, so a response that launched the
+ * app finds its handler waiting.
+ */
+export function onResponse(category: string, handler: ResponseHandler): void {
+  responders.set(category, handler);
+}
+
+/**
+ * Responses already handled, across listener restarts. The library keeps the
+ * most recent response for as long as the app runs, so without this a second
+ * sign-in in the same run would act on an old Done again.
+ */
+const handled = new Set<string>();
+
+/**
+ * Start delivering responses to their category's handler. Call once per
+ * signed-in session, at the app root (handlers read the database as the
+ * signed-in person). Returns the stop function.
+ *
+ * Also handles the response that LAUNCHED the app: the native side records it
+ * before any JavaScript listener exists, so it is read once here. The same
+ * response can then arrive through the listener as well, which is why each is
+ * remembered by notification, action and delivery time and handled once.
+ */
+export function listenForResponses(): () => void {
+  const mod = loadNotifications();
+  if (!mod) return () => {};
+
+  const route = (raw: NotificationsModule.NotificationResponse) => {
+    try {
+      const request = raw.notification.request;
+      const key = `${request.identifier}|${raw.actionIdentifier}|${raw.notification.date}`;
+      if (handled.has(key)) return;
+      handled.add(key);
+      // Taken: a later restart must not read it back as the launch response.
+      mod.clearLastNotificationResponse?.();
+
+      const action =
+        raw.actionIdentifier === mod.DEFAULT_ACTION_IDENTIFIER ? null : raw.actionIdentifier;
+      // A button press leaves the notification in the tray on Android (only a
+      // tap on the body dismisses itself), which would read as "it did not
+      // work".
+      if (action !== null) mod.dismissNotificationAsync(request.identifier).catch(() => {});
+
+      const category = request.content.categoryIdentifier;
+      const handler = category ? responders.get(category) : undefined;
+      if (!handler) return;
+
+      Promise.resolve(
+        handler({
+          action,
+          notificationId: request.identifier,
+          title: request.content.title,
+          body: request.content.body,
+          data: (request.content.data ?? {}) as Record<string, unknown>,
+        }),
+      ).catch(() => {
+        // A failed handler (no network for a Done) leaves the task as it was,
+        // which the person sees next time they look. Nothing else to do here.
+      });
+    } catch {
+      // A malformed response or a handler that threw synchronously: the
+      // listener must survive it for the next one.
+    }
+  };
+
+  let subscription: { remove: () => void };
+  try {
+    subscription = mod.addNotificationResponseReceivedListener(route);
+  } catch {
+    return () => {};
+  }
+
+  try {
+    const launch = mod.getLastNotificationResponse?.();
+    if (launch) route(launch);
+  } catch {
+    // Not available on this platform: there is no launch response to handle.
+  }
+
+  return () => subscription.remove();
 }
