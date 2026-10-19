@@ -131,10 +131,12 @@ function LogTab() {
     async (routineId: string | null, date: string = todayISO()) => {
       setStarting(true);
       try {
-        const session = await api.createSession({
+        // startSession also lays out the routine's exercises as blocks and
+        // snapshots the bodyweight, so the session opens ready to log.
+        const session = await api.startSession({
           date,
+          mode: 'gym',
           routine_id: routineId,
-          notes: '',
         });
         navigation.navigate('WorkoutSession', { sessionId: session.id, routineId });
       } catch (e) {
