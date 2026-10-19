@@ -38,6 +38,7 @@ import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
+import { productsChanged } from '../changes';
 import { estimateLabel, lifespanDays, priorEstimate, restockDraft } from '../containers';
 import { ensurePermission } from '../notifications';
 import { deleteSummary } from '../outlook';
@@ -295,7 +296,10 @@ export function ProductEditScreen() {
           onAction: () => {
             api
               .setFinished(productId, null)
-              .then(resync)
+              .then(() => {
+                resync();
+                productsChanged(null);
+              })
               .catch(() => {
                 // The detail screen shows it finished; Reopen is right there.
               });

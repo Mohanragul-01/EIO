@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayISO } from '../../core/date';
 import { useLatestRun } from '../../core/useLatestRun';
 import * as api from './api';
+import { onProductsChanged, productsChanged } from './changes';
 import { replaceReminders } from './notifications';
 import { buildOutlooks } from './outlook';
 import type { Product, ProductUse } from './types';
@@ -37,6 +38,8 @@ export function useProducts() {
 
   const { begin, isMounted } = useLatestRun();
   const pending = useRef(0);
+  /** Who this list is, to the change signal: its own writes are already shown. */
+  const [owner] = useState(() => ({}));
 
   const load = useCallback(
     async (isRefresh = false) => {
@@ -63,6 +66,10 @@ export function useProducts() {
 
   const today = todayISO();
   const outlooks = useMemo(() => buildOutlooks(products, uses, today), [products, uses, today]);
+
+  // A product's page (or an Undo raised there and tapped here) changed
+  // something this list is showing.
+  useEffect(() => onProductsChanged(owner, () => void load()), [owner, load]);
 
   // Syncing with something outside React - the phone's scheduled
   // notifications - which is what an effect is for.
@@ -92,6 +99,7 @@ export function useProducts() {
       try {
         const saved = await api.logUse(productId, quantity, usedOn, note);
         if (isMounted()) setUses((current) => current.map((u) => (u.id === temp.id ? saved : u)));
+        productsChanged(owner);
         return saved;
       } catch (e) {
         if (isMounted()) {
@@ -101,7 +109,7 @@ export function useProducts() {
         return null;
       }
     },
-    [isMounted, placeholder],
+    [isMounted, placeholder, owner],
   );
 
   /** Log several at once ("Log all"). One insert: all of them or none. */
@@ -115,6 +123,7 @@ export function useProducts() {
         if (isMounted()) {
           setUses((current) => [...saved, ...current.filter((u) => !tempIds.has(u.id))]);
         }
+        productsChanged(owner);
         return saved;
       } catch (e) {
         if (isMounted()) {
@@ -124,7 +133,7 @@ export function useProducts() {
         return null;
       }
     },
-    [isMounted, placeholder],
+    [isMounted, placeholder, owner],
   );
 
   /** Remove uses. On failure exactly those rows come back. */
@@ -134,6 +143,7 @@ export function useProducts() {
       setUses((current) => current.filter((u) => !ids.has(u.id)));
       try {
         await api.deleteUses([...ids]);
+        productsChanged(owner);
         return true;
       } catch (e) {
         if (isMounted()) {
@@ -143,7 +153,7 @@ export function useProducts() {
         return false;
       }
     },
-    [isMounted],
+    [isMounted, owner],
   );
 
   return {

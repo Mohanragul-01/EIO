@@ -18,7 +18,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, Text, View } from 'react-native';
 
 import { Button, FadeInView, FormScroll, GlassCard, Screen, useToast } from '../../../core/components';
@@ -30,6 +30,7 @@ import { radius, spacing } from '../../../core/theme';
 import { useLatestRun } from '../../../core/useLatestRun';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
+import { onProductsChanged, productsChanged } from '../changes';
 import {
   LIFECYCLE_LABEL,
   activeSibling,
@@ -101,6 +102,8 @@ export function ProductDetailScreen() {
   const [busy, setBusy] = useState(false);
 
   const { begin } = useLatestRun();
+  /** Who this page is, to the change signal: its own writes are already shown. */
+  const [owner] = useState(() => ({}));
 
   /**
    * Every product, not just this one: whether a spare is waiting, which
@@ -140,6 +143,9 @@ export function ProductDetailScreen() {
       void load();
     }, [load]),
   );
+
+  // The list's toast can undo a use this page is showing.
+  useEffect(() => onProductsChanged(owner, () => void load()), [owner, load]);
 
   const today = todayISO();
   const outlook = useMemo(() => {
@@ -188,13 +194,16 @@ export function ProductDetailScreen() {
         const result = await run();
         await load();
         resync();
+        // An Undo tapped after leaving this page still runs here; the list
+        // that is on screen by then hears about it.
+        productsChanged(owner);
         return result;
       } catch (e) {
         setError(e instanceof Error ? e.message : failure);
         return undefined;
       }
     },
-    [load],
+    [load, owner],
   );
 
   if (loading || !outlook || !product) {
