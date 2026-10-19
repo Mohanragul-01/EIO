@@ -179,6 +179,67 @@ export const URGENCY_LABEL: Record<Urgency, string> = {
   unknown: 'Not enough data',
 };
 
+/** One calendar day of use. */
+export type UsageDay = {
+  /** 'YYYY-MM-DD'. */
+  date: string;
+  /** Total quantity used that day. */
+  total: number;
+  /** How many separate uses were logged. */
+  count: number;
+};
+
+/**
+ * The last `days` days, oldest first, ending today.
+ *
+ * Days with nothing logged are INCLUDED, as zeros. The gaps are the point:
+ * "did I forget yesterday?" is answered by seeing an empty day, and tapping
+ * that empty day is how a missed use gets backfilled. A list of only the days
+ * with entries would hide exactly the days you are looking for.
+ */
+export function recentDays(
+  uses: Pick<ProductUse, 'used_on' | 'quantity'>[],
+  today: string,
+  days = 14,
+): UsageDay[] {
+  const byDate = new Map<string, UsageDay>();
+  for (let i = days - 1; i >= 0; i--) {
+    const date = addDays(today, -i);
+    byDate.set(date, { date, total: 0, count: 0 });
+  }
+
+  uses.forEach((use) => {
+    const day = byDate.get(use.used_on);
+    if (!day) return;
+    day.total += use.quantity;
+    day.count += 1;
+  });
+
+  return [...byDate.values()];
+}
+
+/**
+ * Uses grouped under their day, newest day first.
+ *
+ * Within a day the order the uses arrived in is kept. Morning and evening
+ * face wash are two uses on one day, and they read as one day's line with a
+ * total, not as two unrelated rows.
+ */
+export function groupByDay<T extends Pick<ProductUse, 'used_on' | 'quantity'>>(
+  uses: T[],
+): { date: string; total: number; uses: T[] }[] {
+  const groups = new Map<string, { date: string; total: number; uses: T[] }>();
+
+  uses.forEach((use) => {
+    const group = groups.get(use.used_on) ?? { date: use.used_on, total: 0, uses: [] };
+    group.total += use.quantity;
+    group.uses.push(use);
+    groups.set(use.used_on, group);
+  });
+
+  return [...groups.values()].sort((a, b) => b.date.localeCompare(a.date));
+}
+
 /** A human span: "12 days", "about 2 months". */
 export function formatDaysLeft(days: number | null): string {
   if (days === null) return 'Unknown';

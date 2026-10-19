@@ -28,6 +28,7 @@ import { TransactionEditScreen } from '../modules/finance/screens/TransactionEdi
 import { SubscriptionEditScreen } from '../modules/subscriptions/screens/SubscriptionEditScreen';
 import { BucketListScreen } from '../modules/bucket/screens/BucketListScreen';
 import { FitnessListScreen } from '../modules/fitness/screens/FitnessListScreen';
+import { ProductDetailScreen } from '../modules/products/screens/ProductDetailScreen';
 import { ProductEditScreen } from '../modules/products/screens/ProductEditScreen';
 import { ProductsListScreen } from '../modules/products/screens/ProductsListScreen';
 import { ExerciseProgressScreen } from '../modules/fitness/screens/ExerciseProgressScreen';
@@ -147,6 +148,8 @@ export function RootNavigator() {
           options={{ title: 'Products' }}
         />
         <Stack.Screen name="ProductEdit" component={ProductEditScreen} />
+        {/* Title is the product's name, set by the screen once it has loaded. */}
+        <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
         {/* Titles are set by the screens themselves, from data the navigator
             does not have. */}
         <Stack.Screen name="WorkoutSession" component={WorkoutSessionScreen} />

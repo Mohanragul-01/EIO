@@ -7,7 +7,9 @@
  *
  * The primary action on every row is "log a use", which is the thing you do
  * every day - so it is a button on the row rather than something behind a tap
- * into a detail screen.
+ * into a detail screen. It logs for TODAY. Tapping the card itself opens the
+ * detail screen, which is where history lives and where a forgotten day can
+ * be logged: everything that is not today goes one level down.
  */
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -246,7 +248,7 @@ export function ProductsListScreen() {
                   gesture nobody can see is a feature nobody has.
                 */}
                 <Text style={styles.summaryHint}>
-                  Tap a card to edit · hold Log use when one runs out
+                  Tap a card for its history and past days · hold Log use when one runs out
                 </Text>
               </GlassCard>
             </FadeInView>
@@ -279,7 +281,7 @@ export function ProductsListScreen() {
                 <GlassCard
                   style={styles.card}
                   onPress={() =>
-                    navigation.navigate('ProductEdit', { productId: product.id })
+                    navigation.navigate('ProductDetail', { productId: product.id })
                   }
                 >
                   <View style={styles.cardHead}>

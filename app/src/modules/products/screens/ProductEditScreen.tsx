@@ -66,8 +66,7 @@ export function ProductEditScreen() {
     let active = true;
     (async () => {
       try {
-        const rows = await api.listProducts();
-        const product = rows.find((p) => p.id === productId);
+        const product = await api.getProduct(productId);
         if (!active || !product) return;
 
         setName(product.name);
@@ -136,7 +135,9 @@ export function ProductEditScreen() {
         onPress: async () => {
           try {
             await api.deleteProduct(productId);
-            navigation.goBack();
+            // Straight to the list. The product's detail screen sits under this
+            // one, and going back to it would show a product that is gone.
+            navigation.popTo('ProductsList');
           } catch (e) {
             setError(e instanceof Error ? e.message : 'Could not delete this product');
           }

@@ -51,6 +51,17 @@ export async function listAllUses(): Promise<ProductUse[]> {
   return data ?? [];
 }
 
+/**
+ * One product, for its detail screen. Null when it no longer exists - deleted
+ * from the edit screen that sits on top of the detail screen - which is a
+ * normal outcome to handle, not an error to report.
+ */
+export async function getProduct(id: string): Promise<Product | null> {
+  const { data, error } = await supabase.from(PRODUCTS).select('*').eq('id', id).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 export async function listUses(productId: string): Promise<ProductUse[]> {
   const { data, error } = await supabase
     .from(USES)

@@ -18,6 +18,7 @@ import {
   URGENCY_LABEL,
   formatDaysLeft,
   formatQuantity,
+  groupByDay,
   project,
   urgencyOf,
   type Product,
@@ -567,42 +568,163 @@ function ProductDialog({
 
 /* HISTORY ------------------------------------------------------------------ */
 
+/**
+ * A product's usage: log a use for any day, and see or delete what is logged.
+ *
+ * The page's own "Log use" button only ever logs TODAY - one click for the
+ * thing you do daily. This dialog is for everything else: the day you forgot,
+ * which used to be impossible to record on either client, and the history.
+ */
 function HistoryDialog({ product, onClose }: { product: Product; onClose: () => void }) {
   const load = useCallback(() => api.listUses(product.id), [product.id]);
   const { data, loading, error, reload } = useAsync(load, `uses-${product.id}`);
 
-  const uses = data ?? [];
+  const uses = useMemo(() => data ?? [], [data]);
+  const groups = useMemo(() => groupByDay(uses), [uses]);
+
+  const today = todayISO();
+  const [usedOn, setUsedOn] = useState(today);
+  const [amount, setAmount] = useState(String(product.per_use ?? 1));
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const add = async () => {
+    const quantity = Number(amount.trim());
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setActionError('Enter how much you used.');
+      return;
+    }
+    if (!usedOn || usedOn > today) {
+      setActionError('Pick a day that has already happened.');
+      return;
+    }
+    // Before the opening date would inflate the measured rate, because the
+    // days it is divided by start counting from opening.
+    if (usedOn < product.opened_on) {
+      setActionError(
+        `That's before you opened it (${formatEventDate(product.opened_on)}). Change the opened date first.`,
+      );
+      return;
+    }
+
+    setSaving(true);
+    setActionError(null);
+    try {
+      await api.logUse(product.id, quantity, usedOn, note.trim());
+      // Back to today, so the next entry does not quietly land on the same
+      // past day as this one.
+      setUsedOn(today);
+      setNote('');
+      await reload();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Could not log that');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const remove = async (id: string) => {
-    await api.deleteUse(id);
-    await reload();
+    // A failed delete used to be an unhandled rejection: nothing on screen,
+    // and the row simply stayed.
+    setActionError(null);
+    try {
+      await api.deleteUse(id);
+      await reload();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Could not delete that entry');
+    }
   };
 
   return (
-    <Modal open title={`${product.name} · usage`} onClose={onClose} width={480}>
-      <ErrorBanner message={error} />
+    <Modal open title={`${product.name} · usage`} onClose={onClose} width={520}>
+      <ErrorBanner message={error ?? actionError} />
 
-      {loading ? (
+      {product.finished_on ? null : (
+        <div className="card card-pad" style={{ marginBottom: 'var(--space-lg)' }}>
+          <div className="overline" style={{ marginBottom: 'var(--space-md)' }}>
+            Log a use
+          </div>
+          <div className="row wrap" style={{ gap: 'var(--space-sm)', alignItems: 'flex-end' }}>
+            <div className="field" style={{ width: 150 }}>
+              <span className="label">Day</span>
+              <input
+                className="input"
+                type="date"
+                value={usedOn}
+                min={product.opened_on}
+                max={today}
+                onChange={(e) => setUsedOn(e.target.value)}
+              />
+            </div>
+            <div className="field" style={{ width: 110 }}>
+              <span className="label">Amount ({product.unit})</span>
+              <input
+                className="input numeric"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </div>
+            <div className="field grow" style={{ minWidth: 120 }}>
+              <span className="label">Note</span>
+              <input
+                className="input"
+                value={note}
+                placeholder="Optional"
+                onChange={(e) => setNote(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void add();
+                }}
+              />
+            </div>
+            <button className="btn" onClick={() => void add()} disabled={saving}>
+              {saving ? (
+                <span className="spinner" />
+              ) : usedOn === today ? (
+                'Log'
+              ) : (
+                `Log for ${formatEventDate(usedOn)}`
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading && !data ? (
         <Spinner center />
-      ) : uses.length === 0 ? (
+      ) : groups.length === 0 ? (
         <Empty title="Nothing logged yet" message="Log a use and it appears here." />
       ) : (
-        <div className="col" style={{ gap: 3 }}>
-          {uses.map((use) => (
-            <div className="list-row bordered" key={use.id}>
-              <span className="grow" style={{ fontSize: 13 }}>
-                {formatEventDate(use.used_on)}
-              </span>
-              <span className="numeric faint" style={{ fontSize: 12.5 }}>
-                {formatQuantity(use.quantity, product.unit)}
-              </span>
-              <button
-                className="icon-btn danger"
-                onClick={() => void remove(use.id)}
-                aria-label="Delete this entry"
-              >
-                <Icon name="trash" size={13} />
-              </button>
+        <div className="col" style={{ gap: 'var(--space-md)' }}>
+          {groups.map((day) => (
+            <div key={day.date}>
+              <div className="row-between" style={{ marginBottom: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{formatEventDate(day.date)}</span>
+                <span className="numeric faint" style={{ fontSize: 12.5 }}>
+                  {formatQuantity(day.total, product.unit)}
+                </span>
+              </div>
+              <div className="col" style={{ gap: 3 }}>
+                {day.uses.map((use) => (
+                  <div className="list-row bordered" key={use.id}>
+                    <span className="numeric" style={{ fontSize: 12.5, minWidth: 72 }}>
+                      {formatQuantity(use.quantity, product.unit)}
+                    </span>
+                    <span className="grow faint truncate" style={{ fontSize: 12.5 }}>
+                      {use.note}
+                    </span>
+                    <button
+                      className="icon-btn danger"
+                      onClick={() => void remove(use.id)}
+                      aria-label={`Delete ${formatQuantity(use.quantity, product.unit)} on ${formatEventDate(use.used_on)}`}
+                      title="Delete this entry"
+                    >
+                      <Icon name="trash" size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
