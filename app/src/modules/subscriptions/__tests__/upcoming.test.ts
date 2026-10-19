@@ -171,8 +171,10 @@ describe('sections', () => {
       ['week', 2, 500],
       ['month', 1, 400],
       ['later', 1, 500],
-      ['trials', 1, 600],
-      ['paused', 1, 700],
+      // Not charging: a trial costs nothing yet, and a pause or a cancellation
+      // running out will not charge again. A total there reads as spending.
+      ['trials', 1, null],
+      ['paused', 1, null],
     ]);
     expect(result.archived).toHaveLength(1);
   });

@@ -91,7 +91,7 @@ async function subscriptionsSummary(): Promise<string> {
   }
 
   const week = sections.find((s) => s.bucket === 'week');
-  if (week) return `${week.count} due this week · ${formatMoney(week.totalMinor, { compact: true })}`;
+  if (week) return `${week.count} due this week · ${formatMoney(week.totalMinor ?? 0, { compact: true })}`;
 
   const totals = summaryTotals(rows, today);
   return `${formatMoney(totals.perMonthMinor, { compact: true })} a month`;

@@ -156,7 +156,11 @@ export type Section = {
   items: Subscription[];
   count: number;
   /** The next charge of each, in rupees (unpriced foreign ones left out). */
-  totalMinor: number;
+  /**
+   * What the section's items charge, in rupees. Null for the sections that are
+   * not charging (trials, paused and ending), where a sum would read as spend.
+   */
+  totalMinor: number | null;
 };
 
 /** The date a row is ordered by within its section. */
@@ -199,7 +203,10 @@ export function sections(
       bucket,
       items: order(items),
       count: items.length,
-      totalMinor: items.reduce((total, s) => total + (inrOf(s) ?? 0), 0),
+      totalMinor:
+        bucket === 'trials' || bucket === 'paused'
+          ? null
+          : items.reduce((total, s) => total + (inrOf(s) ?? 0), 0),
     });
   }
 

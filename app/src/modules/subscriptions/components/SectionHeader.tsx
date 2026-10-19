@@ -21,7 +21,8 @@ export function SectionHeader({
 }: {
   bucket: Bucket;
   count: number;
-  totalMinor: number;
+  /** Null for a section that is not charging: no amount is shown. */
+  totalMinor: number | null;
 }) {
   const styles = useStyles();
   const { colors } = useTheme();
@@ -32,14 +33,20 @@ export function SectionHeader({
       style={styles.row}
       accessibilityRole="header"
       accessible
-      accessibilityLabel={`${BUCKET_LABEL[bucket]}, ${count}, ${formatMoney(totalMinor, { compact: true })}`}
+      accessibilityLabel={[
+        BUCKET_LABEL[bucket],
+        count,
+        totalMinor === null ? null : formatMoney(totalMinor, { compact: true }),
+      ]
+        .filter((part) => part !== null)
+        .join(', ')}
     >
       {overdue ? <Ionicons name="alert-circle" size={14} color={colors.danger} /> : null}
       <Text style={[styles.label, overdue && { color: colors.danger }]}>
         {BUCKET_LABEL[bucket]}
       </Text>
       <Text style={styles.meta}>
-        {count} · {formatMoney(totalMinor, { compact: true })}
+        {totalMinor === null ? count : `${count} · ${formatMoney(totalMinor, { compact: true })}`}
       </Text>
     </View>
   );

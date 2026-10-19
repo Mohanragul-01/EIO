@@ -104,7 +104,7 @@ async function subscriptionsSummary() {
   const week = sections.find((s) => s.bucket === 'week');
   if (week) {
     return {
-      text: `${formatMoney(week.totalMinor, { compact: true })} this week`,
+      text: `${formatMoney(week.totalMinor ?? 0, { compact: true })} this week`,
       sub: `${week.count} renewing · ${perMonth}`,
       tone: 'warn' as const,
     };

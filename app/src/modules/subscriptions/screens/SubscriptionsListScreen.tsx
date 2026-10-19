@@ -70,7 +70,7 @@ const CADENCE_WORD: Record<Cadence, string> = { week: 'week', month: 'month', ye
 
 /** One line of the list: a section header, a row, or the archive toggle. */
 type Item =
-  | { type: 'header'; key: string; bucket: Bucket; count: number; totalMinor: number }
+  | { type: 'header'; key: string; bucket: Bucket; count: number; totalMinor: number | null }
   | { type: 'row'; key: string; sub: Subscription }
   | { type: 'archive'; key: string; count: number };
 
@@ -264,7 +264,7 @@ export function SubscriptionsListScreen() {
             />
             <Text style={[styles.alertText, { color: overdue ? colors.danger : colors.warning }]}>
               {overdue
-                ? `${overdue.count} overdue · ${formatMoney(overdue.totalMinor, { compact: true })}`
+                ? `${overdue.count} overdue · ${formatMoney(overdue.totalMinor ?? 0, { compact: true })}`
                 : `${thisWeek?.count} due this week · ${formatMoney(thisWeek?.totalMinor ?? 0, { compact: true })}`}
             </Text>
           </View>

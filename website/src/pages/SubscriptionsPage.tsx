@@ -362,7 +362,7 @@ export function SubscriptionsPage() {
               <Stat label="Per year" value={formatMoney(totals.perYearMinor, { compact: true })} sub={`${formatMoney(totals.perWeekMinor, { compact: true })} a week`} />
               <Stat
                 label="Due this week"
-                value={week ? formatMoney(week.totalMinor, { compact: true }) : '₹0'}
+                value={week ? formatMoney(week.totalMinor ?? 0, { compact: true }) : '₹0'}
                 color={overdue ? 'var(--danger)' : undefined}
                 sub={overdue ? `${overdue.count} overdue` : `${week?.count ?? 0} renewing`}
               />
@@ -478,9 +478,11 @@ export function SubscriptionsPage() {
                           {BUCKET_LABEL[section.bucket]}
                         </span>
                         <span className="column-count">{section.count}</span>
-                        <span className="faint numeric" style={{ fontSize: 12.5 }}>
-                          {formatMoney(section.totalMinor, { compact: true })}
-                        </span>
+                        {section.totalMinor === null ? null : (
+                          <span className="faint numeric" style={{ fontSize: 12.5 }}>
+                            {formatMoney(section.totalMinor, { compact: true })}
+                          </span>
+                        )}
                       </div>
                       <div className="col" style={{ gap: 'var(--space-sm)' }}>
                         {section.items.map((sub) => (
