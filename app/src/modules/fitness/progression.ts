@@ -41,7 +41,13 @@ export function rungStates(
 
   return ordered.map((step, index) => {
     const state: RungState =
-      currentIndex < 0 ? 'locked' : index < currentIndex ? 'mastered' : index === currentIndex ? 'current' : 'locked';
+      currentIndex < 0
+        ? 'locked'
+        : index < currentIndex
+          ? 'mastered'
+          : index === currentIndex
+            ? 'current'
+            : 'locked';
     // The latest move up FROM this rung, if any.
     const up = moves
       .filter((m) => m.kind === 'up' && m.from_step_id === step.id)

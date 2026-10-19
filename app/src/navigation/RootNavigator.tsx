@@ -36,6 +36,8 @@ import { RoutineEditScreen } from '../modules/fitness/screens/RoutineEditScreen'
 import { WorkoutSessionScreen } from '../modules/fitness/screens/WorkoutSessionScreen';
 import { WorkoutSummaryScreen } from '../modules/fitness/screens/WorkoutSummaryScreen';
 import { BandsScreen } from '../modules/fitness/screens/BandsScreen';
+import { LadderScreen } from '../modules/fitness/screens/LadderScreen';
+import { LadderEditScreen } from '../modules/fitness/screens/LadderEditScreen';
 import { NoteEditScreen } from '../modules/notes/screens/NoteEditScreen';
 import { NotesListScreen } from '../modules/notes/screens/NotesListScreen';
 import { SubscriptionsListScreen } from '../modules/subscriptions/screens/SubscriptionsListScreen';
@@ -159,6 +161,8 @@ export function RootNavigator() {
         <Stack.Screen name="ExerciseProgress" component={ExerciseProgressScreen} />
         <Stack.Screen name="WorkoutSummary" component={WorkoutSummaryScreen} />
         <Stack.Screen name="Bands" component={BandsScreen} options={{ title: 'Bands' }} />
+        <Stack.Screen name="Ladder" component={LadderScreen} />
+        <Stack.Screen name="LadderEdit" component={LadderEditScreen} />
 
         {/* Three screens covering every module you create. Their titles are
             set at runtime from the module's own data, so none are declared

@@ -60,6 +60,9 @@ export type RootStackParamList = {
   WorkoutSummary: { sessionId: string };
   /** Resistance bands, remembered by colour. */
   Bands: undefined;
+  /** One ladder: its rungs, where you are, and moving up or back. */
+  Ladder: { progressionId: string };
+  LadderEdit: { progressionId?: string };
 
   //  User-created modules
   // Three screens serve EVERY module you build, however many you create.

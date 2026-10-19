@@ -44,6 +44,45 @@ export const useHomeStyles = makeStyles(({ colors, typography }) => ({
   linkDisabled: {
     opacity: 0.4,
   },
+  fill: { flex: 1 },
+  subToggle: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+  },
+  progressCard: {
+    marginTop: spacing.xl,
+    gap: spacing.sm,
+  },
+  bigNumber: {
+    ...typography.h2,
+    ...typography.numeric,
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 28,
+  },
+  timelineDate: {
+    ...typography.caption,
+    ...typography.numeric,
+    width: 72,
+  },
+  timelineText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  badgeText: {
+    ...typography.caption,
+    fontSize: 12,
+  },
   modeRow: {
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.sm,

@@ -24,6 +24,7 @@ import { BodyTab } from './home/BodyTab';
 import { ExercisesTab } from './home/ExercisesTab';
 import { LogTab } from './home/LogTab';
 import { RoutinesTab } from './home/RoutinesTab';
+import { SkillsTab } from './home/SkillsTab';
 import { useHomeStyles } from './home/styles';
 
 /**
@@ -91,7 +92,11 @@ function FitnessHome() {
           ) : v === 'routines' ? (
             <RoutinesTab />
           ) : v === 'exercises' ? (
-            <ExercisesTab />
+            mode === 'calisthenics' ? (
+              <SkillsTab />
+            ) : (
+              <ExercisesTab />
+            )
           ) : (
             <BodyTab />
           )
