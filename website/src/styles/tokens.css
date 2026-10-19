@@ -98,6 +98,12 @@
   --info-soft: #eff6ff;
   /* The background of something finished: a ticked set row. */
   --completed: rgba(21, 128, 61, 0.1);
+  /* Text on --completed is --text or --text-secondary: the tint drops muted
+     and faint below 4.5:1. */
+  /* The toast: a layer above the page, inverse to it. */
+  --inverse-surface: #1e1e24;
+  --on-inverse-surface: #ededf0;
+  --inverse-primary: #a3a4fa;
 
   /* Category and module colours. Data, not decoration - these are only ever
      used to identify a thing, never to brighten a surface. */
@@ -163,6 +169,9 @@
     --info: #7cb7ff;
     --info-soft: #0d1a2b;
     --completed: rgba(74, 222, 128, 0.12);
+    --inverse-surface: #e4e4e9;
+    --on-inverse-surface: #16161a;
+    --inverse-primary: #4f46e5;
 
     --accent-indigo: #8b8cf8;
     --accent-amber: #fbbf24;
@@ -213,6 +222,9 @@
   --info: #7cb7ff;
   --info-soft: #0d1a2b;
   --completed: rgba(74, 222, 128, 0.12);
+  --inverse-surface: #e4e4e9;
+  --on-inverse-surface: #16161a;
+  --inverse-primary: #4f46e5;
 
   --accent-indigo: #8b8cf8;
   --accent-amber: #fbbf24;

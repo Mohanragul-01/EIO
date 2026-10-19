@@ -35,3 +35,33 @@ export function contrastRatio(foreground: string, background: string): number {
   const darker = Math.min(a, b);
   return (lighter + 0.05) / (darker + 0.05);
 }
+
+/**
+ * The solid colour a translucent one becomes over a solid background, as
+ * '#RRGGBB'. Contrast is only defined between solid colours, so a tint like
+ * `completed` has to be flattened onto the surface it sits on before the text
+ * over it can be checked. Accepts 'rgba(r, g, b, a)' or '#rrggbb' (opaque).
+ */
+export function blendOver(colour: string, background: string): string {
+  const bg = channels(background);
+  const rgba = colour.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)/);
+  const [fg, alpha] = rgba
+    ? [[Number(rgba[1]), Number(rgba[2]), Number(rgba[3])], rgba[4] === undefined ? 1 : Number(rgba[4])]
+    : [channels(colour), 1];
+  return (
+    '#' +
+    fg
+      .map((c, i) =>
+        Math.round(c * alpha + bg[i] * (1 - alpha))
+          .toString(16)
+          .padStart(2, '0'),
+      )
+      .join('')
+      .toUpperCase()
+  );
+}
+
+function channels(hex: string): number[] {
+  const value = hex.replace('#', '');
+  return [0, 2, 4].map((i) => parseInt(value.slice(i, i + 2), 16));
+}

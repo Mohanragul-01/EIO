@@ -51,8 +51,23 @@ export type ThemeColors = {
    * checklist item. Translucent, so it reads as a tint over whatever surface
    * it lands on rather than a solid block, and calm enough that a screen full
    * of completed rows is not a wall of green.
+   *
+   * TEXT ON IT IS `text` OR `textSecondary`, never muted or faint. The tint
+   * lifts the surface toward green, which drops those two below 4.5:1 (faint
+   * to about 3.5 in dark); the theme test pins the two that pass.
    */
   completed: string;
+
+  /**
+   * A surface that sits ABOVE the page in either theme - the toast. Light on
+   * the dark palette and dark on the light one, the way Android's snackbars
+   * are, so it stands out from whatever it floats over. Its text and its
+   * action have their own tokens, because the page's primary is tuned for the
+   * page's background, not this one.
+   */
+  inverseSurface: string;
+  onInverseSurface: string;
+  inversePrimary: string;
 
   /**
    * Task priority, as a three-step scale: red, blue, green.
@@ -111,6 +126,9 @@ export const darkColors: ThemeColors = {
   danger: '#FF8497',
   info: '#7CB7FF',
   completed: 'rgba(74, 222, 169, 0.14)',
+  inverseSurface: '#E6E8EF',
+  onInverseSurface: '#12141B',
+  inversePrimary: '#4F46E5',
 
   priorityHigh: 'rgb(251, 113, 133)',
   priorityNormal: 'rgb(96, 165, 250)',
@@ -165,6 +183,9 @@ export const lightColors: ThemeColors = {
   danger: '#BE123C',
   info: '#0A5DC2',
   completed: 'rgba(4, 120, 87, 0.10)',
+  inverseSurface: '#1E2330',
+  onInverseSurface: '#F7F8FA',
+  inversePrimary: '#A3ABFF',
 
   priorityHigh: 'rgb(225, 29, 72)',
   priorityNormal: 'rgb(37, 99, 235)',
@@ -210,6 +231,24 @@ export const fonts = {
   medium: 'Inter_500Medium',
   semibold: 'Inter_600SemiBold',
   bold: 'Inter_700Bold',
+} as const;
+
+/**
+ * Where floating things sit, so they cannot cover each other.
+ *
+ * Every list screen's add button is 58dp, 28dp above the bottom inset. A toast
+ * or an error banner that also floated at the bottom covered it for five
+ * seconds after every tick or delete, which is exactly when you reach for it
+ * next. They sit one gap above it instead.
+ */
+const FAB_SIZE = 58;
+const FAB_INSET = spacing.xxl;
+
+export const layout = {
+  fabSize: FAB_SIZE,
+  fabInset: FAB_INSET,
+  /** Bottom edge of a toast or banner, measured up from the safe-area inset. */
+  aboveFab: FAB_INSET + FAB_SIZE + spacing.md,
 } as const;
 
 /** Shared motion constants, so every animation feels like one hand. */

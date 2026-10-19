@@ -7,10 +7,12 @@
  * resolveIsDark out of the provider is what made that possible, and it put the
  * rule somewhere findable at the same time.
  */
-import { contrastRatio } from '../contrast';
+import { blendOver, contrastRatio } from '../contrast';
 import {
   darkColors,
+  layout,
   lightColors,
+  spacing,
   makeElevation,
   makeTypography,
   paletteFor,
@@ -29,6 +31,12 @@ describe('contrastRatio', () => {
 
   it('does not care which colour is the foreground', () => {
     expect(contrastRatio('#12141B', '#F4F6FA')).toBeCloseTo(contrastRatio('#F4F6FA', '#12141B'), 10);
+  });
+
+  it('blends a translucent colour over a solid one', () => {
+    expect(blendOver('rgba(255, 255, 255, 0.5)', '#000000')).toBe('#808080');
+    expect(blendOver('rgba(0,0,0,0)', '#123456')).toBe('#123456');
+    expect(blendOver('#ABCDEF', '#000000')).toBe('#ABCDEF');
   });
 
   it('matches a published reference pair', () => {
@@ -61,6 +69,28 @@ describe.each([
     expect(contrastRatio(palette.textFaint, palette.background)).toBeLessThan(
       contrastRatio(palette.textMuted, palette.background),
     );
+  });
+
+  it.each(['text', 'textSecondary'] as const)(
+    '%s stays readable on a completed row, over either surface',
+    (token) => {
+      // The tint lifts the surface toward green, so the dimmer text tokens
+      // fall below 4.5:1 on it (faint to about 3.5 in dark). Text on a ticked
+      // row therefore uses text or textSecondary, and this pins that both pass.
+      for (const surface of [palette.background, palette.backgroundElevated]) {
+        expect(
+          contrastRatio(palette[token], blendOver(palette.completed, surface)),
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    },
+  );
+
+  it('has an inverse surface that stands out, with readable text and action on it', () => {
+    // The toast's pill: light on the dark theme and dark on the light one, so
+    // it reads as a layer above the page in either.
+    expect(contrastRatio(palette.inverseSurface, palette.background)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(palette.onInverseSurface, palette.inverseSurface)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(palette.inversePrimary, palette.inverseSurface)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('has an info colour and a completed tint distinct from success', () => {
@@ -162,5 +192,11 @@ describe('makeElevation', () => {
     expect(e.elevation).toBeGreaterThan(0);
     expect(e.shadowRadius).toBeGreaterThan(0);
     expect(e.shadowColor).toBe(darkColors.shadow);
+  });
+});
+
+describe('layout', () => {
+  it('floats toasts and banners clear of the add button, with a gap', () => {
+    expect(layout.aboveFab - (layout.fabInset + layout.fabSize)).toBeGreaterThanOrEqual(spacing.sm);
   });
 });

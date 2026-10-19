@@ -645,9 +645,9 @@ table.data tbody tr:last-child td { border-bottom: 0; }
   pointer-events: none;
 }
 
-/* Dark in both themes, so it reads as a layer above the page in either one.
-   The colours are fixed rather than tokens for the same reason: they must not
-   follow the theme. Contrast on #1e1e24: text 14.2:1, action 7.3:1. */
+/* Inverse in both themes - light on the dark canvas, dark on the light one -
+   so it reads as a layer above the page either way. Colours are the inverse
+   tokens in tokens.css, contrast-checked there. */
 .toast {
   pointer-events: auto;
   display: flex;
@@ -656,10 +656,9 @@ table.data tbody tr:last-child td { border-bottom: 0; }
   max-width: 480px;
   min-height: 44px;
   padding: 6px 6px 6px var(--space-lg);
-  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius-lg);
-  background: #1e1e24;
-  color: #ededf0;
+  background: var(--inverse-surface);
+  color: var(--on-inverse-surface);
   box-shadow: var(--shadow-lg);
   font-size: var(--text-sm);
   animation: toast-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -674,14 +673,14 @@ table.data tbody tr:last-child td { border-bottom: 0; }
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
-  color: #a3a4fa;
+  color: var(--inverse-primary);
   font-size: var(--text-sm);
   font-weight: 600;
   white-space: nowrap;
   transition: background var(--transition);
 }
-.toast-action:hover { background: rgba(255, 255, 255, 0.08); }
-.toast-action:focus-visible { outline: 2px solid #a3a4fa; outline-offset: 1px; }
+.toast-action:hover { background: color-mix(in srgb, var(--on-inverse-surface) 10%, transparent); }
+.toast-action:focus-visible { outline: 2px solid var(--inverse-primary); outline-offset: 1px; }
 
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(8px); }

@@ -15,6 +15,15 @@
  * at most once, an old timer cannot dismiss a newer toast) live in
  * core/toastState.ts, where they are tested. This file only draws it and owns
  * the clock.
+ *
+ * NOT FROM INSIDE AN OPEN SHEET. A Sheet (or any RN Modal) is a separate
+ * native window drawn above the app, and this toast is drawn in the app, so
+ * a toast shown while a sheet is open sits UNDER it, its Undo hidden while
+ * its five seconds run. When an action happens in a sheet, close the sheet
+ * first, then show the toast.
+ *
+ * It floats one gap above the add button every list screen has (see
+ * theme.layout), rises with the keyboard, and is spoken by TalkBack.
  */
 import React, {
   createContext,
@@ -25,11 +34,19 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Animated, Easing, Pressable, Text, useAnimatedValue, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  Animated,
+  Easing,
+  Pressable,
+  Text,
+  useAnimatedValue,
+} from 'react-native';
+import { KeyboardStickyView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { makeStyles, useTheme } from '../ThemeContext';
-import { darkColors, radius, spacing } from '../theme';
+import { layout, radius, spacing } from '../theme';
 import {
   initialToastState,
   toastReducer,
@@ -108,6 +125,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     (options: ToastOptions) => {
       dispatch({ type: 'show', options });
       setShown(stateRef.current.current);
+      // From zero every time, including when it replaces a toast with the
+      // same words ("Completed · Undo" twice): without the blink, the second
+      // tick would look as if nothing happened.
+      opacity.setValue(0);
+      // Spoken explicitly rather than left to the live region: a region that
+      // appears together with its message is often read late or not at all.
+      AccessibilityInfo.announceForAccessibility(
+        options.actionLabel && options.onAction
+          ? `${options.message}. ${options.actionLabel} available.`
+          : options.message,
+      );
       Animated.timing(opacity, {
         toValue: 1,
         duration: ENTER_MS,
@@ -168,9 +196,11 @@ function ToastPill({
   return (
     // box-none: the strip spans the screen width, but only the pill itself
     // should catch touches. Taps beside it fall through to the screen.
-    <View
+    // KeyboardStickyView lifts it with the keyboard, which would otherwise
+    // cover it.
+    <KeyboardStickyView
       pointerEvents="box-none"
-      style={[styles.dock, { bottom: insets.bottom + spacing.lg }]}
+      style={[styles.dock, { bottom: insets.bottom + layout.aboveFab }]}
     >
       <Animated.View
         style={[
@@ -202,11 +232,11 @@ function ToastPill({
           </Pressable>
         ) : null}
       </Animated.View>
-    </View>
+    </KeyboardStickyView>
   );
 }
 
-const useStyles = makeStyles(({ colors, typography, isDark }) => ({
+const useStyles = makeStyles(({ colors, typography }) => ({
   dock: {
     position: 'absolute',
     left: spacing.lg,
@@ -222,17 +252,14 @@ const useStyles = makeStyles(({ colors, typography, isDark }) => ({
     paddingRight: spacing.xs,
     borderRadius: radius.md,
     // Solid, not glass: a toast floats over arbitrary content and must stay
-    // legible whatever is behind it.
-    backgroundColor: isDark ? '#262A35' : '#1E2330',
-    borderWidth: 1,
-    borderColor: colors.glassBorderStrong,
+    // legible whatever is behind it. Inverse, so it stands out in both themes.
+    backgroundColor: colors.inverseSurface,
   },
   message: {
     ...typography.body,
     flex: 1,
     paddingVertical: spacing.md,
-    // The pill is dark in both themes, so its text comes from the dark palette.
-    color: darkColors.text,
+    color: colors.onInverseSurface,
   },
   action: {
     minWidth: 64,
@@ -244,12 +271,10 @@ const useStyles = makeStyles(({ colors, typography, isDark }) => ({
     justifyContent: 'center',
   },
   actionPressed: {
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: colors.glassStrong,
   },
   actionLabel: {
     ...typography.title,
-    // Likewise the dark palette's primary: the light one is too deep to read
-    // on a dark pill.
-    color: darkColors.primary,
+    color: colors.inversePrimary,
   },
 }));

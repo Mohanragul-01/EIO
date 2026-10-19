@@ -11,7 +11,14 @@
  *
  * Unlike the phone, a desktop has a pointer and a keyboard to rest on the
  * toast, and the clock stops while either does: reaching for Undo should not
- * be a race against a timer you cannot see.
+ * be a race against a timer you cannot see. From the keyboard, Ctrl+Z (Cmd+Z)
+ * runs the toast's action while one is showing, since tabbing to a button at
+ * the very end of the page inside five seconds is not a fair ask - unless
+ * focus is in a text field, where Ctrl+Z keeps meaning "undo my typing".
+ *
+ * NOT FROM INSIDE AN OPEN <dialog>. A modal dialog sits in the browser's top
+ * layer, above everything else, including this toast, which would then hide
+ * behind it while its timer runs. Close the dialog, then show the toast.
  */
 import {
   createContext,
@@ -111,6 +118,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timer);
   }, [shownId, shownDuration, paused, hideId]);
 
+  // Ctrl/Cmd+Z runs the live toast's action. Listens only while a toast
+  // with an action is showing, and leaves text fields their own undo.
+  const actionableId = shown && !shown.leaving && shown.toast.onAction ? shown.toast.id : undefined;
+  useEffect(() => {
+    if (actionableId === undefined) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.key.toLowerCase() !== 'z') return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      event.preventDefault();
+      act(actionableId);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [actionableId, act]);
+
   const api = useMemo<ToastApi>(() => ({ show, hide }), [show, hide]);
 
   return (
@@ -136,6 +159,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 type="button"
                 className="toast-action"
                 onClick={() => act(shown.toast.id)}
+                aria-keyshortcuts="Control+Z Meta+Z"
               >
                 {shown.toast.actionLabel}
               </button>
