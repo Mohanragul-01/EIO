@@ -60,6 +60,12 @@ export function CustomRecordEditScreen() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   /** Keys whose value was copied from the last entry and not yet touched. */
   const [fromLast, setFromLast] = useState<string[]>([]);
+  /**
+   * The entry as stored, kept so a save can merge over it. The form only holds
+   * the module's CURRENT fields; saving that alone would drop every value kept
+   * from a removed field - the values the builder promises are never deleted.
+   */
+  const [stored, setStored] = useState<Record<string, unknown>>({});
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -96,6 +102,7 @@ export function CustomRecordEditScreen() {
             seeded[f.key] = record.data[f.key] ?? emptyValueFor(f.type);
           });
           setValues(seeded);
+          setStored(record.data);
         } else {
           // Records only matter here for "same as last entry" defaults.
           const records = await api.listRecords(moduleId);
@@ -145,7 +152,7 @@ export function CustomRecordEditScreen() {
     setSaving(true);
     try {
       if (isEditing) {
-        await api.updateRecord(recordId, values);
+        await api.updateRecord(recordId, { ...stored, ...values });
       } else {
         await api.createRecord(moduleId, values);
       }

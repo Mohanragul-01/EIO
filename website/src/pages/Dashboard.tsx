@@ -30,6 +30,7 @@ import { Icon, type IconName } from '../components/Icon';
 import { Shell } from '../components/Shell';
 import { Spinner } from '../components/ui';
 import { useAsync } from '../lib/useAsync';
+import { Sparkline } from '../modules/custom/Sparkline';
 import { useCustomModules } from '../modules/custom/useCustomModules';
 
 /* SUMMARIES - the same rules as the app's useHomeSummaries. ----------------- */
@@ -180,7 +181,7 @@ const TILES: {
 ];
 
 export function Dashboard() {
-  const { modules, summaries } = useCustomModules();
+  const { modules, summaries, sparklines } = useCustomModules();
 
   const greeting = (() => {
     const hour = new Date().getHours();
@@ -212,9 +213,14 @@ export function Dashboard() {
                 <span className="dot" style={{ background: module.color }} />
               </div>
               <div className="stat-value numeric">{summary?.text ?? '—'}</div>
-              <div className="faint" style={{ fontSize: 12.5, marginTop: 2 }}>
-                Your module
-              </div>
+              {/* The module's own trend, drawn from the same points as its chart. */}
+              {sparklines[module.id] ? (
+                <Sparkline values={sparklines[module.id] ?? []} color={module.color} />
+              ) : (
+                <div className="faint" style={{ fontSize: 12.5, marginTop: 2 }}>
+                  Your module
+                </div>
+              )}
             </Link>
           );
         })}
