@@ -24,6 +24,7 @@ import {
   type SessionExercise,
   type SessionSet,
   type SetInput,
+  type SetType,
   type WorkoutSession,
   type TrackingType,
 } from './types';
@@ -1428,4 +1429,55 @@ export async function saveMeasurement(
 export async function deleteMeasurement(id: string): Promise<void> {
   const { error } = await supabase.from('body_measurements').delete().eq('id', id);
   if (error) throw new Error(error.message);
+}
+
+// YEAR OF SETS (website heatmap) -------------------------------------------------
+
+/** PostgREST returns at most this many rows per request (Supabase's default cap). */
+const PAGE = 1000;
+
+/**
+ * Every set in a session dated in [start, end], as just its session, day and
+ * type - what the website's year heatmap and session list count.
+ *
+ * Paged, because a year of training is several thousand sets and the server
+ * silently stops at its row cap: an unpaged read would draw the heatmap from
+ * whichever thousand rows came back first and look entirely plausible.
+ */
+export async function listSetDaysBetween(
+  start: string,
+  end: string,
+): Promise<{ session_id: string; date: string; set_type: SetType | null }[]> {
+  const ownerId = await getOwnerId();
+  type SessionRef = { date: string };
+  type Row = {
+    id: string;
+    session_id: string;
+    set_type: SetType | null;
+    workout_sessions: SessionRef | SessionRef[] | null;
+  };
+
+  const out: { session_id: string; date: string; set_type: SetType | null }[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('session_sets')
+      .select('id, session_id, set_type, workout_sessions!inner(date)')
+      .eq('user_id', ownerId)
+      .gte('workout_sessions.date', start)
+      .lte('workout_sessions.date', end)
+      // A stable order, so consecutive pages neither skip nor repeat a row.
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as unknown as Row[];
+    for (const row of rows) {
+      const session = Array.isArray(row.workout_sessions)
+        ? row.workout_sessions[0]
+        : row.workout_sessions;
+      if (session?.date) {
+        out.push({ session_id: row.session_id, date: session.date, set_type: row.set_type });
+      }
+    }
+    if (rows.length < PAGE) return out;
+  }
 }
