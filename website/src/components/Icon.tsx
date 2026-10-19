@@ -55,7 +55,19 @@ export type IconName =
   | 'repeat'
   | 'reset'
   | 'flag'
-  | 'sparkline';
+  | 'sparkline'
+  // Fitness v3.
+  | 'more'
+  | 'trophy'
+  | 'pin'
+  | 'lock'
+  | 'arrowUp'
+  | 'arrowDown'
+  | 'body'
+  | 'swap'
+  | 'link'
+  | 'steps'
+  | 'minus';
 
 /**
  * Path data per icon. Several use more than one subpath; they are joined with
@@ -109,6 +121,20 @@ const PATHS: Record<IconName, string> = {
   reset: 'M3 4v6h6 M4.4 15a9 9 0 1 0 1-7.5L3 10',
   flag: 'M5 21V4 M5 5h11l-2 3.5L16 12H5',
   sparkline: 'M3 17l5-6 4 3 5-8 4 5',
+
+  // Fitness v3: menus, records, pinned notes, ladders and the two modes.
+  more: 'M12 6.25a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5z M12 13.25a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5z M12 20.25a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5z',
+  trophy:
+    'M7 4h10v5a5 5 0 0 1-10 0z M7 6H4.5a2.5 2.5 0 0 0 2.6 3.5 M17 6h2.5a2.5 2.5 0 0 1-2.6 3.5 M12 14v4 M8 21h8 M9.5 18h5',
+  pin: 'M12 16v5 M9 4h6 M10 4v5.5L7 13h10l-3-3.5V4',
+  lock: 'M7 11V8a5 5 0 0 1 10 0v3 M6 11h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z',
+  arrowUp: 'M12 19V5 M6 11l6-6 6 6',
+  arrowDown: 'M12 5v14 M6 13l6 6 6-6',
+  body: 'M12 6.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M5 9.5h14 M12 9.5v5 M8.5 21l3.5-6.5 3.5 6.5',
+  swap: 'M16 3l4 4-4 4 M20 7H4 M8 21l-4-4 4-4 M4 17h16',
+  link: 'M10 13.5a4.5 4.5 0 0 0 6.4.4l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.5 1.5 M14 10.5a4.5 4.5 0 0 0-6.4-.4l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.5-1.5',
+  steps: 'M4 20h4v-4h4v-4h4V8h4',
+  minus: 'M5 12h14',
 };
 
 /**
