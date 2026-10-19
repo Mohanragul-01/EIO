@@ -1,5 +1,5 @@
 /**
- * TodoListScreen - four swipeable frequency tabs, open or completed.
+ * TodoListScreen - Today, then the four frequency tabs, one swipe apart.
  *
  *  THE SCREEN PATTERN (shared by every module)
  *   1. call the module's hook for data and state
@@ -7,27 +7,22 @@
  *   3. refetch when the screen regains focus
  * The screen contains no Supabase code at all: it never imports the client.
  *
- * The tab lives in this screen's state rather than in navigation, because it
- * is a filter over one list, not a destination.
+ * TODAY COMES FIRST. Running your own life is mostly answering "what do I do
+ * now?", and four frequency tabs answer a different question - "what kinds of
+ * things do I have?". So the pager opens on Today (overdue, due today, done
+ * today, across every frequency), and the tabs that file routines by how
+ * often they come round are one swipe to the right. The dashboard tile opens
+ * this screen, so it opens Today.
  *
- * WHY THE LIST IS ITS OWN COMPONENT NOW. A pager has to have every page
- * mounted - you cannot swipe to something that has not rendered - so each
- * frequency needs its own copy of the list with its own data. Extracting
- * FrequencyList is what makes "one hook per page" possible; keeping it inline
- * would have meant one hook and three blank pages.
+ * Each page is its own component with its own hook, because a pager has every
+ * page mounted - you cannot swipe to something that has not rendered.
  */
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  Text,
-  View,
-} from 'react-native';
+import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   Button,
@@ -35,105 +30,379 @@ import {
   FadeInView,
   GlassCard,
   Screen,
-  SegmentedControl,
   SwipeTabs,
 } from '../../../core/components';
+import { fromISODate, todayISO } from '../../../core/date';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
-import { motion, radius, spacing } from '../../../core/theme';
+import { layout, motion, radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
+import { DigestSheet } from '../components/DigestSheet';
+import { QuickAddSheet } from '../components/QuickAddSheet';
 import { TaskRow } from '../components/TaskRow';
-import { FREQUENCIES, FREQUENCY_LABEL, type Frequency } from '../types';
+import { useTaskActions } from '../components/useTaskActions';
+// Registers what a reminder's Done / Snooze / tap does. Imported here because
+// the navigator registers this screen at launch; see the file's header.
+import '../notificationRoutes';
+import { dueLabel } from '../today';
+import { subscribeToday } from '../todaySignal';
+import { FREQUENCIES, FREQUENCY_LABEL, type Frequency, type Todo } from '../types';
+import { useToday } from '../useToday';
 import { useTodos, type TodoStatus } from '../useTodos';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'TodoList'>;
+
+type Page = 'today' | Frequency;
+const PAGES: Page[] = ['today', ...FREQUENCIES];
+const pageLabel = (page: Page) => (page === 'today' ? 'Today' : FREQUENCY_LABEL[page]);
 
 export function TodoListScreen() {
   const styles = useStyles();
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
+  const insets = useSafeAreaInsets();
 
-  const [frequency, setFrequency] = useState<Frequency>('daily');
-  const [status, setStatus] = useState<TodoStatus>('open');
+  const [page, setPage] = useState<Page>('today');
+  const [adding, setAdding] = useState(false);
+  const [digestOpen, setDigestOpen] = useState(false);
+  // Bumped after a quick add, so the page you are looking at shows the new
+  // task without waiting for the next focus.
+  const [version, setVersion] = useState(0);
+
+  // A digest tap while this screen is already open switches it to Today.
+  useEffect(() => subscribeToday(() => setPage('today')), []);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          onPress={() => setDigestOpen(true)}
+          style={styles.headerButton}
+          accessibilityRole="button"
+          accessibilityLabel="Daily digest settings"
+        >
+          <Ionicons name="notifications-outline" size={21} color={colors.text} />
+        </Pressable>
+      ),
+    });
+  }, [navigation, styles.headerButton, colors.text]);
+
+  const openTask = useCallback((id: string) => navigation.navigate('TodoEdit', { id }), [navigation]);
+  const frequency: Frequency = page === 'today' ? 'daily' : page;
 
   return (
     <Screen padded={false}>
-      <View style={styles.header}>
-        <SegmentedControl
-          options={['open', 'done'] as const}
-          value={status}
-          onChange={setStatus}
-          renderLabel={(s) => (s === 'open' ? 'Open' : 'Completed')}
-        />
-      </View>
+      <View style={styles.header} />
 
       <SwipeTabs
-        options={FREQUENCIES}
-        value={frequency}
-        onChange={setFrequency}
-        renderLabel={(f) => FREQUENCY_LABEL[f]}
-        renderPage={(f) => (
-          <FrequencyList
-            // Remounts when the status changes, so the list never shows the
-            // previous slice's rows while the new query is in flight.
-            key={`${f}-${status}`}
-            frequency={f}
-            status={status}
-            onAdd={() => navigation.navigate('TodoEdit', { frequency: f })}
-            onOpen={(id) => navigation.navigate('TodoEdit', { id })}
-          />
-        )}
+        options={PAGES}
+        value={page}
+        onChange={setPage}
+        renderLabel={pageLabel}
+        renderPage={(p) =>
+          p === 'today' ? (
+            <TodayPage
+              version={version}
+              onOpen={openTask}
+              onAdd={() => setAdding(true)}
+            />
+          ) : (
+            <FrequencyPage
+              frequency={p}
+              version={version}
+              onOpen={openTask}
+              onAdd={() => setAdding(true)}
+            />
+          )
+        }
       />
 
-      {status === 'open' ? (
-        <FadeInView style={styles.fabWrap} delay={120}>
-          <Pressable
-            onPress={() => navigation.navigate('TodoEdit', { frequency })}
-            style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Add a task"
-          >
-            <Ionicons name="add" size={26} color={colors.onPrimary} />
-          </Pressable>
-        </FadeInView>
-      ) : null}
+      <FadeInView
+        style={[styles.fabWrap, { bottom: insets.bottom + layout.fabInset }]}
+        delay={120}
+      >
+        <Pressable
+          onPress={() => setAdding(true)}
+          onLongPress={() => navigation.navigate('TodoEdit', { frequency })}
+          style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Add a task"
+          accessibilityHint="Hold to open the full editor"
+        >
+          <Ionicons name="add" size={26} color={colors.onPrimary} />
+        </Pressable>
+      </FadeInView>
+
+      <QuickAddSheet
+        visible={adding}
+        defaultFrequency={frequency}
+        defaultDueDate={page === 'today' ? todayISO() : null}
+        contextLabel={page === 'today' ? 'Today' : FREQUENCY_LABEL[page]}
+        onClose={() => setAdding(false)}
+        onAdded={() => setVersion((v) => v + 1)}
+        onOpenEditor={() => navigation.navigate('TodoEdit', { frequency })}
+      />
+
+      <DigestSheet visible={digestOpen} onClose={() => setDigestOpen(false)} />
     </Screen>
   );
 }
 
-/* ONE FREQUENCY ------------------------------------------------------------ */
+/* TODAY --------------------------------------------------------------------- */
 
-function FrequencyList({
-  frequency,
-  status,
-  onAdd,
+type TodayItem =
+  | { kind: 'intro'; key: string }
+  | { kind: 'overdue-head'; key: string; tasks: Todo[] }
+  | { kind: 'today-head'; key: string; count: number }
+  | { kind: 'done-head'; key: string; count: number }
+  | { kind: 'calm'; key: string }
+  | { kind: 'task'; key: string; todo: Todo; dateStyle: 'full' | 'time' };
+
+function TodayPage({
+  version,
   onOpen,
+  onAdd,
 }: {
-  frequency: Frequency;
-  status: TodoStatus;
-  onAdd: () => void;
+  version: number;
   onOpen: (id: string) => void;
+  onAdd: () => void;
 }) {
   const styles = useStyles();
   const { colors } = useTheme();
+  const data = useToday();
+  const actions = useTaskActions(data, data.today, onOpen);
+  const [showDone, setShowDone] = useState(false);
+  const { reload } = data;
 
-  const { todos, loading, refreshing, error, refresh, reload, complete } = useTodos(
-    frequency,
-    status,
-  );
-
-  /**
-   * useFocusEffect, not useEffect: this also runs when you pop back from the
-   * edit screen, so a task you just added appears immediately. reload keeps one
-   * identity for the life of the screen and always calls the latest loader, so
-   * depending on it does not refetch in a loop.
-   */
   useFocusEffect(
     useCallback(() => {
       reload(); // silent: no pull-to-refresh spinner on every return
     }, [reload]),
   );
+  useEffect(() => {
+    if (version > 0) reload();
+  }, [version, reload]);
 
-  if (loading) {
+  if (data.loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
+  const { overdue, today, completed } = data.sections;
+  const doneCount = completed.length;
+  const total = doneCount + overdue.length + today.length;
+
+  const items: TodayItem[] = [{ kind: 'intro', key: 'intro' }];
+  if (overdue.length > 0) {
+    items.push({ kind: 'overdue-head', key: 'overdue-head', tasks: overdue });
+    overdue.forEach((todo) => items.push({ kind: 'task', key: todo.id, todo, dateStyle: 'full' }));
+  }
+  if (today.length > 0) {
+    items.push({ kind: 'today-head', key: 'today-head', count: today.length });
+    today.forEach((todo) => items.push({ kind: 'task', key: todo.id, todo, dateStyle: 'time' }));
+  }
+  if (overdue.length === 0 && today.length === 0) items.push({ kind: 'calm', key: 'calm' });
+  if (doneCount > 0) {
+    items.push({ kind: 'done-head', key: 'done-head', count: doneCount });
+    if (showDone) {
+      completed.forEach((todo) => items.push({ kind: 'task', key: todo.id, todo, dateStyle: 'time' }));
+    }
+  }
+
+  const renderItem = ({ item, index }: { item: TodayItem; index: number }) => {
+    switch (item.kind) {
+      case 'intro':
+        return (
+          <View style={styles.intro}>
+            <Text style={styles.introDate}>
+              {fromISODate(data.today).toLocaleDateString(undefined, {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long',
+              })}
+            </Text>
+            {total > 0 ? (
+              <Text style={styles.introCount}>
+                {doneCount} of {total} done
+              </Text>
+            ) : null}
+            {data.error ? <ErrorCard message={data.error} /> : null}
+          </View>
+        );
+
+      case 'overdue-head':
+        return (
+          <View style={styles.sectionHead}>
+            <Ionicons name="alert-circle" size={16} color={colors.danger} />
+            <Text style={[styles.sectionTitle, styles.overdueTitle]} accessibilityRole="header">
+              Overdue · {item.tasks.length}
+            </Text>
+            <Pressable
+              onPress={() => actions.rescheduleAll(item.tasks)}
+              style={styles.sectionAction}
+              accessibilityRole="button"
+              accessibilityLabel={`Reschedule all ${item.tasks.length} overdue tasks`}
+            >
+              <Text style={styles.sectionActionText}>Reschedule</Text>
+            </Pressable>
+          </View>
+        );
+
+      case 'today-head':
+        return (
+          <View style={styles.sectionHead}>
+            <Ionicons name="today-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.sectionTitle} accessibilityRole="header">
+              Today · {item.count}
+            </Text>
+          </View>
+        );
+
+      case 'calm': {
+        const next = data.next;
+        return (
+          <GlassCard style={styles.calm}>
+            <View style={styles.calmRow}>
+              <Ionicons name="sunny-outline" size={20} color={colors.accentAmber} />
+              <Text style={styles.calmTitle}>
+                {doneCount > 0 ? 'Nothing left today' : 'Nothing due today'}
+              </Text>
+            </View>
+            {next?.due_date ? (
+              <Pressable
+                onPress={() => onOpen(next.id)}
+                style={styles.nextRow}
+                accessibilityRole="button"
+                accessibilityLabel={`Next up: ${next.title}, ${dueLabel(next.due_date, next.due_time, data.today)}`}
+              >
+                <Text style={styles.nextLabel}>Next up</Text>
+                <Text style={styles.nextTitle} numberOfLines={1}>
+                  {next.title}
+                </Text>
+                <Text style={styles.nextDate}>{dueLabel(next.due_date, next.due_time, data.today)}</Text>
+              </Pressable>
+            ) : (
+              <View style={styles.calmAction}>
+                <Button label="Add a task" icon="add" variant="glass" onPress={onAdd} />
+              </View>
+            )}
+          </GlassCard>
+        );
+      }
+
+      case 'done-head':
+        return (
+          <Pressable
+            onPress={() => setShowDone((v) => !v)}
+            style={styles.sectionHead}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showDone }}
+            accessibilityLabel={`Completed today, ${item.count}`}
+          >
+            <Ionicons name="checkmark-done" size={16} color={colors.success} />
+            <Text style={styles.sectionTitle}>Completed today · {item.count}</Text>
+            <Ionicons
+              name={showDone ? 'chevron-up' : 'chevron-down'}
+              size={16}
+              color={colors.textMuted}
+              style={styles.sectionChevron}
+            />
+          </Pressable>
+        );
+
+      case 'task':
+        return (
+          <FadeInView delay={Math.min(index, 6) * motion.stagger}>
+            <TaskRow
+              todo={item.todo}
+              today={data.today}
+              streak={data.streakOf(item.todo)}
+              dateStyle={item.dateStyle}
+              onToggle={() => actions.toggle(item.todo)}
+              onPress={() => onOpen(item.todo.id)}
+              onLongPress={() => actions.openMenu(item.todo)}
+            />
+          </FadeInView>
+        );
+    }
+  };
+
+  return (
+    <>
+      <FlatList
+        data={items}
+        keyExtractor={(item) => item.key}
+        renderItem={renderItem}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.list}
+        refreshControl={
+          <RefreshControl
+            refreshing={data.refreshing}
+            onRefresh={data.refresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+            progressBackgroundColor={colors.backgroundElevated}
+          />
+        }
+      />
+      {actions.sheets}
+    </>
+  );
+}
+
+/* ONE FREQUENCY ------------------------------------------------------------- */
+
+function FrequencyPage(props: {
+  frequency: Frequency;
+  version: number;
+  onOpen: (id: string) => void;
+  onAdd: () => void;
+}) {
+  const [status, setStatus] = useState<TodoStatus>('open');
+  // Remounts when the status changes, so the list never shows the previous
+  // slice's rows while the new query is in flight.
+  return <FrequencyList key={status} {...props} status={status} onStatus={setStatus} />;
+}
+
+function FrequencyList({
+  frequency,
+  version,
+  status,
+  onStatus,
+  onOpen,
+  onAdd,
+}: {
+  frequency: Frequency;
+  version: number;
+  status: TodoStatus;
+  onStatus: (status: TodoStatus) => void;
+  onOpen: (id: string) => void;
+  onAdd: () => void;
+}) {
+  const styles = useStyles();
+  const { colors } = useTheme();
+  const data = useTodos(frequency, status);
+  const today = todayISO();
+  const actions = useTaskActions(data, today, onOpen);
+  const { reload } = data;
+
+  /**
+   * useFocusEffect, not useEffect: this also runs when you pop back from the
+   * edit screen, so a task you just changed appears immediately. reload keeps
+   * one identity for the life of the screen, so depending on it does not loop.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload]),
+  );
+  useEffect(() => {
+    if (version > 0) reload();
+  }, [version, reload]);
+
+  if (data.loading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color={colors.primary} />
@@ -142,6 +411,7 @@ function FrequencyList({
   }
 
   const label = FREQUENCY_LABEL[frequency].toLowerCase();
+  const { todos } = data;
 
   return (
     <>
@@ -152,22 +422,36 @@ function FrequencyList({
         contentContainerStyle={[styles.list, todos.length === 0 && styles.listEmpty]}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
-            onRefresh={refresh}
+            refreshing={data.refreshing}
+            onRefresh={data.refresh}
             tintColor={colors.primary}
             colors={[colors.primary]}
             progressBackgroundColor={colors.backgroundElevated}
           />
         }
         ListHeaderComponent={
-          todos.length > 0 ? (
-            <FadeInView>
+          <View>
+            <View style={styles.pageHead}>
               <Text style={styles.summary}>
                 {todos.length} {status === 'done' ? 'completed' : 'open'}{' '}
                 {todos.length === 1 ? 'task' : 'tasks'}
               </Text>
-            </FadeInView>
-          ) : null
+              <Pressable
+                onPress={() => onStatus(status === 'open' ? 'done' : 'open')}
+                style={styles.statusToggle}
+                accessibilityRole="button"
+                accessibilityLabel={status === 'open' ? `Show completed ${label} tasks` : `Show open ${label} tasks`}
+              >
+                <Ionicons
+                  name={status === 'open' ? 'checkmark-done-outline' : 'list-outline'}
+                  size={15}
+                  color={colors.primary}
+                />
+                <Text style={styles.statusToggleText}>{status === 'open' ? 'Completed' : 'Open'}</Text>
+              </Pressable>
+            </View>
+            {data.error ? <ErrorCard message={data.error} /> : null}
+          </View>
         }
         ListEmptyComponent={
           status === 'done' ? (
@@ -184,7 +468,7 @@ function FrequencyList({
               title={`Nothing ${label}`}
               message={
                 frequency === 'daily'
-                  ? 'Daily tasks you add here reset by repeating, not by being wiped.'
+                  ? 'Daily tasks come back by repeating, not by being wiped.'
                   : `Add a ${label} task and it will show up here.`
               }
               action={<Button label="Add a task" icon="add" onPress={onAdd} />}
@@ -195,42 +479,47 @@ function FrequencyList({
           <FadeInView delay={Math.min(index, 6) * motion.stagger}>
             <TaskRow
               todo={item}
-              // In the completed list the same tap reopens, which useTodos
-              // works out from the row rather than from a second prop.
-              onToggle={() => complete(item)}
+              today={today}
+              streak={data.streakOf(item)}
+              onToggle={() => actions.toggle(item)}
               onPress={() => onOpen(item.id)}
+              onLongPress={() => actions.openMenu(item)}
             />
           </FadeInView>
         )}
       />
-
-      {/* A failed background refresh should not interrupt what you are doing,
-          so errors surface as a banner rather than an alert. */}
-      {error ? (
-        <FadeInView style={styles.errorWrap}>
-          <GlassCard style={styles.errorCard}>
-            <View style={styles.errorRow}>
-              <Ionicons name="warning-outline" size={17} color={colors.danger} />
-              <Text style={styles.errorText} numberOfLines={2}>
-                {error}
-              </Text>
-            </View>
-          </GlassCard>
-        </FadeInView>
-      ) : null}
+      {actions.sheets}
     </>
+  );
+}
+
+/** A failed load or write, in the list rather than floating over the add button. */
+function ErrorCard({ message }: { message: string }) {
+  const styles = useStyles();
+  const { colors } = useTheme();
+  return (
+    <GlassCard style={styles.errorCard}>
+      <View style={styles.errorRow} accessibilityRole="alert">
+        <Ionicons name="warning-outline" size={17} color={colors.danger} />
+        <Text style={styles.errorText} numberOfLines={3}>
+          {message}
+        </Text>
+      </View>
+    </GlassCard>
   );
 }
 
 const useStyles = makeStyles(({ colors, typography }) => ({
   header: {
-    paddingHorizontal: spacing.xl,
-    // Clears the transparent nav header, which the list used to do itself.
+    // Clears the transparent nav header.
     paddingTop: 96,
-    paddingBottom: spacing.md,
-    // NOT alignItems:'flex-start'. SegmentedControl's segments are flex:1, so
-    // the track has no intrinsic width - shrink-to-fit collapsed it to zero
-    // and the control rendered perfectly, invisibly.
+  },
+  headerButton: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: -12,
   },
   centered: {
     flex: 1,
@@ -240,24 +529,112 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   list: {
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.md,
-    paddingBottom: 110, // clears the FAB
+    // Clears the add button and the toast above it.
+    paddingBottom: layout.aboveFab + 72,
   },
   listEmpty: {
     flexGrow: 1,
     justifyContent: 'center',
   },
-  summary: {
-    ...typography.caption,
+  intro: {
     marginBottom: spacing.md,
   },
-  errorWrap: {
-    position: 'absolute',
-    left: spacing.xl,
-    right: spacing.xl,
-    bottom: spacing.xl,
+  introDate: {
+    ...typography.h2,
+  },
+  introCount: {
+    ...typography.caption,
+    ...typography.numeric,
+    marginTop: 2,
+  },
+  sectionHead: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  sectionTitle: {
+    ...typography.overline,
+    ...typography.numeric,
+    flex: 1,
+    color: colors.textSecondary,
+  },
+  overdueTitle: {
+    color: colors.danger,
+  },
+  sectionAction: {
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+    marginRight: -spacing.md,
+    justifyContent: 'center',
+  },
+  sectionActionText: {
+    ...typography.title,
+    fontSize: 14,
+    color: colors.primary,
+  },
+  sectionChevron: {
+    marginRight: 2,
+  },
+  calm: {
+    marginBottom: spacing.md,
+  },
+  calmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  calmTitle: {
+    ...typography.title,
+  },
+  calmAction: {
+    marginTop: spacing.lg,
+  },
+  nextRow: {
+    marginTop: spacing.lg,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.glassBorder,
+    minHeight: 48,
+  },
+  nextLabel: {
+    ...typography.overline,
+  },
+  nextTitle: {
+    ...typography.title,
+    fontSize: 15,
+    marginTop: 2,
+  },
+  nextDate: {
+    ...typography.caption,
+  },
+  pageHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  summary: {
+    ...typography.caption,
+    ...typography.numeric,
+    flex: 1,
+  },
+  statusToggle: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    marginRight: -spacing.md,
+  },
+  statusToggleText: {
+    ...typography.title,
+    fontSize: 13.5,
+    color: colors.primary,
   },
   errorCard: {
     borderColor: colors.danger,
+    marginBottom: spacing.md,
   },
   errorRow: {
     flexDirection: 'row',
@@ -272,11 +649,10 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   fabWrap: {
     position: 'absolute',
     right: spacing.xl,
-    bottom: spacing.xxl,
   },
   fab: {
-    width: 56,
-    height: 56,
+    width: layout.fabSize,
+    height: layout.fabSize,
     borderRadius: radius.pill,
     backgroundColor: colors.primary,
     alignItems: 'center',

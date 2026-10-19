@@ -31,7 +31,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/core/auth';
 import { ToastProvider } from './src/core/components';
-import { runResync } from './src/core/notifications';
+import { listenForResponses, runResync } from './src/core/notifications';
 import { ThemeProvider, useTheme } from './src/core/ThemeContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 
@@ -100,6 +100,12 @@ function Root({ ready }: { ready: boolean }) {
   useEffect(() => {
     if (userId) void runResync();
   }, [userId]);
+
+  // Deliver notification button presses and taps (a task's Done, a digest
+  // opening Today) to the module that scheduled them, for as long as someone
+  // is signed in: the handlers read and write as that person. Also handles
+  // the tap that launched the app. Does nothing in Expo Go.
+  useEffect(() => (userId ? listenForResponses() : undefined), [userId]);
 
   const onLayoutRootView = useCallback(() => {
     if (ready) {

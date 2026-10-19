@@ -28,7 +28,16 @@ import { getOwnerId } from '../../core/session';
 import { todayISO } from '../../core/date';
 import { registerResync } from '../../core/notifications';
 import { normalizeInput, resetChecklist } from './input';
-import { cancelReminders, rebuildAll, refreshDigestsSoon, syncReminders } from './notifications';
+import {
+  cancelDigests,
+  cancelReminders,
+  rebuildAll,
+  refreshDigestsSoon,
+  saveDigestSettings,
+  scheduleDigests,
+  syncReminders,
+  type DigestSettings,
+} from './notifications';
 import { localDayStartISO } from './today';
 import {
   nextDueDate,
@@ -515,6 +524,20 @@ export async function completeById(id: string): Promise<void> {
   const todo = await getTodo(id);
   if (todo.is_done) return;
   await completeTask(todo, 'done');
+}
+
+/**
+ * Save the digest settings and act on them now: schedule the coming week's
+ * digests from what is open, or cancel them. Settings live on the device
+ * (notifications do); only the counts come from the database.
+ */
+export async function applyDigestSettings(settings: DigestSettings): Promise<void> {
+  await saveDigestSettings(settings);
+  if (!settings.enabled) {
+    await cancelDigests();
+    return;
+  }
+  await scheduleDigests(await listOpenTodos(), settings, todayISO());
 }
 
 export async function deleteTodo(id: string): Promise<void> {

@@ -40,6 +40,7 @@ import { SubscriptionsListScreen } from '../modules/subscriptions/screens/Subscr
 import { TodoEditScreen } from '../modules/todo/screens/TodoEditScreen';
 import { TodoListScreen } from '../modules/todo/screens/TodoListScreen';
 import type { RootStackParamList } from './types';
+import { flushPendingNavigation, navigationRef } from './navigationRef';
 import { makeStyles, useTheme } from '../core/ThemeContext';
 
 // Passing the param list here is what makes navigate() calls type-safe.
@@ -82,7 +83,13 @@ export function RootNavigator() {
 
   return (
     // NavigationContainer owns the navigation state. Exactly one, at the root.
-    <NavigationContainer theme={makeNavigationTheme(colors, isDark)}>
+    // The ref lets a notification tap navigate; onReady runs one that arrived
+    // before the container was mounted (see navigationRef).
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={flushPendingNavigation}
+      theme={makeNavigationTheme(colors, isDark)}
+    >
       <Stack.Navigator
         // screenOptions applies to EVERY screen - set header styling once here
         // rather than repeating it per screen.
