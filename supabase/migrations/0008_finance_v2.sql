@@ -59,11 +59,33 @@ alter table public.transactions
 alter table public.transactions
   add column if not exists transfer_group_id uuid;
 
+-- Which half of the pair a row is. Added before this migration was first run
+-- (Finance v3), because without it the two halves are indistinguishable: both
+-- are kind 'transfer' and amount_minor must be positive, so nothing said which
+-- account the money left and which it reached, and no account balance could be
+-- computed. Null on every row that is not a transfer.
+alter table public.transactions
+  add column if not exists transfer_direction text
+    check (transfer_direction is null or transfer_direction in ('out','in'));
+
 -- `kind` gains 'transfer'. Dropping and recreating the constraint is the only
 -- way to widen a CHECK.
 alter table public.transactions drop constraint if exists transactions_kind_check;
 alter table public.transactions
   add constraint transactions_kind_check check (kind in ('expense','income','transfer'));
+
+-- A transfer row always carries its pair and its direction, and nothing else
+-- carries a direction. Without it a half-written transfer (a direction
+-- missing, say) would count as neither money in nor out and quietly vanish
+-- from every balance. A non-transfer row MAY carry a group id, so a future fee
+-- row can sit with its transfer without this changing. Every existing row is
+-- an expense or income with no direction, so all of them pass.
+alter table public.transactions drop constraint if exists transactions_transfer_shape_check;
+alter table public.transactions
+  add constraint transactions_transfer_shape_check check (
+    (kind = 'transfer' and transfer_group_id is not null and transfer_direction is not null)
+    or (kind <> 'transfer' and transfer_direction is null)
+  );
 
 create index if not exists transactions_account_idx
   on public.transactions (user_id, account_id, date desc);
