@@ -10,12 +10,17 @@
  * them until something reschedules each one.
  */
 import { fromISODate } from '../../core/date';
-import { cancel, schedule, type Channel } from '../../core/notifications';
+import { cancel, cancelPrefix, schedule, type Channel } from '../../core/notifications';
 
 export { ensurePermission, type PermissionState } from '../../core/notifications';
 
-/** Days before the due date that the reminder fires. Fixed for v2. */
-export const REMINDER_LEAD_DAYS = 3;
+/**
+ * Days before the due date that reminders fire. Several, not one: v2 had a
+ * single three-day reminder and dropped it whenever that moment had passed,
+ * so a subscription added or edited two days before it renewed - the one
+ * closest to being forgotten - got no reminder at all. 0 is the morning of.
+ */
+export const REMINDER_OFFSETS = [3, 1, 0] as const;
 
 /** The hour it fires. Morning, so it lands before the day gets away from you. */
 const REMINDER_HOUR = 9;
@@ -37,6 +42,11 @@ export function reminderId(subscriptionId: string): string {
   return `subscription-renewal-${subscriptionId}`;
 }
 
+/** One id per offset, under the subscription's own id so one prefix cancels all. */
+export function offsetReminderId(subscriptionId: string, offset: number): string {
+  return `${reminderId(subscriptionId)}-d${offset}`;
+}
+
 /**
  * When the reminder for a due date should fire, or null if that moment has
  * already passed.
@@ -53,7 +63,7 @@ export function reminderId(subscriptionId: string): string {
 export function reminderDateFor(
   nextDueDate: string,
   now: Date = new Date(),
-  leadDays: number = REMINDER_LEAD_DAYS,
+  leadDays: number = REMINDER_OFFSETS[0],
 ): Date | null {
   // fromISODate builds a LOCAL date, so the reminder lands on the intended day
   // rather than shifting across midnight by timezone.
@@ -73,7 +83,9 @@ export function reminderDateFor(
  * cancel-then-schedule without first checking whether a reminder exists.
  */
 export async function cancelReminder(subscriptionId: string): Promise<void> {
+  // The bare id is v2's single reminder, still on phones that scheduled one.
   await cancel(reminderId(subscriptionId));
+  await cancelPrefix(`${reminderId(subscriptionId)}-`);
 }
 
 /**
@@ -98,17 +110,24 @@ export async function scheduleReminder(subscription: {
 
   if (!subscription.is_active) return false;
 
-  const fireAt = reminderDateFor(subscription.next_due_date);
-  if (!fireAt) return false;
-
-  return schedule({
-    id: reminderId(subscription.id),
-    date: fireAt,
-    title: `${subscription.name} renews soon`,
-    body: `Due in ${REMINDER_LEAD_DAYS} days.`,
-    // Lets a future tap open straight to the subscription rather than the
-    // home screen. Nothing reads it yet; it costs nothing to record now.
-    data: { subscriptionId: subscription.id },
-    channel: RENEWALS,
-  });
+  // Every offset whose moment is still ahead. Skipping the passed ones, not
+  // the whole subscription, is the fix: due in two days still gets the
+  // day-before and the morning-of.
+  let scheduled = false;
+  for (const offset of REMINDER_OFFSETS) {
+    const fireAt = reminderDateFor(subscription.next_due_date, new Date(), offset);
+    if (!fireAt) continue;
+    const ok = await schedule({
+      id: offsetReminderId(subscription.id, offset),
+      date: fireAt,
+      title: `${subscription.name} renews ${offset === 0 ? 'today' : offset === 1 ? 'tomorrow' : `in ${offset} days`}`,
+      body: 'Tap to see it.',
+      // Lets a future tap open straight to the subscription rather than the
+      // home screen.
+      data: { subscriptionId: subscription.id },
+      channel: RENEWALS,
+    });
+    scheduled = scheduled || ok;
+  }
+  return scheduled;
 }

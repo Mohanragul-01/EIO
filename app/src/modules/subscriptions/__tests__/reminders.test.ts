@@ -16,7 +16,7 @@
  */
 // Default: NOT Expo Go, so the loader takes the real path. Individual tests
 // override this to exercise the bail-out.
-import { REMINDER_LEAD_DAYS, reminderDateFor, reminderId } from '../notifications';
+import { REMINDER_OFFSETS, reminderDateFor, reminderId } from '../notifications';
 
 jest.mock('expo', () => ({ isRunningInExpoGo: () => false }));
 
@@ -90,7 +90,63 @@ describe('reminderDateFor', () => {
   it('uses the configured lead time', () => {
     const now = new Date(2026, 7, 1);
     expect(reminderDateFor('2026-08-20', now, 10)?.getDate()).toBe(10);
-    expect(REMINDER_LEAD_DAYS).toBe(3);
+    expect(REMINDER_OFFSETS).toEqual([3, 1, 0]);
+  });
+});
+
+describe('a renewal close to its due date (the confirmed bug)', () => {
+  /**
+   * v2 had one reminder, three days ahead, and dropped it whenever that moment
+   * had passed - so a subscription due in two days, the one closest to being
+   * forgotten, got no reminder at all.
+   */
+  function loadWithScheduler() {
+    jest.resetModules();
+    jest.doMock('expo', () => ({ isRunningInExpoGo: () => false }));
+    const native = {
+      setNotificationHandler: jest.fn(),
+      setNotificationChannelAsync: jest.fn(() => Promise.resolve()),
+      scheduleNotificationAsync: jest.fn((_request: { trigger: { date: Date } }) =>
+        Promise.resolve('id'),
+      ),
+      cancelScheduledNotificationAsync: jest.fn(() => Promise.resolve()),
+      getAllScheduledNotificationsAsync: jest.fn(() => Promise.resolve([])),
+      getPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true, canAskAgain: true })),
+      requestPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true })),
+      AndroidImportance: { DEFAULT: 3 },
+      SchedulableTriggerInputTypes: { DATE: 'date' },
+    };
+    jest.doMock('expo-notifications', () => native);
+    return { native, notifications: require('../notifications') };
+  }
+
+  /** 'YYYY-MM-DD' for today plus `days`, built from the local calendar. */
+  function inDays(days: number): string {
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  it('still reminds the day before and on the day', async () => {
+    const { native, notifications } = loadWithScheduler();
+    const due = inDays(2);
+
+    await expect(
+      notifications.scheduleReminder({
+        id: 'abc',
+        name: 'Netflix',
+        next_due_date: due,
+        is_active: true,
+        amount_minor: 64900,
+      }),
+    ).resolves.toBe(true);
+
+    const fireDays = native.scheduleNotificationAsync.mock.calls.map(
+      ([request]) => request.trigger.date.getDate(),
+    );
+    const [y, m, d] = due.split('-').map(Number);
+    const dayBefore = new Date(y, m - 1, d - 1).getDate();
+    expect(fireDays).toEqual(expect.arrayContaining([dayBefore, d]));
   });
 });
 
