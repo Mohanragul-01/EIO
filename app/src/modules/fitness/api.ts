@@ -1433,7 +1433,7 @@ export async function deleteMeasurement(id: string): Promise<void> {
 
 // YEAR OF SETS (website heatmap) -------------------------------------------------
 
-/** PostgREST returns at most this many rows per request (Supabase's default cap). */
+/** Rows asked for per request: Supabase's default cap, so one page is one round trip. */
 const PAGE = 1000;
 
 /**
@@ -1442,7 +1442,9 @@ const PAGE = 1000;
  *
  * Paged, because a year of training is several thousand sets and the server
  * silently stops at its row cap: an unpaged read would draw the heatmap from
- * whichever thousand rows came back first and look entirely plausible.
+ * whichever thousand rows came back first and look entirely plausible. Each
+ * page starts after the rows actually returned and the read ends only on an
+ * empty page, so a server capped below PAGE still gets read to the end.
  */
 export async function listSetDaysBetween(
   start: string,
@@ -1458,7 +1460,7 @@ export async function listSetDaysBetween(
   };
 
   const out: { session_id: string; date: string; set_type: SetType | null }[] = [];
-  for (let from = 0; ; from += PAGE) {
+  for (let from = 0; ; ) {
     const { data, error } = await supabase
       .from('session_sets')
       .select('id, session_id, set_type, workout_sessions!inner(date)')
@@ -1470,6 +1472,7 @@ export async function listSetDaysBetween(
       .range(from, from + PAGE - 1);
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as unknown as Row[];
+    if (rows.length === 0) return out;
     for (const row of rows) {
       const session = Array.isArray(row.workout_sessions)
         ? row.workout_sessions[0]
@@ -1478,6 +1481,6 @@ export async function listSetDaysBetween(
         out.push({ session_id: row.session_id, date: session.date, set_type: row.set_type });
       }
     }
-    if (rows.length < PAGE) return out;
+    from += rows.length;
   }
 }
