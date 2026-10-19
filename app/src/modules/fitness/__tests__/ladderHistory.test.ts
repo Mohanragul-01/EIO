@@ -113,11 +113,7 @@ describe('bestAttempt', () => {
   const rung = step('a', 0, { goal_sets: 3, goal_reps: 8 });
 
   it('lists the top sets of the session that came closest to the goal', () => {
-    const weaker = [
-      set('ex-a', { reps: 5 }),
-      set('ex-a', { reps: 5 }),
-      set('ex-a', { reps: 4 }),
-    ];
+    const weaker = [set('ex-a', { reps: 5 }), set('ex-a', { reps: 5 }), set('ex-a', { reps: 4 })];
     const stronger = [
       set('ex-a', { reps: 6 }),
       set('ex-a', { reps: 8 }),
@@ -220,9 +216,7 @@ describe('moveTimeline', () => {
   });
 
   it('names a removed rung as null rather than guessing', () => {
-    const removed = [
-      { ...ladders[0], moves: [move('up', 'gone', 'b', '2026-09-01')] },
-    ];
+    const removed = [{ ...ladders[0], moves: [move('up', 'gone', 'b', '2026-09-01')] }];
     expect(moveTimeline(removed)[0]).toMatchObject({ fromExerciseId: null, toExerciseId: 'ex-b' });
   });
 });

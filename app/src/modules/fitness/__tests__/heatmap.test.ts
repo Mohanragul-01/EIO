@@ -14,7 +14,8 @@ function nextDay(iso: string): string {
 /** The grid read week by week, Monday to Sunday: every day in order. */
 function columnMajor(grid: string[][]): string[] {
   const out: string[] = [];
-  for (let c = 0; c < grid[0].length; c++) for (let r = 0; r < grid.length; r++) out.push(grid[r][c]);
+  for (let c = 0; c < grid[0].length; c++)
+    for (let r = 0; r < grid.length; r++) out.push(grid[r][c]);
   return out;
 }
 
