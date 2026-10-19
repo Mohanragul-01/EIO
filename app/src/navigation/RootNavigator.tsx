@@ -223,7 +223,16 @@ export function RootNavigator() {
           options={{ title: 'Search' }}
         />
         <Stack.Screen name="FinanceCategory" component={CategoryDetailScreen} />
-        <Stack.Screen name="FinanceCapture" component={TransactionEditScreen} />
+        <Stack.Screen
+          name="FinanceCapture"
+          component={TransactionEditScreen}
+          // One payment often fires two automations (the UPI app's alert and
+          // the bank's SMS). Without an id, the second link would land on the
+          // form already open and replace its params under it, silently losing
+          // one. Keyed by its params, a different link opens its own form on
+          // top, and an identical one lands on the form already showing it.
+          getId={({ params }) => JSON.stringify(params ?? {})}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
