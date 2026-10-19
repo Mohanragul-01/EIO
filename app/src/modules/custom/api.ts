@@ -5,6 +5,7 @@
  * (modules, their fields, their records) rather than one. Same conventions
  * throughout: check `error`, throw on failure, stamp the owner id here.
  */
+import { collectPages } from '../../core/paging';
 import { getOwnerId } from '../../core/session';
 import { supabase } from '../../core/supabase';
 import type { CustomField, CustomModule, CustomRecord, FieldDraft, ModuleInput } from './types';
@@ -223,15 +224,19 @@ export async function deleteModule(id: string): Promise<void> {
 export async function listRecords(moduleId: string): Promise<CustomRecord[]> {
   const ownerId = await getOwnerId();
 
-  const { data, error } = await supabase
-    .from(RECORDS)
-    .select('*')
-    .eq('user_id', ownerId)
-    .eq('module_id', moduleId)
-    .order('created_at', { ascending: false });
-
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  // Every entry, page by page: a single request stops at the server's row cap.
+  return collectPages<CustomRecord>(async (from, to) => {
+    const { data, error, count } = await supabase
+      .from(RECORDS)
+      .select('*', { count: 'exact' })
+      .eq('user_id', ownerId)
+      .eq('module_id', moduleId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (error) throw new Error(error.message);
+    return { rows: data ?? [], total: count };
+  });
 }
 
 export async function getRecord(id: string): Promise<CustomRecord> {
@@ -291,17 +296,21 @@ export async function deleteRecord(id: string): Promise<void> {
 export async function recordsByModule(): Promise<Record<string, CustomRecord[]>> {
   const ownerId = await getOwnerId();
 
-  const { data, error } = await supabase
-    .from(RECORDS)
-    .select('*')
-    .eq('user_id', ownerId)
-    // Newest first, which is what the 'latest' summary depends on.
-    .order('created_at', { ascending: false });
-
-  if (error) throw new Error(error.message);
+  const data = await collectPages<CustomRecord>(async (from, to) => {
+    const page = await supabase
+      .from(RECORDS)
+      .select('*', { count: 'exact' })
+      .eq('user_id', ownerId)
+      // Newest first, which is what the 'latest' summary depends on.
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (page.error) throw new Error(page.error.message);
+    return { rows: page.data ?? [], total: page.count };
+  });
 
   const grouped: Record<string, CustomRecord[]> = {};
-  (data ?? []).forEach((row: CustomRecord) => {
+  data.forEach((row: CustomRecord) => {
     (grouped[row.module_id] ??= []).push(row);
   });
   return grouped;

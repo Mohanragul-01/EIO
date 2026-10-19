@@ -18,7 +18,7 @@ import { supabase } from '../../core/supabase';
 import { getOwnerId } from '../../core/session';
 import { buildTransferRows, newUuid } from './accounts';
 import { financeOverview, type FinanceOverview } from './overview';
-import { collectPages } from './paging';
+import { collectPages } from '../../core/paging';
 import { normalizeStartDay, type DateRange } from './period';
 import {
   DEFAULT_SETTINGS,

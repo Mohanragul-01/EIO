@@ -5,6 +5,7 @@
  * conventions throughout: check `error`, throw on failure, stamp the owner id
  * here so no screen ever deals with identity.
  */
+import { collectPages } from '../../core/paging';
 import { getOwnerId } from '../../core/session';
 import { supabase } from '../../core/supabase';
 import { toSetFact, type SetFact } from './load';
@@ -415,17 +416,21 @@ export async function listExerciseHistory(
 > {
   const ownerId = await getOwnerId();
 
-  let query = supabase
-    .from('session_sets')
-    .select('exercise_id, reps, weight_kg, duration_seconds, session_id')
-    .eq('user_id', ownerId)
-    .eq('exercise_id', exerciseId);
+  // Every set, page by page: a single request stops at the server's row cap,
+  // and a record check against part of the history calls non-records records.
+  return collectPages(async (from, to) => {
+    let query = supabase
+      .from('session_sets')
+      .select('exercise_id, reps, weight_kg, duration_seconds, session_id', { count: 'exact' })
+      .eq('user_id', ownerId)
+      .eq('exercise_id', exerciseId);
 
-  if (excludeSessionId) query = query.neq('session_id', excludeSessionId);
+    if (excludeSessionId) query = query.neq('session_id', excludeSessionId);
 
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return data ?? [];
+    const { data, error, count } = await query.order('id', { ascending: true }).range(from, to);
+    if (error) throw new Error(error.message);
+    return { rows: data ?? [], total: count };
+  });
 }
 
 /**
@@ -441,14 +446,18 @@ export async function listExerciseProgress(
 ): Promise<{ date: string; weight_kg: number; reps: number }[]> {
   const ownerId = await getOwnerId();
 
-  const { data, error } = await supabase
-    .from('session_sets')
-    .select('weight_kg, reps, workout_sessions!inner(date)')
-    .eq('user_id', ownerId)
-    .eq('exercise_id', exerciseId)
-    .order('created_at', { ascending: true });
-
-  if (error) throw new Error(error.message);
+  const data = await collectPages(async (from, to) => {
+    const page = await supabase
+      .from('session_sets')
+      .select('weight_kg, reps, workout_sessions!inner(date)', { count: 'exact' })
+      .eq('user_id', ownerId)
+      .eq('exercise_id', exerciseId)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (page.error) throw new Error(page.error.message);
+    return { rows: page.data ?? [], total: page.count };
+  });
 
   type Row = {
     weight_kg: number;
@@ -743,16 +752,23 @@ export async function listBaseline(
 ): Promise<Record<string, SetFact[]>> {
   if (exerciseIds.length === 0) return {};
   const ownerId = await getOwnerId();
-  const { data, error } = await supabase
-    .from('session_sets')
-    .select(FACT_COLUMNS)
-    .eq('user_id', ownerId)
-    .in('exercise_id', exerciseIds)
-    .neq('session_id', excludeSessionId);
-  if (error) throw new Error(error.message);
+  // Every set, page by page: a routine's exercises pass the server's row cap
+  // within months, and a baseline missing sets calls non-records records.
+  const data = await collectPages(async (from, to) => {
+    const page = await supabase
+      .from('session_sets')
+      .select(FACT_COLUMNS, { count: 'exact' })
+      .eq('user_id', ownerId)
+      .in('exercise_id', exerciseIds)
+      .neq('session_id', excludeSessionId)
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (page.error) throw new Error(page.error.message);
+    return { rows: page.data ?? [], total: page.count };
+  });
 
   const out: Record<string, SetFact[]> = {};
-  for (const row of data ?? []) {
+  for (const row of data) {
     const fact = toSetFact(row as Parameters<typeof toSetFact>[0]);
     (out[fact.exercise_id] ??= []).push(fact);
   }
@@ -869,14 +885,19 @@ export async function deleteBand(id: string): Promise<void> {
 /** "Workout #N": this session's place among all of yours, oldest first. */
 export async function sessionOrdinal(sessionId: string): Promise<number | null> {
   const ownerId = await getOwnerId();
-  const { data, error } = await supabase
-    .from('workout_sessions')
-    .select('id, date, created_at')
-    .eq('user_id', ownerId)
-    .order('date', { ascending: true })
-    .order('created_at', { ascending: true });
-  if (error) throw new Error(error.message);
-  const index = (data ?? []).findIndex((row: { id: string }) => row.id === sessionId);
+  const data = await collectPages(async (from, to) => {
+    const page = await supabase
+      .from('workout_sessions')
+      .select('id, date, created_at', { count: 'exact' })
+      .eq('user_id', ownerId)
+      .order('date', { ascending: true })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (page.error) throw new Error(page.error.message);
+    return { rows: page.data ?? [], total: page.count };
+  });
+  const index = data.findIndex((row: { id: string }) => row.id === sessionId);
   return index < 0 ? null : index + 1;
 }
 
@@ -1253,13 +1274,20 @@ export async function listExerciseSets(exerciseId: string): Promise<
   })[]
 > {
   const ownerId = await getOwnerId();
-  const { data, error } = await supabase
-    .from('session_sets')
-    .select(FACT_COLUMNS + ', band_id, side, rpe, workout_sessions!inner(date, bodyweight_kg)')
-    .eq('user_id', ownerId)
-    .eq('exercise_id', exerciseId)
-    .order('created_at', { ascending: true });
-  if (error) throw new Error(error.message);
+  const data = await collectPages(async (from, to) => {
+    const page = await supabase
+      .from('session_sets')
+      .select(FACT_COLUMNS + ', band_id, side, rpe, workout_sessions!inner(date, bodyweight_kg)', {
+        count: 'exact',
+      })
+      .eq('user_id', ownerId)
+      .eq('exercise_id', exerciseId)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (page.error) throw new Error(page.error.message);
+    return { rows: page.data ?? [], total: page.count };
+  });
 
   type SessionRef = { date: string; bodyweight_kg: number | string | null };
   type Row = Parameters<typeof toSetFact>[0] & {

@@ -3,6 +3,7 @@
  */
 import { todayISO } from '../../core/date';
 import { registerResync } from '../../core/notifications';
+import { collectPages } from '../../core/paging';
 import { getOwnerId } from '../../core/session';
 import { supabase } from '../../core/supabase';
 import { replaceReminders } from './notifications';
@@ -62,15 +63,20 @@ export async function listProducts(): Promise<Product[]> {
 export async function listAllUses(): Promise<ProductUse[]> {
   const ownerId = await getOwnerId();
 
-  const { data, error } = await supabase
-    .from(USES)
-    .select('*')
-    .eq('user_id', ownerId)
-    .order('used_on', { ascending: false })
-    .order('created_at', { ascending: false });
-
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  // Every use, page by page: a single request stops at the server's row cap,
+  // and a pace worked out from part of the history moves every reorder date.
+  return collectPages<ProductUse>(async (from, to) => {
+    const { data, error, count } = await supabase
+      .from(USES)
+      .select('*', { count: 'exact' })
+      .eq('user_id', ownerId)
+      .order('used_on', { ascending: false })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (error) throw new Error(error.message);
+    return { rows: data ?? [], total: count };
+  });
 }
 
 /**
@@ -85,15 +91,18 @@ export async function getProduct(id: string): Promise<Product | null> {
 }
 
 export async function listUses(productId: string): Promise<ProductUse[]> {
-  const { data, error } = await supabase
-    .from(USES)
-    .select('*')
-    .eq('product_id', productId)
-    .order('used_on', { ascending: false })
-    .order('created_at', { ascending: false });
-
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  return collectPages<ProductUse>(async (from, to) => {
+    const { data, error, count } = await supabase
+      .from(USES)
+      .select('*', { count: 'exact' })
+      .eq('product_id', productId)
+      .order('used_on', { ascending: false })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (error) throw new Error(error.message);
+    return { rows: data ?? [], total: count };
+  });
 }
 
 export async function createProduct(input: ProductInput): Promise<Product> {
@@ -289,17 +298,22 @@ export async function overview(): Promise<{ inUse: number; toReorder: number; ru
   const open = unfinished.filter((product) => product.opened_on);
   if (open.length === 0) return { inUse: 0, toReorder: 0, runningLow: 0 };
 
-  const { data: uses, error: usesError } = await supabase
-    .from(USES)
-    .select('*')
-    .eq('user_id', ownerId)
-    .in(
-      'product_id',
-      open.map((product) => product.id),
-    );
-  if (usesError) throw new Error(usesError.message);
+  const uses = await collectPages<ProductUse>(async (from, to) => {
+    const page = await supabase
+      .from(USES)
+      .select('*', { count: 'exact' })
+      .eq('user_id', ownerId)
+      .in(
+        'product_id',
+        open.map((product) => product.id),
+      )
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (page.error) throw new Error(page.error.message);
+    return { rows: page.data ?? [], total: page.count };
+  });
 
-  const summary = reorderSummary(buildOutlooks(unfinished, uses ?? [], todayISO()));
+  const summary = reorderSummary(buildOutlooks(unfinished, uses, todayISO()));
   return { inUse: summary.inUse, toReorder: summary.toReorder, runningLow: summary.runningLow };
 }
 
