@@ -236,6 +236,21 @@ describe('summaryTotals', () => {
     expect(totals.missingRate).toBe(1);
   });
 
+  it('adds nothing for a trial cancelled before it converted', () => {
+    // The 3-day reminder's "I cancelled": access runs to the trial's end.
+    const cancelled = sub({
+      status: 'cancelled',
+      trial_ends_on: '2026-10-25',
+      ends_on: '2026-10-25',
+      amount_minor: 64900,
+    });
+    expect(summaryTotals([cancelled], TODAY)).toMatchObject({
+      perMonthMinor: 0,
+      perYearMinor: 0,
+      count: 0,
+    });
+  });
+
   it('leaves one-time charges out of recurring cost', () => {
     expect(summaryTotals([sub({ cycle_unit: 'once' })], TODAY).perMonthMinor).toBe(0);
   });

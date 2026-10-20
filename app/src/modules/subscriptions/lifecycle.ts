@@ -67,10 +67,17 @@ export function effectiveState(sub: Lifecycle, today: string): EffectiveState {
  * Whether it is part of "what this costs me". Active, and a cancellation
  * still within its paid access (the spec: it drops from totals after). Never
  * a trial - it costs nothing until it converts - and never a pause.
+ *
+ * Nor a trial cancelled before it converted: "I cancelled" keeps access
+ * until the trial's end, but that access was free, so a cancellation ending
+ * on or before the trial's end date was never paid for.
  */
 export function countsInTotals(sub: Lifecycle, today: string): boolean {
   const state = effectiveState(sub, today);
-  return state === 'active' || state === 'ending';
+  if (state === 'ending') {
+    return !(sub.trial_ends_on && sub.ends_on && sub.ends_on <= sub.trial_ends_on);
+  }
+  return state === 'active';
 }
 
 /**

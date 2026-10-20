@@ -143,6 +143,15 @@ describe('perItemYearly', () => {
       ['Cheap', 12000],
     ]);
   });
+
+  it('leaves out a trial cancelled before it converted', () => {
+    const cancelled = sub({
+      status: 'cancelled',
+      trial_ends_on: '2026-10-25',
+      ends_on: '2026-10-25',
+    });
+    expect(perItemYearly([cancelled], TODAY)).toEqual([]);
+  });
 });
 
 describe('price history', () => {

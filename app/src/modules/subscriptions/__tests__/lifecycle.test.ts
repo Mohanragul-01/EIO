@@ -5,6 +5,7 @@
  * nothing runs in the background to flip "paused" to "active" on the resume
  * date. Every function takes `today`, so these tests need no clock.
  */
+import { endTrialPatch } from '../actions';
 import {
   bucketOf,
   countdown,
@@ -113,6 +114,20 @@ describe('totals and projections', () => {
     expect(countsInTotals(sub({ status: 'trial', trial_ends_on: '2026-10-30' }), TODAY)).toBe(false);
     expect(countsInTotals(sub({ status: 'paused' }), TODAY)).toBe(false);
     expect(countsInTotals(sub({ status: 'archived' }), TODAY)).toBe(false);
+  });
+
+  it('never counts a trial cancelled before it charged', () => {
+    // "I cancelled" keeps access until the trial ends, but nothing was paid
+    // for it: the spec keeps a trial out of totals until it converts.
+    const trial = sub({
+      status: 'trial',
+      trial_ends_on: '2026-10-25',
+      next_due_date: '2026-10-25',
+    });
+    expect(countsInTotals({ ...trial, ...endTrialPatch(trial) }, TODAY)).toBe(false);
+    // A trial kept, paid for, then cancelled counts until its access ends.
+    const paidUp = sub({ status: 'cancelled', trial_ends_on: '2026-09-25', ends_on: '2026-11-25' });
+    expect(countsInTotals(paidUp, TODAY)).toBe(true);
   });
 
   it('projects charges only for what will actually renew', () => {
