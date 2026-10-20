@@ -6,10 +6,11 @@
  * "this month" is depends on the month-start setting, which arrives with the
  * data: the offset means the same thing before and after it loads.
  *
- * Everything shown is derived here from five loads - the period's rows, every
- * row in six narrow columns (balances, trend, last month), accounts, budgets
- * and quick-adds - using the pure functions in summary.ts, budget.ts,
- * accounts.ts and period.ts. The screen renders what it is handed.
+ * Everything shown is derived here from six loads - the period's rows, every
+ * row in six narrow columns (balances, trend, last month), accounts, budgets,
+ * quick-adds and the newest entries (a quick-add's account) - using the pure
+ * functions in summary.ts, budget.ts, accounts.ts and period.ts. The screen
+ * renders what it is handed.
  */
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -18,12 +19,12 @@ import { categoryDef } from '../../core/categories';
 import { fromISODate, todayISO } from '../../core/date';
 import { useLatestRun } from '../../core/useLatestRun';
 import { useStableCallback } from '../../core/useStableCallback';
-import { activeAccounts, summarizeAccounts } from './accounts';
+import { summarizeAccounts } from './accounts';
 import { monthlyTotals } from './analytics';
 import * as api from './api';
 import { budgetStatus, type BudgetStatus } from './budget';
 import { ledgerChanged, onLedgerChange } from './changes';
-import { lastUsed } from './defaults';
+import { quickAddAccount } from './defaults';
 import {
   normalizeStartDay,
   periodBounds,
@@ -84,6 +85,9 @@ type PeriodRows = { range: DateRange; rows: Transaction[] };
 /** One empty list for every render with no rows to show, so memos hold. */
 const NO_ROWS: Transaction[] = [];
 
+/** Newest entries kept for a quick-add's "last-used account". */
+const RECENT_COUNT = 50;
+
 export function useFinance() {
   const [offset, setOffset] = useState(0);
   // What loads read: a step starts its load in the same handler that sets the
@@ -103,6 +107,7 @@ export function useFinance() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [quickAdds, setQuickAdds] = useState<QuickAdd[]>([]);
+  const [recent, setRecent] = useState<Transaction[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -157,6 +162,7 @@ export function useFinance() {
                 api.listAccounts(),
                 api.listBudgets(),
                 api.listQuickAdds(),
+                api.listRecent(RECENT_COUNT),
               ]),
         ]);
 
@@ -172,11 +178,12 @@ export function useFinance() {
         setStartDay(fresh);
         if (isCurrentRows()) setPeriodRows({ range, rows });
         if (rest) {
-          const [allPoints, accountRows, budgetRows, quickAddRows] = rest;
+          const [allPoints, accountRows, budgetRows, quickAddRows, recentRows] = rest;
           setPoints(allPoints);
           setAccounts(accountRows);
           setBudgets(budgetRows);
           setQuickAdds(quickAddRows);
+          setRecent(recentRows);
         }
       } catch (e) {
         if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
@@ -354,11 +361,7 @@ export function useFinance() {
       if (logging.current.has(quickAdd.id)) return null;
       logging.current.add(quickAdd.id);
 
-      const accountId =
-        quickAdd.account_id ??
-        lastUsed(rows, quickAdd.kind).accountId ??
-        activeAccounts(accounts)[0]?.id ??
-        null;
+      const accountId = quickAdd.account_id ?? quickAddAccount(quickAdd.kind, recent, accounts);
       try {
         const created = await api.createTransaction({
           amount_minor: quickAdd.amount_minor,
@@ -380,7 +383,7 @@ export function useFinance() {
         logging.current.delete(quickAdd.id);
       }
     },
-    [rows, accounts, isMounted, putRowsBack],
+    [recent, accounts, isMounted, putRowsBack],
   );
 
   /** Copy an entry to today ("Log again today"). */

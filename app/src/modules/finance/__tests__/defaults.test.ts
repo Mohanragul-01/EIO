@@ -12,8 +12,9 @@ import {
   normalizeNote,
   noteSuggestions,
   orderByUse,
+  quickAddAccount,
 } from '../defaults';
-import type { Transaction } from '../types';
+import type { Account, Transaction } from '../types';
 
 let seq = 0;
 function row(over: Partial<Transaction>): Transaction {
@@ -54,6 +55,31 @@ describe('lastUsed', () => {
 
   it('has no answer with no history', () => {
     expect(lastUsed([], 'expense')).toEqual({ category: null, accountId: null });
+  });
+});
+
+describe('quickAddAccount', () => {
+  const accounts = [
+    { id: 'cash', name: 'Cash', is_active: true, position: 0 },
+    { id: 'hdfc', name: 'HDFC', is_active: true, position: 1 },
+    { id: 'upi', name: 'UPI', is_active: false, position: 2 },
+  ] as Account[];
+
+  it("takes the newest entry of the pin's kind whose account is still in use", () => {
+    // Newest expense has no account, the one after it is Cash.
+    expect(quickAddAccount('expense', recent, accounts)).toBe('cash');
+    expect(quickAddAccount('income', recent, accounts)).toBe('hdfc');
+  });
+
+  it('passes over an archived account to the one before it', () => {
+    const archivedFirst = [row({ account_id: 'upi' }), row({ account_id: 'hdfc' })];
+    expect(quickAddAccount('expense', archivedFirst, accounts)).toBe('hdfc');
+  });
+
+  it('falls back to the first account in picker order, then to none', () => {
+    expect(quickAddAccount('expense', [], accounts)).toBe('cash');
+    expect(quickAddAccount('expense', [row({ account_id: 'upi' })], accounts)).toBe('cash');
+    expect(quickAddAccount('expense', recent, [])).toBeNull();
   });
 });
 

@@ -72,6 +72,23 @@ function budget(category: string, amountMinor: number): Budget {
   };
 }
 
+function account(id: string, overrides: Partial<Account> = {}): Account {
+  return {
+    id,
+    user_id: 'u',
+    name: id.toUpperCase(),
+    type: 'bank',
+    opening_balance_minor: 0,
+    is_liability: false,
+    is_active: true,
+    note: '',
+    position: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
 function quickAdd(id: string, overrides: Partial<QuickAdd> = {}): QuickAdd {
   return {
     id,
@@ -326,6 +343,51 @@ describe('a quick-add pill', () => {
       await result.current.logQuickAdd(chai);
     });
     expect(api.createTransaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('with no account of its own, logs to the account you last entered, if it is still in use', async () => {
+    accounts = [
+      account('cash', { position: 0 }),
+      account('hdfc', { position: 1 }),
+      account('old', { position: 2, is_active: false }),
+    ];
+    // The month on screen is ordered by date; what you last ENTERED is not
+    // in it. Entered most recently: one on an archived account, and before
+    // that one from HDFC, dated last month.
+    ledger = [
+      tx('oct', '2026-10-02', 5000, {
+        account_id: 'cash',
+        created_at: '2026-10-02T09:00:00.000000+00:00',
+      }),
+      tx('late', '2026-09-28', 5000, {
+        account_id: 'hdfc',
+        created_at: '2026-10-19T09:00:00.000000+00:00',
+      }),
+      tx('closed', '2026-09-27', 5000, {
+        account_id: 'old',
+        created_at: '2026-10-20T05:00:00.000000+00:00',
+      }),
+    ];
+    const { result } = await loaded();
+
+    await act(async () => {
+      await result.current.logQuickAdd(quickAdd('q-chai'));
+    });
+    expect(api.createTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ account_id: 'hdfc', date: '2026-10-20' }),
+    );
+  });
+
+  it('with no account and no history, logs to your first account', async () => {
+    accounts = [account('hdfc', { position: 1 }), account('cash', { position: 0 })];
+    const { result } = await loaded();
+
+    await act(async () => {
+      await result.current.logQuickAdd(quickAdd('q-chai'));
+    });
+    expect(api.createTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ account_id: 'cash' }),
+    );
   });
 
   it('logs two different pills tapped together', async () => {

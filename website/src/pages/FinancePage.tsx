@@ -33,7 +33,6 @@ import { categoryDef } from '@app/core/categories';
 import { formatEventDate, fromISODate, todayISO } from '@app/core/date';
 import { formatMoney } from '@app/core/money';
 import {
-  activeAccounts,
   describeTransfer,
   summarizeAccounts,
   type AccountBalance,
@@ -41,7 +40,7 @@ import {
 import { exportFilename, formatBalance, monthlyTotals, toCsv } from '@app/modules/finance/analytics';
 import * as api from '@app/modules/finance/api';
 import { budgetHistory, budgetStatus } from '@app/modules/finance/budget';
-import { lastUsed } from '@app/modules/finance/defaults';
+import { quickAddAccount } from '@app/modules/finance/defaults';
 import {
   longMonth,
   normalizeStartDay,
@@ -284,8 +283,8 @@ export function FinancePage() {
 
   const logQuickAdd = (quickAdd: QuickAdd) =>
     attempt(async () => {
-      const accountId =
-        quickAdd.account_id ?? lastUsed(recent, quickAdd.kind).accountId ?? activeAccounts(accounts)[0]?.id ?? null;
+      // The same rule as the phone's: the last-used account still in use.
+      const accountId = quickAdd.account_id ?? quickAddAccount(quickAdd.kind, recent, accounts);
       const created = await api.createTransaction({
         amount_minor: quickAdd.amount_minor,
         kind: quickAdd.kind,
