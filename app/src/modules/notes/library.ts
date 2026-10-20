@@ -6,7 +6,8 @@
  * hide a note, and the rule that matters is that a trashed note is hidden from
  * EVERY read - each tab, the tag chips, search, the home tile. Before v3 a
  * delete was a hard delete, so nothing had to filter; now every list goes
- * through these functions rather than each screen remembering to.
+ * through these functions rather than each screen remembering to. (The home
+ * tile's numbers are counted by Postgres, so its filter lives in that query.)
  *
  * The queries in api.ts exclude the Trash and the Archive too. These checks
  * repeat that on purpose: a row that slipped through (an optimistic update, a
@@ -157,14 +158,6 @@ export function tagCounts(notes: readonly Note[]): { tag: string; count: number 
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([tag, count]) => ({ tag, count }));
-}
-
-/** The home tile's two numbers: live notes of every kind, and how many wait to be filed. */
-export function overviewCounts(
-  rows: readonly (Lifecycle & Pick<Note, 'is_inbox'>)[],
-): { total: number; inbox: number } {
-  const live = rows.filter(isLive);
-  return { total: live.length, inbox: live.filter((row) => row.is_inbox).length };
 }
 
 /**

@@ -22,6 +22,7 @@
  * One block per source line, each remembering its line number, which is what
  * lets a tick in read mode find its way back to the text.
  */
+import type { Change } from './types';
 
 export type Span = {
   text: string;
@@ -353,6 +354,27 @@ export function toggleTask(body: string, line: number): string {
   const checked = match[2] === 'x' || match[2] === 'X';
   lines[line] = `${match[1]}${checked ? ' ' : 'x'}${match[3]}${cr}`;
   return lines.join('\n');
+}
+
+/**
+ * A tick on one line as a change that can be taken back on its own (see
+ * Change in types.ts). Each way it swaps that one line, and only while the
+ * line still reads exactly as the other way left it: text typed on other lines
+ * since is kept, and a line edited since is left as it now is. Null when the
+ * line is not a box.
+ */
+export function taskChange(body: string, line: number): Change<string> | null {
+  const next = toggleTask(body, line);
+  if (next === body) return null;
+  const before = body.split('\n')[line];
+  const after = next.split('\n')[line];
+  const swap = (from: string, to: string) => (text: string) => {
+    const lines = text.split('\n');
+    if (lines[line] !== from) return text;
+    lines[line] = to;
+    return lines.join('\n');
+  };
+  return { apply: swap(before, after), revert: swap(after, before) };
 }
 
 /** Ticked and total boxes in a body - the "2 of 5" a card shows for a note with tasks. */

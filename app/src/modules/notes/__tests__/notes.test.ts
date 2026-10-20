@@ -11,10 +11,15 @@ import {
   belongsInInbox,
   checklistProgress,
   deleteTicked,
+  deleteTickedChange,
+  inverse,
   partitionChecklist,
   readChecklistItems,
+  tickChange,
   toggleItem,
   uncheckAll,
+  uncheckAllChange,
+  withDraftItem,
   type ChecklistItem,
 } from '../types';
 
@@ -147,6 +152,62 @@ describe('checklist upgrades', () => {
     uncheckAll(items);
     deleteTicked(items);
     toggleItem(items, 0);
+    withDraftItem(items, 'Tea');
     expect(JSON.stringify(items)).toBe(before);
+  });
+
+  it('adds a typed line to the end, trimmed, and nothing for a blank one', () => {
+    expect(withDraftItem(items, '  Tea ').slice(-2)).toEqual([
+      { text: 'Rice', done: false },
+      { text: 'Tea', done: false },
+    ]);
+    expect(withDraftItem(items, '   ')).toBe(items);
+  });
+});
+
+describe('checklist changes that can be taken back on their own', () => {
+  const milk = { text: 'Milk', done: false };
+  const bread = { text: 'Bread', done: true };
+
+  it('a tick reverts only itself, after another tick has landed on top', () => {
+    const tick = tickChange([milk, bread], 0)!;
+    const ticked = tick.apply([milk, bread]);
+    expect(ticked).toEqual([{ text: 'Milk', done: true }, bread]);
+    // Bread unticked since: taking back the milk tick leaves that alone.
+    const later = [ticked[0], { text: 'Bread', done: false }];
+    expect(tick.revert(later)).toEqual([milk, { text: 'Bread', done: false }]);
+  });
+
+  it('a tick reverts nothing where the item has changed since', () => {
+    const tick = tickChange([milk], 0)!;
+    // Unticked again already: nothing of this tick is left to take back.
+    expect(tick.revert([milk])).toEqual([milk]);
+    // Renamed in edit mode: a different item now, so it is left alone.
+    expect(tick.revert([{ text: 'Oat milk', done: true }])).toEqual([
+      { text: 'Oat milk', done: true },
+    ]);
+    expect(tickChange([milk], 5)).toBeNull();
+  });
+
+  it('Uncheck all reverts by re-ticking what it unticked, keeping items added since', () => {
+    const change = uncheckAllChange([bread, { text: 'Eggs', done: true }, milk]);
+    const unticked = change.apply([bread, { text: 'Eggs', done: true }, milk]);
+    expect(unticked.every((i) => !i.done)).toBe(true);
+    expect(change.revert([...unticked, { text: 'Tea', done: false }])).toEqual([
+      bread,
+      { text: 'Eggs', done: true },
+      milk,
+      { text: 'Tea', done: false },
+    ]);
+  });
+
+  it('Delete ticked reverts by putting each item back in its place', () => {
+    const list = [milk, bread, { text: 'Rice', done: false }, { text: 'Eggs', done: true }];
+    const change = deleteTickedChange(list);
+    const left = change.apply(list);
+    expect(left).toEqual([milk, { text: 'Rice', done: false }]);
+    expect(change.revert(left)).toEqual(list);
+    // Its Undo, failing, takes them out again.
+    expect(inverse(change).revert(list)).toEqual(left);
   });
 });

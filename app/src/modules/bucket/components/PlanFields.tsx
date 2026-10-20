@@ -9,7 +9,9 @@
  * STEPS SAVE AS YOU GO, unlike everything else in the item sheet, which waits
  * for Save. A checklist is edited a row at a time, and making it wait would
  * mean diffing a list on save. Removing one offers Undo right here, because a
- * toast would be drawn underneath this sheet where nobody can reach it.
+ * toast would be drawn underneath this sheet where nobody can reach it. A step
+ * typed but not added when the sheet's Save is pressed is added by that Save,
+ * rather than silently dropped.
  *
  * MONEY does its own arithmetic: "₹38,000 to go · ₹3,200 a month reaches it
  * by Oct 2027". With no target month to work towards, a what-if amount gives
@@ -57,6 +59,12 @@ type PlanFieldsProps = {
   onRemoveStep: (step: BucketStep) => void;
   onRestoreStep: (step: BucketStep) => void;
   onMoveStep: (step: BucketStep, direction: -1 | 1) => void;
+  /**
+   * What is typed in "Add a step", held by the sheet so that its Save can add
+   * a step that was typed but not added yet.
+   */
+  newStep: string;
+  onNewStepChange: (text: string) => void;
   estError?: string | null;
   savedError?: string | null;
 };
@@ -81,6 +89,8 @@ export function PlanFields({
   onRemoveStep,
   onRestoreStep,
   onMoveStep,
+  newStep,
+  onNewStepChange,
   estError,
   savedError,
 }: PlanFieldsProps) {
@@ -88,7 +98,6 @@ export function PlanFields({
   const { colors } = useTheme();
   const now = partsOf(today);
 
-  const [newStep, setNewStep] = useState('');
   /** The step whose Move/Remove row is open, after a long press. */
   const [activeStep, setActiveStep] = useState<string | null>(null);
   /** The last step removed, for the inline Undo. */
@@ -153,7 +162,7 @@ export function PlanFields({
     const title = newStep.trim();
     if (!title) return;
     onAddStep(title);
-    setNewStep('');
+    onNewStepChange('');
     setRemoved(null);
   };
 
@@ -334,7 +343,7 @@ export function PlanFields({
       <View style={styles.addRow}>
         <TextInput
           value={newStep}
-          onChangeText={setNewStep}
+          onChangeText={onNewStepChange}
           placeholder="Add a step"
           placeholderTextColor={colors.textFaint}
           selectionColor={colors.primary}

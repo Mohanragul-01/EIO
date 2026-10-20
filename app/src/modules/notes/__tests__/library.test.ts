@@ -1,10 +1,10 @@
 /**
- * The library rules: what is live, which tab shows what, pins, search, tags,
- * the home tile's counts and the Trash's countdown.
+ * The library rules: what is live, which tab shows what, pins, search, tags
+ * and the Trash's countdown.
  *
  * The test that matters most is the first: a note in the Trash must vanish
- * from EVERY read - each tab, the tag chips, search and the home tile. Before
- * v3 a delete was a hard delete, so nothing had to filter; now every reader
+ * from EVERY read - each tab, the tag chips and search. (The home tile counts
+ * in its query; see paging.test.ts.) Before v3 a delete was a hard delete, so nothing had to filter; now every reader
  * goes through these functions, and one that forgot would show a deleted note
  * as if nothing had happened.
  */
@@ -15,7 +15,6 @@ import {
   isLive,
   isTrashed,
   matchesFilter,
-  overviewCounts,
   purgeCutoff,
   splitPinned,
   tagCounts,
@@ -88,10 +87,6 @@ describe('trashed and archived notes are hidden from every read', () => {
     expect(filterNotes(all, { query: 'gone' })).toEqual([]);
     expect(filterNotes(all, { query: 'old' })).toEqual([]);
     expect(filterNotes(all, { query: 'milk' }).map((n) => n.title)).toEqual(['Groceries']);
-  });
-
-  it('the home tile counts', () => {
-    expect(overviewCounts(all)).toEqual({ total: 4, inbox: 1 });
   });
 
   it('classifies each state once', () => {

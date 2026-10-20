@@ -322,10 +322,12 @@ export function BucketListScreen() {
     setMemoryFor(bar.itemId);
   };
 
-  const saveMemory = (item: BucketItem, draft: MemoryDraft) => {
-    // Closed first: nothing said after this would be visible under the sheet.
-    setMemoryFor(null);
-    void patch(item.id, {
+  /**
+   * Waits for the database, and the sheet closes itself once this resolves:
+   * a failure rejects, and the sheet says so with the memory still in it.
+   */
+  const saveMemory = (item: BucketItem, draft: MemoryDraft) =>
+    bucket.save(item.id, {
       // Saying when you did it says that you did it, whatever else happened
       // to the tick in the meantime.
       is_done: true,
@@ -334,7 +336,6 @@ export function BucketListScreen() {
       place: draft.place.trim(),
       again: draft.again,
     });
-  };
 
   const putOnNow = (item: BucketItem) => {
     if (item.focus === 'now') return;

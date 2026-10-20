@@ -46,6 +46,7 @@ alter table public.bucket_items
 create or replace function public.bucket_items_clear_done_precision()
 returns trigger
 language plpgsql
+set search_path = ''
 as $$
 begin
   if new.done_on is null then
