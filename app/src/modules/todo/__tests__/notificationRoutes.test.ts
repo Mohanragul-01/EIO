@@ -42,6 +42,7 @@ type Core = typeof import('../../../core/notifications');
 let core: Core;
 let api: { completeById: jest.Mock };
 let notifications: typeof import('../notifications');
+let changeSignal: typeof import('../changeSignal');
 
 beforeEach(() => {
   mockNative.listeners = [];
@@ -52,6 +53,7 @@ beforeEach(() => {
   core = require('../../../core/notifications');
   notifications = require('../notifications');
   api = require('../api');
+  changeSignal = require('../changeSignal');
   require('../notificationRoutes');
 });
 
@@ -111,4 +113,16 @@ it('Done on two reminders completes both', async () => {
   await flush();
 
   expect(api.completeById.mock.calls).toEqual([['t1'], ['t2']]);
+});
+
+it('says a task changed once a Done lands, so the page on show reloads', async () => {
+  const heard = jest.fn();
+  changeSignal.subscribeChanges(heard);
+
+  core.listenForResponses();
+  mockNative.listeners[0](press('done'));
+  await flush();
+
+  expect(heard).toHaveBeenCalledTimes(1);
+  expect(heard).toHaveBeenCalledWith(null);
 });
