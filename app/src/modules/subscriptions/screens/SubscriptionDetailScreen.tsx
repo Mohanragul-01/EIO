@@ -14,11 +14,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useCallback, useLayoutEffect, useState } from 'react';
+import React, { useCallback, useLayoutEffect } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { categoryDef } from '../../../core/categories';
-import { Button, FadeInView, GlassCard, Screen, useToast } from '../../../core/components';
+import { Button, FadeInView, GlassCard, Screen } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { formatEventDate, todayISO } from '../../../core/date';
 import { formatMoney } from '../../../core/money';
@@ -26,6 +26,7 @@ import { layout, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
 import { BrandTile } from '../components/BrandTile';
+import { useNotificationAction } from '../components/useNotificationAction';
 import { useSubscriptionActions } from '../components/useSubscriptionActions';
 import { cycleLabel, cycleOf, cycleSuffix, perYearMinor } from '../cycles';
 import { formatAmount, formatRate, inrOf } from '../currency';
@@ -34,7 +35,6 @@ import {
   countdown,
   effectiveState,
   needsTrialDecision,
-  notificationActionApplies,
   projectsCharges,
   trialEndsOn,
   type Tone,
@@ -56,7 +56,6 @@ export function SubscriptionDetailScreen() {
   const today = todayISO();
   const d = useSubscription(id);
   const sub = d.subscription;
-  const toast = useToast();
 
   const actions = useSubscriptionActions({
     today,
@@ -79,27 +78,13 @@ export function SubscriptionDetailScreen() {
     onDeleted: () => navigation.goBack(),
   });
 
-  /**
-   * An action from a notification, handled once per arrival. Done during
-   * render, React's pattern for adjusting state to new props, rather than in
-   * an effect: it only opens a sheet, which is this screen's own state.
-   */
-  // Only for the subscription the reminder was about, and only while its
-  // button still makes sense (see notificationActionApplies): an old reminder
-  // must not pay the next cycle or undo a decision already made.
-  const actionKey =
-    action && sub && sub.id === id ? `${sub.id}:${action}:${route.params.at ?? route.key}` : null;
-  const [handled, setHandled] = useState<string | null>(null);
-  if (actionKey && handled !== actionKey && sub) {
-    setHandled(actionKey);
-    if (notificationActionApplies(action!, sub, today)) {
-      actions.run(action === 'pay' ? 'pay' : 'keep', sub);
-    } else {
-      toast.show({
-        message: action === 'pay' ? 'Already paid for this cycle' : 'Already decided',
-      });
-    }
-  }
+  // A reminder's button: open its sheet once the subscription has loaded.
+  useNotificationAction(
+    { id, action, at: route.params.at, key: route.key },
+    sub,
+    today,
+    actions.run,
+  );
 
   // openMenu is a state setter, so this does not re-run on every render.
   const { openMenu } = actions;
