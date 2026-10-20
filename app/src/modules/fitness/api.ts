@@ -380,7 +380,7 @@ export async function createSession(input: {
 
 export async function updateSession(
   id: string,
-  input: Partial<{ date: string; notes: string }>,
+  input: Partial<{ date: string; notes: string; bodyweight_kg: number | null }>,
 ): Promise<void> {
   const { error } = await supabase.from('workout_sessions').update(input).eq('id', id);
   if (error) throw new Error(error.message);

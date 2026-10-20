@@ -202,3 +202,53 @@ describe('finishing', () => {
     expect(api.finishSession).toHaveBeenCalledWith('w1', undefined);
   });
 });
+
+describe('changing the date', () => {
+  const fact = (reps: number) => ({ ...set(`f${reps}`, { reps }), session_id: 'other' });
+  const tuesday = { date: '2026-10-13', sets: [fact(9)] };
+  const sunday = { date: '2026-10-11', sets: [fact(7)] };
+  const previousReps = (current: ReturnType<typeof useWorkoutSession>) =>
+    current.previousFor(current.blocks[0], 0)?.reps;
+
+  it("compares with the session before the new day, at that day's weigh-in", async () => {
+    api.listPreviousSets.mockImplementation((_ids: string[], _id: string, onOrBefore: string) =>
+      Promise.resolve({ pull: onOrBefore >= '2026-10-13' ? tuesday : sunday }),
+    );
+    api.bodyweightOn.mockImplementation((date: string) =>
+      Promise.resolve(date >= '2026-10-15' ? 80 : 78),
+    );
+    const { result } = await opened();
+    expect(previousReps(result.current)).toBe(9);
+
+    await act(async () => {
+      await result.current.setDate('2026-10-12');
+    });
+
+    expect(api.listPreviousSets).toHaveBeenLastCalledWith(['pull'], 'w1', '2026-10-12');
+    expect(previousReps(result.current)).toBe(7);
+    expect(api.updateSession).toHaveBeenCalledWith('w1', {
+      date: '2026-10-12',
+      bodyweight_kg: 78,
+    });
+    expect(result.current.session).toMatchObject({ date: '2026-10-12', bodyweight_kg: 78 });
+  });
+
+  it('refuses a day in the future', async () => {
+    const { result } = await opened();
+    await act(async () => {
+      await result.current.setDate('2026-10-20');
+    });
+    expect(api.updateSession).not.toHaveBeenCalled();
+    expect(result.current.session?.date).toBe('2026-10-19');
+  });
+
+  it('puts the old date back if the change cannot be saved', async () => {
+    api.updateSession.mockRejectedValueOnce(new Error('offline'));
+    const { result } = await opened();
+    await act(async () => {
+      await result.current.setDate('2026-10-12');
+    });
+    expect(result.current.session?.date).toBe('2026-10-19');
+    expect(result.current.error).toBe('offline');
+  });
+});

@@ -814,17 +814,45 @@ export function useWorkoutSession(sessionId: string) {
     }
   }, [sessionId, fail]);
 
-  /** Change the day a session belongs to - for logging a workout you forgot. */
+  /** The latest date change, so an older one landing late cannot win. */
+  const dateRun = useRef(0);
+
+  /**
+   * Change the day a session belongs to - for logging a workout you forgot.
+   * What the session is compared with moves with it: PREVIOUS and the ghosts
+   * come from the last session before the new day (not the one after it),
+   * and the bodyweight is that day's weigh-in. Never a day still to come.
+   */
   const setDate = useCallback(
     async (date: string) => {
+      const before = session?.date;
+      if (!before || date === before) return;
+      if (date > todayISO()) {
+        setError('A workout cannot be dated in the future');
+        return;
+      }
+      const run = ++dateRun.current;
       setSession((current) => (current ? { ...current, date } : current));
       try {
-        await api.updateSession(sessionId, { date });
+        const ids = stateRef.current.blocks.map((b) => b.exerciseId);
+        const [previousRows, bodyweight] = await Promise.all([
+          api.listPreviousSets(ids, sessionId, date),
+          api.bodyweightOn(date),
+        ]);
+        await api.updateSession(sessionId, { date, bodyweight_kg: bodyweight });
+        if (!isMounted() || run !== dateRun.current) return;
+        setPrevious(previousRows);
+        setSession((current) => (current ? { ...current, bodyweight_kg: bodyweight } : current));
       } catch (e) {
+        if (!isMounted() || run !== dateRun.current) return;
+        // Only the date this change wrote goes back.
+        setSession((current) =>
+          current && current.date === date ? { ...current, date: before } : current,
+        );
         fail(e, 'Could not change the date');
       }
     },
-    [sessionId, fail],
+    [session, sessionId, isMounted, fail],
   );
 
   const saveNotes = useCallback(
