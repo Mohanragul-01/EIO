@@ -24,6 +24,7 @@
  * (matched by name in the form) and date.
  */
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../../core/categories';
+import { timestampMs } from '../../core/date';
 import { formatMoney, parseAmountToMinor } from '../../core/money';
 import type { EntryKind, Transaction } from './types';
 
@@ -206,7 +207,8 @@ export function findLikelyDuplicate<T extends Pick<Transaction, 'amount_minor' |
       (row) =>
         row.kind === candidate.kind &&
         row.amount_minor === candidate.amountMinor &&
-        Math.abs(now.getTime() - Date.parse(row.created_at)) <= windowMs,
+        // Not Date.parse: the server's microseconds can be NaN to Hermes (core/date.ts).
+        Math.abs(now.getTime() - timestampMs(row.created_at)) <= windowMs,
     ) ?? null
   );
 }

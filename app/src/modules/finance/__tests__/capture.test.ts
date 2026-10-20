@@ -157,4 +157,21 @@ describe('findLikelyDuplicate', () => {
     expect(findLikelyDuplicate({ amountMinor: 25000, kind: 'income' }, recent, now)).toBeNull();
     expect(findLikelyDuplicate({ amountMinor: null, kind: 'expense' }, recent, now)).toBeNull();
   });
+
+  it('reads created_at as the server sends it, on an engine that only knows milliseconds', () => {
+    // Supabase sends microseconds and "+00:00". These tests run on V8, which
+    // reads that; the phone runs Hermes. An engine that returned NaN for it
+    // would make every comparison false and the warning would never show.
+    const realParse = Date.parse;
+    const strict = jest
+      .spyOn(Date, 'parse')
+      .mockImplementation((s: string) => (/\.\d{4,}/.test(s) ? NaN : realParse(s)));
+    try {
+      const fromServer = [{ ...recent[0], created_at: '2026-10-19T08:55:00.123456+00:00' }];
+      const found = findLikelyDuplicate({ amountMinor: 25000, kind: 'expense' }, fromServer, now);
+      expect(found?.id).toBe('a');
+    } finally {
+      strict.mockRestore();
+    }
+  });
 });

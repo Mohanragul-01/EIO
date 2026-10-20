@@ -11,6 +11,7 @@ import {
   fromISODate,
   isOverdue,
   monthGrid,
+  timestampMs,
   toISODate,
   todayISO,
 } from '../date';
@@ -133,5 +134,49 @@ describe('addMonths', () => {
   it('handles jumps of more than a year either way', () => {
     expect(addMonths(2026, 10, 15)).toEqual({ year: 2028, month: 1 });
     expect(addMonths(2026, 10, -22)).toEqual({ year: 2024, month: 12 });
+  });
+});
+
+describe('timestampMs', () => {
+  // 10:00:00 UTC on 19 Oct 2026, the instant every case below names.
+  const instant = Date.UTC(2026, 9, 19, 10, 0, 0);
+
+  it('reads the six fractional digits Postgres sends, to the millisecond', () => {
+    expect(timestampMs('2026-10-19T10:00:00.123456+00:00')).toBe(instant + 123);
+    // Postgres drops trailing zeros: ".5" is half a second, not 5 ms.
+    expect(timestampMs('2026-10-19T10:00:00.5+00:00')).toBe(instant + 500);
+    expect(timestampMs('2026-10-19T10:00:00.999999Z')).toBe(instant + 999);
+  });
+
+  it('reads a timestamp with no fraction', () => {
+    expect(timestampMs('2026-10-19T10:00:00+00:00')).toBe(instant);
+    expect(timestampMs('2026-10-19T10:00:00Z')).toBe(instant);
+  });
+
+  it('applies the offset, whichever way it is written', () => {
+    expect(timestampMs('2026-10-19T15:30:00.000000+05:30')).toBe(instant);
+    expect(timestampMs('2026-10-19T15:30:00+0530')).toBe(instant);
+    expect(timestampMs('2026-10-19T06:00:00-04:00')).toBe(instant);
+    expect(timestampMs('2026-10-19T10:00:00+00')).toBe(instant);
+    expect(timestampMs('2026-10-19 10:00:00.123456+00')).toBe(instant + 123);
+  });
+
+  it('does not depend on Date.parse understanding microseconds', () => {
+    // Hermes is not V8: an engine that only reads three fractional digits
+    // returns NaN for Postgres's six. Stand one in and the answer must hold.
+    const realParse = Date.parse;
+    const strict = jest
+      .spyOn(Date, 'parse')
+      .mockImplementation((s: string) => (/\.\d{4,}/.test(s) ? NaN : realParse(s)));
+    try {
+      expect(timestampMs('2026-10-19T10:00:00.123456+00:00')).toBe(instant + 123);
+    } finally {
+      strict.mockRestore();
+    }
+  });
+
+  it('is NaN for something that is not a timestamp', () => {
+    expect(timestampMs('yesterday')).toBeNaN();
+    expect(timestampMs('')).toBeNaN();
   });
 });
