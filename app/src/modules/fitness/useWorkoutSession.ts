@@ -767,6 +767,21 @@ export function useWorkoutSession(sessionId: string) {
     }
   }, [sessionId, isMounted, fail]);
 
+  /**
+   * Re-read the session row alone - its end time, date and notes - leaving the
+   * blocks and anything typed in them as they are. For coming back to the
+   * screen: the summary on top of it can reopen the session, and a full
+   * reload would throw away rows typed but not yet ticked.
+   */
+  const refreshSession = useCallback(async () => {
+    try {
+      const found = await api.getSession(sessionId);
+      if (isMounted() && found) setSession(found);
+    } catch {
+      // The screen still shows what it had; the next action reports any error.
+    }
+  }, [sessionId, isMounted]);
+
   const reopen = useCallback(async () => {
     setSession((s) => (s ? { ...s, ended_at: null } : s));
     try {
@@ -821,6 +836,7 @@ export function useWorkoutSession(sessionId: string) {
     error,
     clearError: () => setError(null),
     reload: load,
+    refreshSession,
     tick,
     untick,
     removeRow,

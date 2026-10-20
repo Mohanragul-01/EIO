@@ -16,7 +16,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useKeepAwake } from 'expo-keep-awake';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -131,6 +131,15 @@ export function WorkoutSessionScreen() {
       ),
     });
   }, [navigation, w.session, confirmDelete, colors.textMuted]);
+
+  // Back from the summary, which can reopen the session: take its end time
+  // again, so the strip counts on and Finish works without leaving the screen.
+  const { refreshSession } = w;
+  useFocusEffect(
+    useCallback(() => {
+      void refreshSession();
+    }, [refreshSession]),
+  );
 
   // A session deleted elsewhere (the website) has nothing to show.
   useEffect(() => {
