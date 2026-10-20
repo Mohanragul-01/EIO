@@ -8,10 +8,11 @@
  * query's meaning. At personal scale the fetch is the cheaper risk.
  */
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useLatestRun } from '../../core/useLatestRun';
 import * as api from './api';
+import { onLedgerChange } from './changes';
 import { groupByDay, searchTotals, searchTransactions, toListItems } from './summary';
 import type { Account, Transaction } from './types';
 
@@ -44,6 +45,10 @@ export function useFinanceSearch() {
       void load();
     }, [load]),
   );
+
+  // And after an Undo from the edit screen, which lands once this screen has
+  // already reloaded without the entry (changes.ts).
+  useEffect(() => onLedgerChange(() => void load()), [load]);
 
   const accountsById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
 
