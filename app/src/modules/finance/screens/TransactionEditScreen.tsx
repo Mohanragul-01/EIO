@@ -46,6 +46,7 @@ import * as api from '../api';
 import { findLikelyDuplicate, parseCaptureParams } from '../capture';
 import { ledgerChanged } from '../changes';
 import { categoryForNote, lastTransfer, lastUsed, noteSuggestions, orderByUse } from '../defaults';
+import { saveEntry } from '../saveEntry';
 import type { EntryKind, Transaction, TransactionKind } from '../types';
 import { useEntryData } from '../useEntryData';
 import { AccountChips } from '../components/AccountChips';
@@ -270,60 +271,76 @@ export function TransactionEditScreen() {
     setSaving(true);
 
     const day = date ?? todayISO();
+    let pinError: string | null;
     try {
-      if (kind === 'transfer') {
-        const input = {
-          amount_minor: parsedAmount,
-          from_account_id: fromId!,
-          to_account_id: toId!,
-          note: note.trim(),
-          date: day,
-        };
-        if (editingGroup && editing) await api.updateTransfer(editingGroup, input, editing);
-        else await api.createTransfer(input);
-      } else {
-        const input = {
-          amount_minor: parsedAmount,
-          kind: entryKind,
-          category,
-          note: note.trim(),
-          date: day,
-          account_id: accountId,
-        };
-        if (editingId) await api.updateTransaction(editingId, input);
-        else await api.createTransaction(input);
-
-        if (pin && !isEditing) {
-          await api.createQuickAdd({
-            // The pin's label is the note; with no note, the category says it.
-            note: note.trim() || categoryDef(category).label,
-            amount_minor: parsedAmount,
-            kind: entryKind,
-            category,
-            account_id: accountId,
-          });
-        }
-      }
-      success();
-
-      if (another) {
-        // Keep the kind, account, category and date - the next line of the
-        // same receipt shares them - and clear what differs.
-        const label = kind === 'transfer' ? 'Transfer' : categoryDef(category).label;
-        setAmount('');
-        setNote('');
-        setPin(false);
-        setCategoryChosen(false);
-        setSaving(false);
-        toast.show({ message: `Saved ${formatMoney(parsedAmount, { compact: true })} · ${label}` });
-        amountRef.current?.focus();
-        return;
-      }
-      navigation.goBack();
+      ({ pinError } = await saveEntry(
+        kind === 'transfer'
+          ? {
+              type: 'transfer',
+              input: {
+                amount_minor: parsedAmount,
+                from_account_id: fromId!,
+                to_account_id: toId!,
+                note: note.trim(),
+                date: day,
+              },
+              groupId: editingGroup,
+              existing: editing,
+            }
+          : {
+              type: 'entry',
+              input: {
+                amount_minor: parsedAmount,
+                kind: entryKind,
+                category,
+                note: note.trim(),
+                date: day,
+                account_id: accountId,
+              },
+              id: editingId,
+              pin:
+                pin && !isEditing
+                  ? {
+                      // The pin's label is the note; with no note, the category says it.
+                      note: note.trim() || categoryDef(category).label,
+                      amount_minor: parsedAmount,
+                      kind: entryKind,
+                      category,
+                      account_id: accountId,
+                    }
+                  : null,
+            },
+      ));
     } catch (e) {
+      // Nothing was saved, so the form keeps what you typed for another try.
       setSaving(false);
       setFormError(e instanceof Error ? e.message : 'Could not save. Please try again.');
+      return;
     }
+
+    // Saved, and final: from here the form always moves on, so a second Save
+    // cannot log it twice. A pin that failed is said, not retried.
+    success();
+    const label = kind === 'transfer' ? 'Transfer' : categoryDef(category).label;
+    const saved = `Saved ${formatMoney(parsedAmount, { compact: true })} · ${label}`;
+    const message = pinError
+      ? `${saved}, but it could not be pinned. Long-press it in the list to pin it.`
+      : saved;
+
+    if (another) {
+      // Keep the kind, account, category and date - the next line of the
+      // same receipt shares them - and clear what differs.
+      setAmount('');
+      setNote('');
+      setPin(false);
+      setCategoryChosen(false);
+      setSaving(false);
+      toast.show({ message });
+      amountRef.current?.focus();
+      return;
+    }
+    navigation.goBack();
+    if (pinError) toast.show({ message });
   };
 
   /** Delete, go back, and offer Undo: deleting is reversible, so it is not confirmed. */
