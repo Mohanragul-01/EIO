@@ -22,6 +22,16 @@
  * with it, so "Call at 7pm" leaves "Call", not "Call at". The first token of
  * each kind wins; later ones stay in the title. Whatever is left, tidied, is
  * the title.
+ *
+ * WORDS THAT ARE ALSO JUST WORDS. "sun", "sat" and "wed", "weekly",
+ * "monthly" and the rest, a bare "weekend", and a one-digit "1/2" are as
+ * often part of a title ("Buy sun cream", "Weekly review", "Bake 1/2 cake")
+ * as a date or a repeat. These WEAK readings count only where they stand as
+ * one: at the end of the line, after the title, with nothing behind them but
+ * other recognised words ("Call mum sun 7pm", "Review finances weekly"), or
+ * after a connector, "this" or "every" ("on sat", "this weekend"). Anywhere
+ * else they stay in the title. A reading that is taken still shows as a chip
+ * that turns it back into words.
  */
 import { addMonths } from '../../core/date';
 import {
@@ -129,7 +139,19 @@ const MONTH_WORDS: Record<string, number> = {
   dec: 12,
 };
 
-const NUMBER_WORDS: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+const NUMBER_WORDS: Record<string, number> = {
+  a: 1,
+  an: 1,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+};
+
+/** Day abbreviations that are also English words: days only where they stand as one. */
+const WORDLIKE_DAYS = new Set(['sun', 'sat', 'wed']);
 
 const ORDINAL_WORDS: Record<string, number> = {
   first: 1,
@@ -177,6 +199,8 @@ type Matcher = {
   kind: QuickTokenKind;
   regex: RegExp;
   read: (m: RegExpExecArray, ctx: QuickAddContext) => Value | null;
+  /** True when this match is a weak reading (see the header): it must stand as one. */
+  weak?: (m: RegExpExecArray) => boolean;
 };
 
 /**
@@ -212,7 +236,12 @@ function nextDayMonth(day: number, month: number, today: string): string | null 
   return null;
 }
 
-function withYear(day: number, month: number, yearText: string | undefined, today: string): string | null {
+function withYear(
+  day: number,
+  month: number,
+  yearText: string | undefined,
+  today: string,
+): string | null {
   if (yearText === undefined) return nextDayMonth(day, month, today);
   const year = yearText.length === 2 ? 2000 + Number(yearText) : Number(yearText);
   return isoOf(year, month, day);
@@ -228,7 +257,10 @@ function validEvery(n: number): boolean {
 }
 
 const date = (d: string | null): Value | null => (d ? { kind: 'date', date: d } : null);
-const repeat = (input: Parameters<typeof toRule>[0]): Value => ({ kind: 'repeat', rule: toRule(input) });
+const repeat = (input: Parameters<typeof toRule>[0]): Value => ({
+  kind: 'repeat',
+  rule: toRule(input),
+});
 
 const MATCHERS: Matcher[] = [
   /* Repeats come first: "every mon" must not be read as the date "mon". */
@@ -236,30 +268,33 @@ const MATCHERS: Matcher[] = [
     kind: 'repeat',
     regex: sticky('(?:daily|everyday|every day)'),
     read: () => repeat('daily'),
+    weak: (m) => m[0] !== 'every day',
   },
   {
     kind: 'repeat',
     regex: sticky('(?:weekly|monthly|yearly|annually)'),
     read: (m) =>
-      repeat(
-        m[0].startsWith('week') ? 'weekly' : m[0].startsWith('month') ? 'monthly' : 'yearly',
-      ),
+      repeat(m[0].startsWith('week') ? 'weekly' : m[0].startsWith('month') ? 'monthly' : 'yearly'),
+    weak: () => true,
   },
   {
     kind: 'repeat',
     regex: sticky('(?:every )?weekdays|every weekday'),
     read: () => repeat({ frequency: 'weekly', weekdays: [1, 2, 3, 4, 5] }),
+    weak: (m) => !m[0].startsWith('every'),
   },
   {
     kind: 'repeat',
     regex: sticky('(?:every )?weekends|every weekend'),
     read: () => repeat({ frequency: 'weekly', weekdays: [6, 0] }),
+    weak: (m) => !m[0].startsWith('every'),
   },
   {
     kind: 'repeat',
-    // "every! 3 days" and "after 3 days" both count from completion (Todoist's
-    // every! and "after"). The number may be a word: "every! two weeks".
-    regex: sticky(`(?:every!|after) (\\d{1,3}|a|an|one|two|three|four|five|six) ${UNIT}`),
+    // "every! 3 days" counts from completion (Todoist's every!). The number
+    // may be a word: "every! two weeks". "after 3 days" is a date, below:
+    // "Call back after 3 days" is a call in three days, not a routine.
+    regex: sticky(`every! (\\d{1,3}|a|an|one|two|three|four|five|six) ${UNIT}`),
     read: (m) =>
       validEvery(count(m[1]))
         ? repeat({ frequency: UNIT_WORDS[m[2]], every: count(m[1]), from: 'completion' })
@@ -279,12 +314,24 @@ const MATCHERS: Matcher[] = [
     kind: 'repeat',
     regex: sticky(`every (\\d{1,3}) ${UNIT}`),
     read: (m) =>
-      validEvery(Number(m[1])) ? repeat({ frequency: UNIT_WORDS[m[2]], every: Number(m[1]) }) : null,
+      validEvery(Number(m[1]))
+        ? repeat({ frequency: UNIT_WORDS[m[2]], every: Number(m[1]) })
+        : null,
   },
   {
     kind: 'repeat',
     regex: sticky(`every ${UNIT}`),
     read: (m) => repeat(UNIT_WORDS[m[1]]),
+  },
+  {
+    kind: 'repeat',
+    // "every 2nd week" is every other week. Before the day of the month
+    // below, which would read it as the 2nd and leave "week" in the title.
+    regex: sticky(`every (\\d{1,3}(?:st|nd|rd|th)|second|third|fourth) ${UNIT}`),
+    read: (m) => {
+      const n = ORDINAL_WORDS[m[1]] ?? parseInt(m[1], 10);
+      return validEvery(n) ? repeat({ frequency: UNIT_WORDS[m[2]], every: n }) : null;
+    },
   },
   {
     kind: 'repeat',
@@ -352,6 +399,8 @@ const MATCHERS: Matcher[] = [
       const weekday = weekdayOf(ctx.today);
       return date(weekday === 6 || weekday === 0 ? ctx.today : addDays(ctx.today, 6 - weekday));
     },
+    // "Weekend trip packing" is a trip, not a date.
+    weak: (m) => !m[0].startsWith('this'),
   },
   {
     kind: 'date',
@@ -370,18 +419,17 @@ const MATCHERS: Matcher[] = [
       const target = WEEKDAY_WORDS[m[1]];
       return date(addDays(ctx.today, (target - weekdayOf(ctx.today) + 7) % 7));
     },
+    weak: (m) => !m[0].startsWith('this') && WORDLIKE_DAYS.has(m[1]),
   },
   {
     kind: 'date',
-    regex: sticky(`in (\\d{1,3}|a|an|one|two|three|four|five|six) ${UNIT}`),
+    regex: sticky(`(?:in|after) (\\d{1,3}|a|an|one|two|three|four|five|six) ${UNIT}`),
     read: (m, ctx) => {
       const n = count(m[1]);
       const unit = UNIT_WORDS[m[2]];
       if (unit === 'daily') return date(addDays(ctx.today, n));
       if (unit === 'weekly') return date(addDays(ctx.today, 7 * n));
-      return date(
-        stepOnce(ctx.today, toRule({ frequency: unit, every: n })),
-      );
+      return date(stepOnce(ctx.today, toRule({ frequency: unit, every: n })));
     },
   },
   {
@@ -394,6 +442,8 @@ const MATCHERS: Matcher[] = [
     // DAY FIRST: 19/10 is 19 October. 10/13 is not a date and stays text.
     regex: sticky('(\\d{1,2})/(\\d{1,2})(?:/(\\d{4}|\\d{2}))?'),
     read: (m, ctx) => date(withYear(Number(m[1]), Number(m[2]), m[3], ctx.today)),
+    // One digit each side and no year reads as much like "1/2 cup" as 1 Feb.
+    weak: (m) => m[3] === undefined && m[1].length === 1 && m[2].length === 1,
   },
   {
     kind: 'date',
@@ -431,7 +481,12 @@ const MATCHERS: Matcher[] = [
       const hour = Number(m[1]);
       const minute = m[2] ? Number(m[2]) : 0;
       if (hour < 1 || hour > 12 || minute > 59) return null;
-      return { kind: 'time', hour: (hour % 12) + (m[3] === 'pm' ? 12 : 0), minute, ambiguous: false };
+      return {
+        kind: 'time',
+        hour: (hour % 12) + (m[3] === 'pm' ? 12 : 0),
+        minute,
+        ambiguous: false,
+      };
     },
   },
   {
@@ -478,14 +533,19 @@ const AFTER_AT: Matcher[] = [
       const hour = Number(m[1]);
       const minute = m[2] ? Number(m[2]) : 0;
       if (hour > 23 || minute > 59) return null;
-      return { kind: 'time', hour, minute, ambiguous: hour >= 1 && hour <= 12 && !m[1].startsWith('0') };
+      return {
+        kind: 'time',
+        hour,
+        minute,
+        ambiguous: hour >= 1 && hour <= 12 && !m[1].startsWith('0'),
+      };
     },
   },
 ];
 
 /* SCANNING ------------------------------------------------------------------ */
 
-type Found = { start: number; end: number; value: Value; matcher: Matcher };
+type Found = { start: number; end: number; value: Value; matcher: Matcher; weak: boolean };
 
 function tryAt(lower: string, pos: number, matchers: Matcher[], ctx: QuickAddContext) {
   for (const matcher of matchers) {
@@ -493,7 +553,7 @@ function tryAt(lower: string, pos: number, matchers: Matcher[], ctx: QuickAddCon
     const m = matcher.regex.exec(lower);
     if (!m) continue;
     const value = matcher.read(m, ctx);
-    if (value) return { end: pos + m[0].length, value, matcher };
+    if (value) return { end: pos + m[0].length, value, matcher, weak: matcher.weak?.(m) ?? false };
   }
   return null;
 }
@@ -520,7 +580,8 @@ function scan(lower: string, ctx: QuickAddContext): Found[] {
       const pool = connector[1] === 'at' ? [...MATCHERS, ...AFTER_AT] : MATCHERS;
       const inner = tryAt(lower, next, pool, ctx);
       if (inner && (inner.matcher.kind === 'date' || inner.matcher.kind === 'time')) {
-        hit = { start: pos, ...inner };
+        // A connector says it is meant: "on sat" is a day however weak "sat" is.
+        hit = { start: pos, ...inner, weak: false };
       }
     }
     if (!hit) {
@@ -539,9 +600,45 @@ function scan(lower: string, ctx: QuickAddContext): Found[] {
   return found;
 }
 
+/** Between readings at the end of a line: spaces and punctuation, no words. */
+const ONLY_PUNCTUATION = /^[\s,;:.!?()[\]-]*$/;
+
+/**
+ * The readings to keep: every strong one, and a weak one only where it stands
+ * as one - with nothing after it to the end of the line but other kept
+ * readings and punctuation. Walked from the end, so a weak word dropped back
+ * into the title makes every weak word before it part of the title too.
+ */
+function standing(text: string, hits: readonly Found[]): Found[] {
+  const kept: Found[] = [];
+  let trailing = true;
+  let next = text.length;
+  for (let i = hits.length - 1; i >= 0; i--) {
+    const hit = hits[i];
+    trailing = trailing && ONLY_PUNCTUATION.test(text.slice(hit.end, next));
+    next = hit.start;
+    if (hit.weak && !trailing) continue;
+    kept.unshift(hit);
+  }
+  return kept;
+}
+
 /* RESOLVING ----------------------------------------------------------------- */
 
-const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_SHORT = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
 
 function dateLabel(iso: string): string {
   const [, m, d] = iso.split('-').map(Number);
@@ -563,11 +660,16 @@ export function parseQuickAdd(text: string, ctx: QuickAddContext): QuickAddResul
   let repeatRule: RepeatRule | null = null;
   let priority: Priority | null = null;
 
-  for (const hit of scan(lower, ctx)) {
+  // A tapped chip stays words, and so does a weak word inside the title.
+  const hits = standing(
+    text,
+    scan(lower, ctx).filter((hit) => !ignore.has(text.slice(hit.start, hit.end).toLowerCase())),
+  );
+  for (const hit of hits) {
     const raw = text.slice(hit.start, hit.end);
-    // A tapped chip stays words, and so does a second date or time: the first
-    // of each kind is the one that was meant.
-    if (ignore.has(raw.toLowerCase()) || taken.has(hit.value.kind)) continue;
+    // A second date or time stays words: the first of each kind is the one
+    // that was meant.
+    if (taken.has(hit.value.kind)) continue;
     taken.add(hit.value.kind);
 
     const v = hit.value;

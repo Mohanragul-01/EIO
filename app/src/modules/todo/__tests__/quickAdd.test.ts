@@ -162,7 +162,10 @@ describe('month names', () => {
 
 describe('connectors', () => {
   it('on, by and due are taken with a date', () => {
-    expect(parse('Submit report by fri')).toMatchObject({ title: 'Submit report', dueDate: '2026-10-23' });
+    expect(parse('Submit report by fri')).toMatchObject({
+      title: 'Submit report',
+      dueDate: '2026-10-23',
+    });
     expect(parse('Meet on 25/10').title).toBe('Meet');
     expect(parse('Tax return due 31/12').title).toBe('Tax return');
   });
@@ -289,7 +292,11 @@ describe('repeats', () => {
   it('monthly on a day, the nth weekday, the last weekday, the last day', () => {
     expect(parse('x every 15th').repeat).toMatchObject({ frequency: 'monthly', anchorDay: 15 });
     expect(parse('x every 1st').repeat).toMatchObject({ frequency: 'monthly', anchorDay: 1 });
-    expect(parse('x every 2nd sat').repeat).toMatchObject({ frequency: 'monthly', nth: 2, weekdays: [6] });
+    expect(parse('x every 2nd sat').repeat).toMatchObject({
+      frequency: 'monthly',
+      nth: 2,
+      weekdays: [6],
+    });
     expect(parse('x every first monday').repeat).toMatchObject({ nth: 1, weekdays: [1] });
     expect(parse('x every last fri').repeat).toMatchObject({ nth: -1, weekdays: [5] });
     expect(parse('x every last day').repeat).toMatchObject({ frequency: 'monthly', anchorDay: 31 });
@@ -297,18 +304,29 @@ describe('repeats', () => {
     expect(parse('x every 0th').repeat).toBeNull();
   });
 
-  it('from completion: every! and after', () => {
+  it('from completion: every!', () => {
     expect(parse('Water plants every! 3 days').repeat).toMatchObject({
       frequency: 'daily',
       every: 3,
       from: 'completion',
     });
-    expect(parse('x after 10 days').repeat).toMatchObject({ every: 10, from: 'completion' });
-    expect(parse('x after 0 days').repeat).toBeNull();
-    expect(parse('x every! week').repeat).toMatchObject({ frequency: 'weekly', from: 'completion' });
-    expect(parse('x after two weeks').repeat).toMatchObject({ frequency: 'weekly', every: 2 });
-    // "after" with no number is just a word.
-    expect(parse('Nap after lunch').repeat).toBeNull();
+    expect(parse('x every! week').repeat).toMatchObject({
+      frequency: 'weekly',
+      from: 'completion',
+    });
+    expect(parse('x every! two weeks').repeat).toMatchObject({ frequency: 'weekly', every: 2 });
+    expect(parse('x every! 0 days').repeat).toBeNull();
+  });
+
+  it('every 2nd week is every other week, not the 2nd of the month', () => {
+    const result = parse('Clean gutters every 2nd week');
+    expect(result.repeat).toMatchObject({ frequency: 'weekly', every: 2, anchorDay: null });
+    expect(result.title).toBe('Clean gutters');
+    expect(parse('x every 3rd month').repeat).toMatchObject({ frequency: 'monthly', every: 3 });
+    expect(parse('x every second week').repeat).toMatchObject({ frequency: 'weekly', every: 2 });
+    // Still the day of the month on its own, and the weekday with a weekday.
+    expect(parse('x every 2nd').repeat).toMatchObject({ frequency: 'monthly', anchorDay: 2 });
+    expect(parse('x every 2nd sat').repeat).toMatchObject({ nth: 2, weekdays: [6] });
   });
 
   it('chooses the tab, and the first date on the schedule when no date is typed', () => {
@@ -339,7 +357,8 @@ describe('repeats', () => {
 
 describe('priority', () => {
   it('!high and its short forms, and p1-p3', () => {
-    for (const text of ['x !high', 'x !h', 'x !1', 'x p1']) expect(parse(text).priority).toBe('high');
+    for (const text of ['x !high', 'x !h', 'x !1', 'x p1'])
+      expect(parse(text).priority).toBe('high');
     for (const text of ['x !normal', 'x !medium', 'x !med', 'x !2', 'x p2']) {
       expect(parse(text).priority).toBe('normal');
     }
@@ -366,8 +385,8 @@ describe('everything at once', () => {
   });
 
   it('the first of each kind wins; later ones stay in the title', () => {
-    const result = parse('Call about sat plan fri');
-    expect(result.dueDate).toBe('2026-10-24');
+    const result = parse('Call about tue plan fri');
+    expect(result.dueDate).toBe('2026-10-20');
     expect(result.title).toBe('Call about plan fri');
   });
 
@@ -393,12 +412,12 @@ describe('everything at once', () => {
 
 describe('turning a token back into text', () => {
   it('ignores a tapped token by its text, including its connector', () => {
-    const result = parse('Buy sun cream', { ignore: [] });
+    const result = parse('Buy cream sun', { ignore: [] });
     expect(result.dueDate).toBe('2026-10-25');
 
-    const kept = parse('Buy sun cream', { ignore: ['sun'] });
+    const kept = parse('Buy cream sun', { ignore: ['sun'] });
     expect(kept.dueDate).toBeNull();
-    expect(kept.title).toBe('Buy sun cream');
+    expect(kept.title).toBe('Buy cream sun');
 
     const at = parse('Meet at 7pm', { ignore: ['at 7pm'] });
     expect(at.dueTime).toBeNull();
@@ -406,9 +425,90 @@ describe('turning a token back into text', () => {
   });
 
   it('lets a later token of the same kind take over', () => {
-    const result = parse('Sun lounger delivery fri', { ignore: ['sun'] });
+    const result = parse('Tue lounger delivery fri', { ignore: ['tue'] });
     expect(result.dueDate).toBe('2026-10-23');
-    expect(result.title).toBe('Sun lounger delivery');
+    expect(result.title).toBe('Tue lounger delivery');
+  });
+
+  it('keeps a word that stands as a date or repeat removable', () => {
+    for (const [text, word] of [
+      ['Pay rent monthly', 'monthly'],
+      ['Call mum sun', 'sun'],
+      ['Bake cake 1/2', '1/2'],
+      ['Call back after 3 days', 'after 3 days'],
+    ]) {
+      const kept = parse(text, { ignore: [word] });
+      expect(kept.tokens).toEqual([]);
+      expect(kept.title).toBe(text);
+    }
+  });
+});
+
+describe('words that are also ordinary words (found in review)', () => {
+  it('a bare sun, sat or wed is a day only where it stands as one', () => {
+    // Inside the title they are words...
+    expect(parse('Buy sun cream')).toMatchObject({ title: 'Buy sun cream', dueDate: null });
+    expect(parse('Sat exam prep')).toMatchObject({ title: 'Sat exam prep', dueDate: null });
+    expect(parse('Wed anniversary gift ideas').dueDate).toBeNull();
+    // ...at the end of the line, after the title, they are days...
+    expect(parse('Call mum sun')).toMatchObject({ title: 'Call mum', dueDate: '2026-10-25' });
+    expect(parse('Call mum sat 7pm !high')).toMatchObject({
+      title: 'Call mum',
+      dueDate: '2026-10-24',
+      dueTime: '19:00:00',
+    });
+    // ...and so they are after a connector, or as "this" or "next" one.
+    expect(parse('Meet on sat at the cafe')).toMatchObject({
+      title: 'Meet at the cafe',
+      dueDate: '2026-10-24',
+    });
+    expect(parse('Pick up this sat from school').dueDate).toBe('2026-10-24');
+    expect(parse('Sunday roast prep').dueDate).toBe('2026-10-25');
+  });
+
+  it('daily, weekly, monthly and yearly name a repeat only after the title', () => {
+    expect(parse('Weekly review')).toMatchObject({ title: 'Weekly review', repeat: null });
+    expect(parse('Write monthly report').repeat).toBeNull();
+    expect(parse('Daily standup notes').repeat).toBeNull();
+    expect(parse('Review finances weekly')).toMatchObject({
+      title: 'Review finances',
+      repeat: { frequency: 'weekly' },
+    });
+    expect(parse('Weekly review weekly')).toMatchObject({
+      title: 'Weekly review',
+      repeat: { frequency: 'weekly' },
+    });
+    expect(parse('Standup daily at 9:30 !high').repeat).toMatchObject({ frequency: 'daily' });
+    // "every" makes it a repeat wherever it is.
+    expect(parse('Every week review finances').repeat).toMatchObject({ frequency: 'weekly' });
+    expect(parse('Weekdays gym at 7am').repeat).toBeNull();
+    expect(parse('Gym weekdays at 7am').repeat?.weekdays).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('a bare weekend is the weekend only after the title', () => {
+    expect(parse('Weekend trip packing').dueDate).toBeNull();
+    expect(parse('Clean the garage weekend').dueDate).toBe('2026-10-24');
+    expect(parse('Plan this weekend away').dueDate).toBe('2026-10-24');
+  });
+
+  it('after N days is a date, not a repeat', () => {
+    expect(parse('Call back after 3 days')).toMatchObject({
+      title: 'Call back',
+      dueDate: '2026-10-22',
+      repeat: null,
+    });
+    expect(parse('x after two weeks')).toMatchObject({ dueDate: '2026-11-02', repeat: null });
+    expect(parse('Nap after lunch')).toMatchObject({ title: 'Nap after lunch', dueDate: null });
+  });
+
+  it('a one-digit fraction is a date only after the title', () => {
+    expect(parse('Bake 1/2 cake')).toMatchObject({ title: 'Bake 1/2 cake', dueDate: null });
+    expect(parse('Use 3/4 cup of rice').dueDate).toBeNull();
+    expect(parse('Bake cake 1/2').dueDate).toBe('2027-02-01');
+    expect(parse('Dentist on 5/11 with Anna').dueDate).toBe('2026-11-05');
+    // Two digits on either side is a date wherever it is.
+    expect(parse('Renew 19/10 insurance').dueDate).toBe('2026-10-19');
+    expect(parse('Pay 5/11 rent').dueDate).toBe('2026-11-05');
   });
 });
 
@@ -462,7 +562,10 @@ describe('found in review', () => {
       dueTime: '09:30:00',
       dueDate: '2026-10-20',
     });
-    expect(parse('Gym every day at 6')).toMatchObject({ dueTime: '06:00:00', dueDate: '2026-10-20' });
+    expect(parse('Gym every day at 6')).toMatchObject({
+      dueTime: '06:00:00',
+      dueDate: '2026-10-20',
+    });
     // Still ahead today: today.
     expect(parse('Gym every day at 6', { nowMinutes: 5 * 60 })).toMatchObject({
       dueTime: '06:00:00',
