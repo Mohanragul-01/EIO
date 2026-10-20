@@ -191,14 +191,7 @@ export type Band = {
   created_at: string;
 };
 
-export type ProgressionFamily =
-  | 'push'
-  | 'pull'
-  | 'legs'
-  | 'core'
-  | 'balance'
-  | 'statics'
-  | 'other';
+export type ProgressionFamily = 'push' | 'pull' | 'legs' | 'core' | 'balance' | 'statics' | 'other';
 
 /** A ladder for one skill. Which rungs are mastered is derived from its moves. */
 export type Progression = {
@@ -369,9 +362,7 @@ export const MUSCLE_GROUPS: readonly string[] = MUSCLE_REGIONS.flatMap(
  * disappearing from every tab.
  */
 const REGION_OF: Record<string, MuscleRegion> = Object.fromEntries(
-  MUSCLE_REGIONS.flatMap((region) =>
-    MUSCLES_BY_REGION[region].map((muscle) => [muscle, region]),
-  ),
+  MUSCLE_REGIONS.flatMap((region) => MUSCLES_BY_REGION[region].map((muscle) => [muscle, region])),
 );
 
 export function regionOf(muscle: string | null): MuscleRegion {
@@ -394,21 +385,56 @@ export const TRACKING_LABEL: Record<TrackingType, string> = {
   time: 'Time',
 };
 
+/**
+ * The starter library. Pull-up and Plank are bodyweight work listed in both
+ * modes, exactly as migration 0019 classifies an existing library - seeded as
+ * gym lifts, a fresh Calisthenics tab had no pull-up, and a pull-up rep record
+ * could never fire. Every row states every field: a bulk insert sends the
+ * same columns for each row, so one left out would be written as null rather
+ * than take its column default.
+ */
 export const DEFAULT_EXERCISES: {
   name: string;
   muscle_group: string;
   tracking_type: TrackingType;
+  discipline: Discipline;
+  load_mode: LoadMode;
+  equipment: Equipment | null;
 }[] = [
-  { name: 'Bench Press', muscle_group: 'Chest', tracking_type: 'reps' },
-  { name: 'Squat', muscle_group: 'Legs', tracking_type: 'reps' },
-  { name: 'Deadlift', muscle_group: 'Lower back', tracking_type: 'reps' },
-  { name: 'Overhead Press', muscle_group: 'Shoulders', tracking_type: 'reps' },
-  { name: 'Bicep Curl', muscle_group: 'Biceps', tracking_type: 'reps' },
-  { name: 'Pull-up', muscle_group: 'Back', tracking_type: 'reps' },
+  { name: 'Bench Press', muscle_group: 'Chest', ...lift('barbell') },
+  { name: 'Squat', muscle_group: 'Legs', ...lift('barbell') },
+  { name: 'Deadlift', muscle_group: 'Lower back', ...lift('barbell') },
+  { name: 'Overhead Press', muscle_group: 'Shoulders', ...lift('barbell') },
+  { name: 'Bicep Curl', muscle_group: 'Biceps', ...lift(null) },
+  {
+    name: 'Pull-up',
+    muscle_group: 'Back',
+    tracking_type: 'reps',
+    discipline: 'both',
+    load_mode: 'bodyweight',
+    equipment: 'pull_up_bar',
+  },
   // One timed movement in the starter set, so the mode is discoverable
   // without having to create an exercise to find out it exists.
-  { name: 'Plank', muscle_group: 'Abs', tracking_type: 'time' },
+  {
+    name: 'Plank',
+    muscle_group: 'Abs',
+    tracking_type: 'time',
+    discipline: 'both',
+    load_mode: 'bodyweight',
+    equipment: 'none',
+  },
 ];
+
+/** A gym lift's fields in the starter library. */
+function lift(equipment: Equipment | null) {
+  return {
+    tracking_type: 'reps' as const,
+    discipline: 'gym' as const,
+    load_mode: 'external' as const,
+    equipment,
+  };
+}
 
 /**
  * Body mass index, or null when height is unknown.
@@ -448,9 +474,7 @@ export function bestWeightAtReps(
   exerciseId: string,
   reps: number,
 ): number | null {
-  const matching = history.filter(
-    (set) => set.exercise_id === exerciseId && set.reps === reps,
-  );
+  const matching = history.filter((set) => set.exercise_id === exerciseId && set.reps === reps);
   if (matching.length === 0) return null;
   return Math.max(...matching.map((set) => set.weight_kg));
 }
