@@ -24,7 +24,7 @@ import * as api from './api';
 import { buildBlock, newDrafts, type DraftRow } from './blocks';
 import { toSetFact, workingVolume, type SetFact } from './load';
 import { matchPrevious } from './previous';
-import { ladderSlotTarget } from './progression';
+import { ladderLevel, ladderSlotTarget, type LadderLevel } from './progression';
 import { nextTarget, type Target } from './targets';
 import { sessionRecords, type RecordHit } from './records';
 import { sessionClockEnd } from './summary';
@@ -40,6 +40,7 @@ import {
   nextSetNumber,
   type Band,
   type Exercise,
+  type ProgressionStep,
   type RoutineExercise,
   type SessionExercise,
   type SessionSet,
@@ -74,6 +75,17 @@ function blockFor(
   });
 }
 
+/** A routine's ladder slot aimed at one rung: its restart point up to its goal. */
+function ladderSlot(slot: RoutineExercise, rung: ProgressionStep): RoutineExercise {
+  const target = ladderSlotTarget(rung);
+  return {
+    ...slot,
+    exercise_id: rung.exercise_id,
+    ...target,
+    target_sets: slot.target_sets ?? target.target_sets,
+  };
+}
+
 export function useWorkoutSession(sessionId: string) {
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -85,6 +97,7 @@ export function useWorkoutSession(sessionId: string) {
    * keyed by its current rung's exercise, with the rung's range as target.
    */
   const [slotsByExercise, setSlotsByExercise] = useState<Record<string, RoutineExercise>>({});
+  const [ladders, setLadders] = useState<api.Ladder[]>([]);
   const [state, dispatch] = useReducer(sessionReducer, { blocks: [] });
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState(false);
@@ -150,12 +163,15 @@ export function useWorkoutSession(sessionId: string) {
       const allBlocks = [...blockRows, ...adopted].sort((a, b) => a.position - b.position);
       const ids = allBlocks.map((b) => b.exercise_id);
 
-      const [baselineRows, previousRows, slotRows] = await Promise.all([
+      // The ladders too: for the level chip on a rung's block, and for the
+      // routine's ladder slots. Without them a block simply has no chip.
+      const [baselineRows, previousRows, slotRows, ladderRows] = await Promise.all([
         api.listBaseline(ids, sessionId),
         api.listPreviousSets(ids, sessionId, found.date),
         found.routine_id
           ? api.listRoutineExercises(found.routine_id).catch(() => [])
           : Promise.resolve([]),
+        api.listLadders().catch(() => [] as api.Ladder[]),
       ]);
       if (!isCurrent()) return;
 
@@ -163,21 +179,12 @@ export function useWorkoutSession(sessionId: string) {
         slotRows.flatMap((slot) => (slot.exercise_id ? [[slot.exercise_id, slot]] : [])),
       ) as Record<string, RoutineExercise>;
       // Ladder slots aim at their current rung: its restart point up to its goal.
-      if (slotRows.some((slot) => slot.progression_id)) {
-        const ladders = await api.listLadders().catch(() => []);
-        for (const slot of slotRows) {
-          const ladder = ladders.find((l) => l.progression.id === slot.progression_id);
-          const rung = ladder?.steps.find((st) => st.id === ladder.progression.current_step_id);
-          if (!rung || slotMap[rung.exercise_id]) continue;
-          const target = ladderSlotTarget(rung);
-          slotMap[rung.exercise_id] = {
-            ...slot,
-            exercise_id: rung.exercise_id,
-            ...target,
-            target_sets: slot.target_sets ?? target.target_sets,
-          };
-        }
-        if (!isCurrent()) return;
+      for (const slot of slotRows) {
+        if (!slot.progression_id) continue;
+        const ladder = ladderRows.find((l) => l.progression.id === slot.progression_id);
+        const rung = ladder?.steps.find((st) => st.id === ladder.progression.current_step_id);
+        if (!rung || slotMap[rung.exercise_id]) continue;
+        slotMap[rung.exercise_id] = ladderSlot(slot, rung);
       }
 
       setSession(found);
@@ -186,6 +193,7 @@ export function useWorkoutSession(sessionId: string) {
       setBaseline(baselineRows);
       setPrevious(previousRows);
       setSlotsByExercise(slotMap);
+      setLadders(ladderRows);
       dispatch({
         type: 'load',
         blocks: allBlocks.map((row) =>
@@ -675,8 +683,13 @@ export function useWorkoutSession(sessionId: string) {
   );
 
   /** Swap a block's exercise for another. Only before anything is logged in it. */
+  /**
+   * Swap a block's exercise for another. Only before anything is logged in
+   * it. `slot` is the routine target to aim at instead (a ladder slot moving
+   * with its rung).
+   */
   const replaceExercise = useCallback(
-    async (blockId: string, exerciseId: string) => {
+    async (blockId: string, exerciseId: string, slot?: RoutineExercise) => {
       const block = stateRef.current.blocks.find((b) => b.id === blockId);
       if (!block?.sessionExercise || !session) return;
       if (block.rows.some((r) => r.kind === 'saved')) return;
@@ -689,13 +702,14 @@ export function useWorkoutSession(sessionId: string) {
         if (!isMounted()) return;
         setBaseline((b) => ({ ...b, ...base }));
         setPrevious((p) => ({ ...p, ...prev }));
+        if (slot) setSlotsByExercise((current) => ({ ...current, [exerciseId]: slot }));
         dispatch({
           type: 'replaceBlock',
           blockId,
           block: blockFor(
             { ...block.sessionExercise, exercise_id: exerciseId },
             [],
-            slotsByExercise[exerciseId],
+            slot ?? slotsByExercise[exerciseId],
             prev,
             exercisesById[exerciseId]?.is_unilateral,
           ),
@@ -705,6 +719,35 @@ export function useWorkoutSession(sessionId: string) {
       }
     },
     [session, sessionId, slotsByExercise, exercisesById, isMounted, fail],
+  );
+
+  /** Where a block's exercise stands on its ladder, or null when it is on none. */
+  const levelFor = useCallback(
+    (block: BlockState): LadderLevel | null => ladderLevel(ladders, block.exerciseId),
+    [ladders],
+  );
+
+  /**
+   * Step a ladder block to the easier (-1) or harder (+1) rung for this
+   * session: the block's exercise is replaced, and a routine's ladder slot
+   * aims at the new rung's range. The ladder itself does not move: moving up
+   * is still your call, on the summary or the ladder's page.
+   */
+  const stepLevel = useCallback(
+    async (blockId: string, delta: -1 | 1) => {
+      const block = stateRef.current.blocks.find((b) => b.id === blockId);
+      const level = block ? ladderLevel(ladders, block.exerciseId) : null;
+      const to = delta < 0 ? level?.previous : level?.next;
+      if (!block || !level || !to) return;
+      if (stateRef.current.blocks.some((b) => b.exerciseId === to.exercise_id)) return;
+      const slot = slotsByExercise[block.exerciseId];
+      await replaceExercise(
+        blockId,
+        to.exercise_id,
+        slot?.progression_id === level.progressionId ? ladderSlot(slot, to) : undefined,
+      );
+    },
+    [ladders, slotsByExercise, replaceExercise],
   );
 
   /**
@@ -893,6 +936,8 @@ export function useWorkoutSession(sessionId: string) {
     moveExercise,
     setSuperset,
     replaceExercise,
+    levelFor,
+    stepLevel,
     setRest,
     setBlockNote,
     setPinnedNote,

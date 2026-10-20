@@ -39,6 +39,12 @@ type Props = {
   supersetLabel?: string | null;
   /** Why today's ghost numbers differ from last time, e.g. "+2.5 kg · every set hit 12". */
   targetReason?: string | null;
+  /**
+   * For a rung of a ladder: where it stands ("Front lever · 2/4"), and the
+   * rungs either side it can step to today (null when it cannot).
+   */
+  level?: LevelChip | null;
+  onLevel?: (delta: -1 | 1) => void;
   previousFor: (index: number) => SetFact | null;
   ghostFor: (index: number) => Ghost;
   onOpenExercise: () => void;
@@ -54,6 +60,13 @@ type Props = {
   onHold: (key: string) => void;
   onAddSet: () => void;
   onNoteBlur: (note: string) => void;
+};
+
+export type LevelChip = {
+  label: string;
+  spoken: string;
+  easier: string | null;
+  harder: string | null;
 };
 
 const typeOf = (row: Row): SetType =>
@@ -134,6 +147,8 @@ export function ExerciseBlock(props: Props) {
         </Pressable>
       </View>
 
+      {props.level ? <LevelRow level={props.level} onLevel={props.onLevel} /> : null}
+
       {props.targetReason ? (
         <View
           style={styles.reason}
@@ -203,6 +218,47 @@ export function ExerciseBlock(props: Props) {
         <Text style={styles.addSetLabel}>Add set</Text>
       </Pressable>
     </GlassCard>
+  );
+}
+
+/**
+ * The level chip for a ladder exercise: "Front lever · 2/4", with ‹ › to do
+ * the easier or harder rung today instead. The ladder itself does not move.
+ */
+function LevelRow({ level, onLevel }: { level: LevelChip; onLevel?: (delta: -1 | 1) => void }) {
+  const styles = useStyles();
+  const { colors } = useTheme();
+  const arrow = (delta: -1 | 1, to: string | null) => (
+    <Pressable
+      onPress={() => to && onLevel?.(delta)}
+      disabled={!to}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !to }}
+      accessibilityLabel={
+        to
+          ? `${delta < 0 ? 'Easier' : 'Harder'}: do ${to} today instead`
+          : `No ${delta < 0 ? 'easier' : 'harder'} rung to switch to`
+      }
+      style={({ pressed }) => [styles.levelStep, pressed && styles.pressed]}
+    >
+      <Ionicons
+        name={delta < 0 ? 'chevron-back' : 'chevron-forward'}
+        size={18}
+        color={to ? colors.textSecondary : colors.textFaint}
+      />
+    </Pressable>
+  );
+  return (
+    <View style={styles.levelRow}>
+      {arrow(-1, level.easier)}
+      <View style={styles.levelChip} accessible accessibilityLabel={level.spoken}>
+        <Ionicons name="git-commit-outline" size={14} color={colors.accentCyan} />
+        <Text style={styles.levelText} numberOfLines={1}>
+          {level.label}
+        </Text>
+      </View>
+      {arrow(1, level.harder)}
+    </View>
   );
 }
 
@@ -499,6 +555,30 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     backgroundColor: colors.glass,
   },
   reasonText: { ...typography.caption, color: colors.info },
+  levelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginHorizontal: spacing.sm,
+  },
+  levelStep: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+  },
+  levelChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.glass,
+    flexShrink: 1,
+  },
+  levelText: { ...typography.caption, ...typography.numeric, color: colors.textSecondary },
   pinnedText: { ...typography.caption, color: colors.textSecondary, flex: 1 },
   note: {
     ...typography.caption,

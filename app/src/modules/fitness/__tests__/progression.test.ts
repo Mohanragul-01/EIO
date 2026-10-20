@@ -6,6 +6,7 @@
 import type { SetFact } from '../load';
 import {
   goalProgress,
+  ladderLevel,
   ladderSlotTarget,
   levelUpCandidates,
   meetsGoal,
@@ -338,5 +339,54 @@ describe('ladderSlotTarget', () => {
         step('h', 0, { goal_sets: 3, goal_reps: null, goal_seconds: 30, start_seconds: 10 }),
       ),
     ).toMatchObject({ target_seconds_min: 10, target_seconds_max: 30, target_reps: null });
+  });
+});
+
+// I9: the session block of a ladder exercise shows where it stands on its
+// ladder ("Front lever · 2/4") and steps to the rung either side.
+describe('ladderLevel', () => {
+  const ladder = (id: string, name: string, current: string | null, ids: string[]) => ({
+    progression: {
+      id,
+      user_id: 'u',
+      name,
+      family: 'statics' as const,
+      current_step_id: current,
+      position: 0,
+      level_up_rule: 'two_of_three' as const,
+      paused_at: null,
+      notes: '',
+      created_at: '',
+      updated_at: '',
+    },
+    steps: ids.map((sid, i) => ({ ...step(sid, i), progression_id: id })),
+    moves: [],
+  });
+  const lever = ladder('lever', 'Front lever', 'b', ['a', 'b', 'c', 'd']);
+
+  it("gives the rung's place and its neighbours", () => {
+    expect(ladderLevel([lever], 'ex-b')).toMatchObject({
+      progressionId: 'lever',
+      name: 'Front lever',
+      number: 2,
+      total: 4,
+      previous: { id: 'a' },
+      next: { id: 'c' },
+    });
+  });
+
+  it('works for a rung that is not the current one', () => {
+    expect(ladderLevel([lever], 'ex-d')).toMatchObject({ number: 4, next: null });
+  });
+
+  it('prefers the ladder this exercise is the current rung of', () => {
+    const other = ladder('other', 'Other', 'x', ['b2', 'x']);
+    other.steps[1] = { ...other.steps[1], exercise_id: 'ex-b' };
+    const movedOn = ladder('lever', 'Front lever', 'c', ['a', 'b', 'c', 'd']);
+    expect(ladderLevel([movedOn, other], 'ex-b')?.progressionId).toBe('other');
+  });
+
+  it('is null for an exercise on no ladder', () => {
+    expect(ladderLevel([lever], 'squat')).toBeNull();
   });
 });

@@ -41,7 +41,7 @@ import * as api from '../api';
 import type { KeyboardAwareScrollViewRef } from 'react-native-keyboard-controller';
 
 import { supersetLabels, supersetNext } from '../blocks';
-import { ExerciseBlock } from '../components/ExerciseBlock';
+import { ExerciseBlock, type LevelChip } from '../components/ExerciseBlock';
 import { HoldDial } from '../components/HoldDial';
 import { PickerSheet } from '../components/PickerSheet';
 import { REST_BAR_HEIGHT, RestBar } from '../components/RestBar';
@@ -52,7 +52,7 @@ import { primaryRecord } from '../records';
 import { adjustRest, startRest, type RestState } from '../restTimer';
 import { settleLoad } from '../sessionState';
 import { sessionClockEnd } from '../summary';
-import { formatDuration, normaliseMuscle, type SetType } from '../types';
+import { formatDuration, normaliseMuscle, type ProgressionStep, type SetType } from '../types';
 import { usePlateInventory } from '../usePlateInventory';
 import { useWorkoutSession } from '../useWorkoutSession';
 
@@ -257,6 +257,23 @@ export function WorkoutSessionScreen() {
     return value && value > 0 ? value : null;
   };
 
+  /** A ladder block's level chip, and the rungs it may switch to before anything is logged. */
+  const levelChip = (block: (typeof w.blocks)[number]): LevelChip | null => {
+    const level = w.levelFor(block);
+    if (!level) return null;
+    const logged = block.rows.some((r) => r.kind === 'saved');
+    const open = (step: ProgressionStep | null) =>
+      step && !logged && !w.blocks.some((b) => b.exerciseId === step.exercise_id)
+        ? (w.exercisesById[step.exercise_id]?.name ?? 'the next rung')
+        : null;
+    return {
+      label: `${level.name} · ${level.number}/${level.total}`,
+      spoken: `Step ${level.number} of ${level.total} on the ${level.name} ladder`,
+      easier: open(level.previous),
+      harder: open(level.next),
+    };
+  };
+
   const supersetTags = supersetLabels(
     w.blocks.map((b) => ({ id: b.id, supersetGroup: b.sessionExercise?.superset_group ?? null })),
   );
@@ -338,6 +355,8 @@ export function WorkoutSessionScreen() {
                 restSeconds={w.restFor(block)}
                 supersetLabel={supersetTags[block.id] ?? null}
                 targetReason={w.targetFor(block).reason}
+                level={levelChip(block)}
+                onLevel={(delta) => void w.stepLevel(block.id, delta)}
                 previousFor={(i) => w.previousFor(block, i)}
                 ghostFor={(i) => w.ghostFor(block, i)}
                 onOpenExercise={() =>

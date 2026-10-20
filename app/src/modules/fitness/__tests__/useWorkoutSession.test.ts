@@ -328,3 +328,57 @@ describe('removing a saved set', () => {
     expect(result.current.blocks[0].rows[0]).toMatchObject({ kind: 'saved', key: 's1-again' });
   });
 });
+
+describe('the ladder level of a block', () => {
+  const step = (id: string, exercise_id: string, position: number) => ({
+    id,
+    progression_id: 'lad',
+    user_id: 'u',
+    exercise_id,
+    position,
+    goal_sets: 3,
+    goal_reps: 8,
+    goal_seconds: null,
+    goal_added_kg: null,
+    start_reps: 5,
+    start_seconds: null,
+    cue: '',
+    created_at: '',
+  });
+  const ladder = {
+    progression: {
+      id: 'lad',
+      user_id: 'u',
+      name: 'Pull-up ladder',
+      family: 'pull',
+      current_step_id: 'r1',
+      position: 0,
+      level_up_rule: 'two_of_three',
+      paused_at: null,
+      notes: '',
+      created_at: '',
+      updated_at: '',
+    },
+    steps: [step('r1', 'pull', 0), step('r2', 'archer', 1)],
+    moves: [],
+  };
+
+  it("says where the block's exercise stands, and steps to the next rung", async () => {
+    api.listLadders.mockResolvedValue([ladder]);
+    api.listExercises.mockResolvedValue([pullUp, { ...pullUp, id: 'archer', name: 'Archer' }]);
+    const { result } = await opened();
+    expect(result.current.levelFor(result.current.blocks[0])).toMatchObject({
+      name: 'Pull-up ladder',
+      number: 1,
+      total: 2,
+    });
+
+    await act(async () => {
+      await result.current.stepLevel('b1', 1);
+    });
+
+    expect(api.updateSessionExercise).toHaveBeenCalledWith('b1', { exercise_id: 'archer' });
+    expect(result.current.blocks[0].exerciseId).toBe('archer');
+    expect(result.current.levelFor(result.current.blocks[0])).toMatchObject({ number: 2 });
+  });
+});
