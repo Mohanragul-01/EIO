@@ -21,7 +21,7 @@ import { Button, Sheet } from '../../../core/components';
 import { success, tap } from '../../../core/haptics';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { radius, spacing } from '../../../core/theme';
-import { holdCues, holdPhase } from '../holdTimer';
+import { CUE_PULSES, holdCues, holdPhase } from '../holdTimer';
 import { formatHoldShort } from '../load';
 
 const VOICE_KEY = 'eio.fitness.hold-voice';
@@ -30,6 +30,15 @@ const SIZE = 220;
 const STROKE = 12;
 
 type Run = { startedAt: number } | null;
+
+/** Play a cue's pulses (holdTimer.ts CUE_PULSES), a beat apart. */
+function feel(kind: keyof typeof CUE_PULSES) {
+  CUE_PULSES[kind].forEach((pulse, i) => {
+    const play = pulse === 'tap' ? tap : success;
+    if (i === 0) play();
+    else setTimeout(play, i * 180);
+  });
+}
 
 function say(text: string) {
   try {
@@ -91,22 +100,22 @@ export function HoldDial({
       if (phase.phase === 'leadIn') {
         if (lastCount.current !== phase.count) {
           lastCount.current = phase.count;
-          tap();
+          feel('count');
           if (voice) say(String(phase.count));
         }
         return;
       }
       if (lastCount.current !== 0) {
         lastCount.current = 0;
-        success();
+        feel('go');
         if (voice) say('Go');
       }
       for (const cue of holdCues(lastElapsed.current, phase.elapsedMs, target, ticks ? 5 : null)) {
         if (cue.kind === 'target') {
-          success();
+          feel('target');
           if (voice) say('Target');
         } else {
-          tap();
+          feel('tick');
           if (voice) say(String(cue.atSeconds));
         }
       }
