@@ -19,6 +19,7 @@ import { groupItems } from '@app/modules/fitness/pickerItems';
 import { setLabels } from '@app/modules/fitness/load';
 import { DEFAULT_INVENTORY, warmupSets } from '@app/modules/fitness/plates';
 import { primaryRecord } from '@app/modules/fitness/records';
+import { sessionClockEnd } from '@app/modules/fitness/summary';
 import { settleLoad, type BlockState } from '@app/modules/fitness/sessionState';
 import { formatDuration, normaliseMuscle } from '@app/modules/fitness/types';
 
@@ -317,6 +318,8 @@ export function SessionView({ sessionId, nav }: { sessionId: string; nav: Fitnes
         <LiveStats
           startedAt={w.stats.startedAt}
           endedAt={w.stats.endedAt}
+          lastSetAt={w.stats.lastSetAt}
+          date={session.date}
           volume={w.stats.volume}
           sets={w.stats.workingSets}
         />
@@ -546,27 +549,35 @@ function SessionDate({ value, onCommit }: { value: string; onCommit: (date: stri
 
 /**
  * Duration · Volume · Sets. Its own component so the once-a-second clock
- * re-renders this and nothing else; the clock stops at Finish.
+ * re-renders this and nothing else. The clock stops at Finish - or, for an
+ * unfinished session that is clearly over (another day's, or idle for hours),
+ * at its last set (summary.ts sessionClockEnd).
  */
 function LiveStats({
   startedAt,
   endedAt,
+  lastSetAt,
+  date,
   volume,
   sets,
 }: {
   startedAt: number | null;
   endedAt: number | null;
+  lastSetAt: number | null;
+  date: string;
   volume: number;
   sets: number;
 }) {
   const [now, setNow] = useState(() => Date.now());
+  const end = sessionClockEnd({ endedAt, startedAt, lastSetAt, date, now });
+  const running = end === null && startedAt !== null;
   useEffect(() => {
-    if (endedAt !== null || startedAt === null) return;
+    if (!running) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [endedAt, startedAt]);
+  }, [running]);
 
-  const elapsed = startedAt === null ? 0 : Math.max(0, ((endedAt ?? now) - startedAt) / 1000);
+  const elapsed = startedAt === null ? 0 : Math.max(0, ((end ?? now) - startedAt) / 1000);
   const hours = Math.floor(elapsed / 3600);
   const duration =
     hours > 0
