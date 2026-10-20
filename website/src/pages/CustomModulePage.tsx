@@ -13,7 +13,7 @@
  * of a table is comparing rows down a column, and a module with five fields is
  * exactly the shape that benefits. Yes/no cells tick in place.
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { fromISODate, todayISO } from '@app/core/date';
@@ -179,15 +179,57 @@ export function CustomModulePage() {
       records: current.records.map((record) => (record.id === id ? change(record) : record)),
     }));
 
+  /**
+   * A write sends the row's whole `data`, so two ticks on one row are two
+   * whole-object writes. Unordered, the older one could land last and quietly
+   * untick the newer. So writes to a row wait for each other, as on the
+   * B-List, and each is built when its turn comes from `unsaved`: the row as
+   * every tick so far leaves it, kept while any of them is in flight. The row
+   * a render handed to the click (or to a toast's Undo) predates those.
+   */
+  const queues = useRef(new Map<string, Promise<unknown>>());
+  const unsaved = useRef(new Map<string, CustomRecord['data']>());
+  /** The rows as last rendered, for a tick with nothing in flight. */
+  const latest = useRef(records);
+  useEffect(() => {
+    latest.current = records;
+  });
+
+  const inOrder = (id: string, write: () => Promise<unknown>) => {
+    const previous = queues.current.get(id) ?? Promise.resolve();
+    // After the previous write, whether it worked or not.
+    const next = previous.then(write, write);
+    const settled = next.catch(() => undefined);
+    queues.current.set(id, settled);
+    void settled.then(() => {
+      if (queues.current.get(id) !== settled) return;
+      queues.current.delete(id);
+      unsaved.current.delete(id);
+    });
+    return next;
+  };
+
   /** Tick a yes/no in place. A failure puts back this value on this row only. */
-  const setValue = async (record: CustomRecord, key: string, value: unknown) => {
-    const previous = record.data[key];
-    patchRecord(record.id, (r) => ({ ...r, data: { ...r.data, [key]: value } }));
+  const setValue = async (id: string, key: string, value: unknown) => {
+    const base = unsaved.current.get(id) ?? latest.current.find((r) => r.id === id)?.data;
+    if (!base) return;
+    const previous = base[key];
+    unsaved.current.set(id, { ...base, [key]: value });
+    patchRecord(id, (r) => ({ ...r, data: { ...r.data, [key]: value } }));
     setActionError(null);
     try {
-      await api.updateRecord(record.id, { ...record.data, [key]: value });
+      await inOrder(id, async () => {
+        try {
+          await api.updateRecord(id, unsaved.current.get(id) ?? { ...base, [key]: value });
+        } catch (e) {
+          // Put back before the next write in line reads the row.
+          const now = unsaved.current.get(id);
+          if (now) unsaved.current.set(id, { ...now, [key]: previous });
+          throw e;
+        }
+      });
     } catch (e) {
-      patchRecord(record.id, (r) => ({ ...r, data: { ...r.data, [key]: previous } }));
+      patchRecord(id, (r) => ({ ...r, data: { ...r.data, [key]: previous } }));
       setActionError(e instanceof Error ? e.message : 'Could not save that');
     }
   };
@@ -195,14 +237,14 @@ export function CustomModulePage() {
   const toggle = (record: CustomRecord, field: CustomField) => {
     const next = record.data[field.key] !== true;
     const updated = { ...record, data: { ...record.data, [field.key]: next } };
-    void setValue(record, field.key, next);
+    void setValue(record.id, field.key, next);
     // As on the phone: an Undo only when the tick hides the row under the
     // current filter. Otherwise the tick is its own undo.
     if (filterRecords([updated], filters, dateField, today).length === 0) {
       toast.show({
         message: `${field.label}: ${next ? 'yes' : 'no'} · hidden by the filter`,
         actionLabel: 'Undo',
-        onAction: () => void setValue(updated, field.key, !next),
+        onAction: () => void setValue(record.id, field.key, !next),
       });
     }
   };
