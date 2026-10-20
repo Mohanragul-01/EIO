@@ -1644,7 +1644,20 @@ function HistoryDialog({
               <div className="col" style={{ gap: 3 }}>
                 {day.uses.map((use) =>
                   editingId === use.id ? (
-                    <div className="list-row bordered wrap" key={use.id} style={{ gap: 6 }}>
+                    <div
+                      className="list-row bordered wrap"
+                      key={use.id}
+                      style={{ gap: 6 }}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Escape') return;
+                        // Esc closes the edit, not the whole dialog. The
+                        // dialog's cancel is the key's default action, so
+                        // stopping propagation alone does not hold it.
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setEditingId(null);
+                      }}
+                    >
                       <input
                         className="input"
                         type="date"
@@ -1670,11 +1683,6 @@ function HistoryDialog({
                         onChange={(e) => setDraft({ ...draft, note: e.target.value })}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') void saveEdit(use);
-                          if (e.key === 'Escape') {
-                            // Esc closes the edit, not the whole dialog.
-                            e.stopPropagation();
-                            setEditingId(null);
-                          }
                         }}
                         aria-label="Note"
                       />
