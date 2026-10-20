@@ -80,6 +80,33 @@ registerResync('tasks', async () => {
   await rebuildAll(await listAllOpen(), todayISO());
 });
 
+/**
+ * The open-or-closed write in flight on each task, by id.
+ *
+ * Undo puts a row back on screen at once, so it can be ticked again while
+ * reopenTask is still on the wire. Run side by side, the tick's close could
+ * reach the server before the reopen and be undone by it, behind a
+ * "Completed" toast; or its close and new successor landed between the
+ * reopen's writes, and the reopen's sweep for untouched occurrences deleted
+ * the new successor with the old one, ending the routine. So completing,
+ * reopening and abandoning a task wait their turn: each starts once the one
+ * before it on the same task has settled, whether it worked or not.
+ */
+const inFlight = new Map<string, Promise<void>>();
+
+function inTurn<T>(id: string, write: () => Promise<T>): Promise<T> {
+  const result = (inFlight.get(id) ?? Promise.resolve()).then(write);
+  const settled = result.then(
+    () => {},
+    () => {},
+  );
+  inFlight.set(id, settled);
+  void settled.then(() => {
+    if (inFlight.get(id) === settled) inFlight.delete(id);
+  });
+  return result;
+}
+
 /** The columns a series history needs - small, since a daily routine has hundreds. */
 const HISTORY_COLUMNS =
   'id, series_id, due_date, scheduled_for, completed_at, updated_at, outcome, is_done, frequency, repeat_every, repeat_weekdays, repeat_anchor_day, repeat_nth, repeat_from';
@@ -388,11 +415,17 @@ export async function updateTodo(
  * time, a checklist, repeat turned on) would otherwise be dropped from every
  * occurrence after this one. The close returns the row it closed, in the
  * same statement, so the successor is built from that at no extra cost.
+ *
+ * It waits for any reopen of the same task still in flight (see inTurn).
  */
-export async function completeTask(
+export function completeTask(
   todo: Todo,
   outcome: Exclude<Outcome, 'wont_do'> = 'done',
 ): Promise<Todo | null> {
+  return inTurn(todo.id, () => closeTask(todo, outcome));
+}
+
+async function closeTask(todo: Todo, outcome: Exclude<Outcome, 'wont_do'>): Promise<Todo | null> {
   // Only an OPEN row is closed. Done on a reminder and then a tick on the
   // stale row in the app would otherwise close it twice and create two
   // successors - one routine, open twice.
@@ -468,14 +501,16 @@ export function skipTask(todo: Todo): Promise<Todo | null> {
  * Close a one-off task as abandoned. Kept, like everything closed, and
  * reopenable; it simply does not count as done.
  */
-export async function wontDoTask(todo: Todo): Promise<void> {
-  const { error } = await supabase
-    .from(TABLE)
-    .update({ is_done: true, outcome: 'wont_do', completed_at: new Date().toISOString() })
-    .eq('id', todo.id)
-    .eq('is_done', false);
-  if (error) throw new Error(error.message);
-  remind([], [todo.id]);
+export function wontDoTask(todo: Todo): Promise<void> {
+  return inTurn(todo.id, async () => {
+    const { error } = await supabase
+      .from(TABLE)
+      .update({ is_done: true, outcome: 'wont_do', completed_at: new Date().toISOString() })
+      .eq('id', todo.id)
+      .eq('is_done', false);
+    if (error) throw new Error(error.message);
+    remind([], [todo.id]);
+  });
 }
 
 /**
@@ -493,9 +528,14 @@ export async function wontDoTask(todo: Todo): Promise<void> {
  * duplicate, never a routine with nothing open.
  *
  * Returns the ids it removed, so a caller holding them in a list can drop
- * them without a refetch.
+ * them without a refetch. A tick of the same task sent meanwhile waits for it
+ * (see inTurn).
  */
-export async function reopenTask(id: string): Promise<{ reopened: Todo; removed: string[] }> {
+export function reopenTask(id: string): Promise<{ reopened: Todo; removed: string[] }> {
+  return inTurn(id, () => reopen(id));
+}
+
+async function reopen(id: string): Promise<{ reopened: Todo; removed: string[] }> {
   const { data: reopened, error } = await supabase
     .from(TABLE)
     .update({ is_done: false, outcome: null, completed_at: null })

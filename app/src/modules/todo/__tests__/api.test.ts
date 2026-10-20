@@ -475,3 +475,40 @@ describe('found in review', () => {
     expect((history[0].due_date ?? '') < (history[1].due_date ?? '')).toBe(true);
   });
 });
+
+describe('Undo and then a quick re-tick (found in review)', () => {
+  const row = (id: string) => mockDb.rows().find((r) => r.id === id) as unknown as Todo;
+
+  it('a re-tick sent while the Undo is in flight waits for it, and the routine stays open once', async () => {
+    // Undo puts the row back at once, so it can be ticked again before
+    // reopenTask has finished. Without waiting, the re-tick's close and its
+    // new successor landed between reopenTask's writes, and its sweep for
+    // untouched occurrences deleted the new successor along with the old.
+    const task = await repeatingTask();
+    const first = (await api.completeTask(task)) as Todo;
+
+    // The Undo's search for untouched occurrences is slow to come back...
+    const release = mockDb.holdNext('todos', 'select');
+    const undo = api.reopenTask(task.id);
+    const retick = api.completeTask(task);
+    // ...and everything else that is free to run, runs.
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+    release();
+    const [, second] = await Promise.all([undo, retick]);
+
+    expect(second).not.toBeNull();
+    expect(row(task.id).is_done).toBe(true);
+    expect(openRows().map((r) => r.id)).toEqual([(second as Todo).id]);
+    expect(openRows().map((r) => r.id)).not.toContain(first.id);
+  });
+
+  it('a write that fails does not hold up the next one on the same task', async () => {
+    const task = await repeatingTask({ is_repeat: false });
+    mockDb.failNext('todos', 'update');
+
+    await expect(api.completeTask(task)).rejects.toThrow('network down');
+    await expect(api.completeTask(task)).resolves.toBeNull();
+
+    expect(row(task.id).is_done).toBe(true);
+  });
+});

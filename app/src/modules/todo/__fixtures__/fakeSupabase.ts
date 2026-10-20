@@ -81,6 +81,8 @@ export function createFakeSupabase() {
   /** Strictly increasing timestamps, so "later" is observable within one test. */
   const now = () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)).toISOString();
   const calls: { table: string; op: string }[] = [];
+  /** Requests that wait until released: a slow round trip, for races. */
+  const holds: { table: string; op: string; until: Promise<void> }[] = [];
 
   function query(table: string) {
     let op: 'select' | 'insert' | 'update' | 'delete' = 'select';
@@ -245,6 +247,11 @@ export function createFakeSupabase() {
         resolve: (value: { data: unknown; error: { message: string } | null }) => T,
         reject?: (reason: unknown) => T,
       ) {
+        const held = holds.findIndex((h) => h.table === table && h.op === op);
+        if (held >= 0) {
+          const [{ until }] = holds.splice(held, 1);
+          return until.then(run).then(resolve, reject);
+        }
         try {
           return Promise.resolve(run()).then(resolve, reject);
         } catch (error) {
@@ -298,6 +305,18 @@ export function createFakeSupabase() {
     /** The next `op` on `table` resolves with this error instead of running. */
     failNext(table: string, op: 'insert' | 'update' | 'delete', message = 'network down') {
       failures.push({ table, op, message });
+    },
+    /**
+     * The next `op` on `table` does not reach the table until the returned
+     * function is called - a request still on the wire while others land.
+     */
+    holdNext(table: string, op: 'select' | 'insert' | 'update' | 'delete'): () => void {
+      let release = () => {};
+      const until = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      holds.push({ table, op, until });
+      return () => release();
     },
   };
 }
