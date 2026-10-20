@@ -249,12 +249,17 @@ function SetRow({
   const record = primaryRecord(hits);
   const side = row.kind === 'saved' ? row.set.side : row.draft.side;
 
-  const letterColor: Record<SetType, string> = {
-    warmup: colors.warning,
-    normal: saved ? colors.text : colors.textSecondary,
-    failure: colors.danger,
-    drop: colors.info,
-  };
+  // On a ticked row's `completed` tint only text and textSecondary keep their
+  // contrast, so there the letter alone says W, F or D (and the trophy's shape
+  // says record); the type colours are for rows not yet ticked.
+  const letterColor: Record<SetType, string> = saved
+    ? { warmup: colors.text, normal: colors.text, failure: colors.text, drop: colors.text }
+    : {
+        warmup: colors.warning,
+        normal: colors.textSecondary,
+        failure: colors.danger,
+        drop: colors.info,
+      };
 
   const previousText = previous
     ? formatSetShort({ ...previous, band_id: null, side: null }, shape)
@@ -386,7 +391,7 @@ function SetRow({
         >
           {record ? (
             <View style={styles.medal}>
-              <Ionicons name="trophy" size={13} color={colors.warning} />
+              <Ionicons name="trophy" size={13} color={saved ? colors.text : colors.warning} />
               <Text style={[styles.setLabel, { color: letterColor[type] }]}>{label}</Text>
             </View>
           ) : (

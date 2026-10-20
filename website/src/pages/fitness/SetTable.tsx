@@ -412,7 +412,12 @@ function SetRow({
           }${clean ? '' : ', not clean'}. Change type, effort or remove`}
         >
           {record ? <Icon name="trophy" size={13} className="fx-medal" /> : null}
-          <span className="fx-set-label" style={{ color: SET_TYPE_COLOR[type] }}>
+          {/* On a ticked row's tint the letter alone carries the type (the
+              colours lose their contrast there); see .fx-set-row.done. */}
+          <span
+            className="fx-set-label"
+            style={saved ? undefined : { color: SET_TYPE_COLOR[type] }}
+          >
             {label}
           </span>
           {side ? <span className="fx-side">{side === 'left' ? 'L' : 'R'}</span> : null}

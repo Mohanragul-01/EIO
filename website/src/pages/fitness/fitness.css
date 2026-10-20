@@ -781,6 +781,11 @@
 .fx-medal {
   color: var(--warning);
 }
+/* A record is only ever on a ticked row: its shape says "record" there, in
+   the text colour that keeps its contrast on the tint. */
+.fx-set-row.done .fx-medal {
+  color: var(--text);
+}
 .fx-side {
   padding: 0 4px;
   border-radius: 3px;
