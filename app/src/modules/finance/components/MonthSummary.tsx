@@ -25,7 +25,7 @@ import { DeltaText } from './DeltaText';
 type MonthSummaryProps = {
   summary: PeriodSummary;
   deltas: { spent: Delta | null; earned: Delta | null; byCategory: Map<string, Delta | null> };
-  /** Last month, as 'Sep' and 'September'. */
+  /** Last month, as 'Sep' and 'September' - or mid-month its same days, '1–20 Sep'. */
   versus: string;
   versusLong: string;
   onOpenCategory: (key: string) => void;

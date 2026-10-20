@@ -11,6 +11,7 @@
  * and 1 November 2026.
  */
 import {
+  comparisonFor,
   daysInclusive,
   normalizeStartDay,
   periodBounds,
@@ -199,5 +200,58 @@ describe('shiftPeriod and recentPeriods', () => {
       { year: 2026, month: 1 },
       { year: 2026, month: 2 },
     ]);
+  });
+});
+
+describe('comparisonFor', () => {
+  const october = { year: 2026, month: 10 };
+
+  it('while a month runs, takes as many days of the one before, and says which', () => {
+    expect(comparisonFor(october, 1, '2026-10-05')).toEqual({
+      range: { start: '2026-09-01', end: '2026-09-05' },
+      short: '1–5 Sep',
+      long: '1 to 5 September',
+    });
+    expect(comparisonFor(october, 1, '2026-10-01')).toEqual({
+      range: { start: '2026-09-01', end: '2026-09-01' },
+      short: '1 Sep',
+      long: '1 September',
+    });
+  });
+
+  it('takes the whole of the one before once a month is over', () => {
+    const whole = {
+      range: { start: '2026-09-01', end: '2026-09-30' },
+      short: 'Sep',
+      long: 'September',
+    };
+    expect(comparisonFor(october, 1, '2026-11-02')).toEqual(whole);
+    // On the last day, the month is as good as done.
+    expect(comparisonFor(october, 1, '2026-10-31')).toEqual(whole);
+    // And from the 30th, September has no more days to add.
+    expect(comparisonFor(october, 1, '2026-10-30')).toEqual(whole);
+  });
+
+  it('runs out at the end of a short February', () => {
+    expect(comparisonFor({ year: 2026, month: 3 }, 1, '2026-03-29').short).toBe('Feb');
+    expect(comparisonFor({ year: 2026, month: 3 }, 1, '2026-03-27').short).toBe('1–27 Feb');
+  });
+
+  it('crosses a month end with a salary-day start', () => {
+    // 25 Sep - 24 Oct is October; on 20 Oct, 26 of its days have gone, so
+    // September's period (25 Aug - 24 Sep) is cut to 25 Aug - 19 Sep.
+    expect(comparisonFor(october, 25, '2026-10-20')).toEqual({
+      range: { start: '2026-08-25', end: '2026-09-19' },
+      short: '25 Aug – 19 Sep',
+      long: '25 August to 19 September',
+    });
+  });
+
+  it('counts days across the spring daylight-saving change', () => {
+    // 8 March 2026 has 23 hours in New York; ten days are still ten.
+    expect(comparisonFor({ year: 2026, month: 3 }, 1, '2026-03-10').range).toEqual({
+      start: '2026-02-01',
+      end: '2026-02-10',
+    });
   });
 });

@@ -26,6 +26,7 @@ import { budgetStatus, type BudgetStatus } from './budget';
 import { ledgerChanged, onLedgerChange } from './changes';
 import { quickAddAccount } from './defaults';
 import {
+  comparisonFor,
   normalizeStartDay,
   periodBounds,
   periodOf,
@@ -215,7 +216,9 @@ export function useFinance() {
 
   const period = shiftPeriod(periodOf(today, startDay), offset);
   const range = rangeAt(today, startDay, offset);
-  const previousPeriod = shiftPeriod(period, -1);
+  // Last month, or as many of its days as have gone in this one (period.ts).
+  const comparison = comparisonFor(period, startDay, today);
+  const { start: compareStart, end: compareEnd } = comparison.range;
 
   // The rows on hand belong to the period on screen only once its load has
   // landed. Until then they are the month you stepped away from (or the old
@@ -230,9 +233,9 @@ export function useFinance() {
   const summary = useMemo(() => summarize(rows), [rows]);
 
   const previous = useMemo(() => {
-    const before = rangeAt(today, startDay, offset - 1);
+    const before = { start: compareStart, end: compareEnd };
     return summarize(points.filter((p) => rangeContains(before, p.date)));
-  }, [points, today, startDay, offset]);
+  }, [points, compareStart, compareEnd]);
 
   const deltas = useMemo(() => {
     const prevByCategory = new Map(previous.categoryTotals.map((c) => [c.key, c.totalMinor]));
@@ -564,7 +567,9 @@ export function useFinance() {
   return {
     // period
     period,
-    previousPeriod,
+    /** What the deltas compare with: 'Sep', or '1–20 Sep' mid-month. */
+    versus: comparison.short,
+    versusLong: comparison.long,
     range,
     startDay,
     isCurrentPeriod: offset === 0,

@@ -457,3 +457,40 @@ describe('deleting a transfer', () => {
     expect(result.current.rows.map((r) => r.id)).toEqual(['out']);
   });
 });
+
+// THE COMPARISON WITH LAST MONTH -----------------------------------------------
+
+describe('the comparison with last month', () => {
+  beforeEach(() => {
+    ledger = [
+      tx('oct', '2026-10-05', 100000),
+      tx('sep-early', '2026-09-10', 100000),
+      tx('sep-late', '2026-09-25', 400000),
+      tx('aug', '2026-08-30', 250000),
+    ];
+  });
+
+  it('while this month runs, holds it against as many days of the last one', async () => {
+    const { result } = await loaded();
+
+    // 20 days of October against 1-20 September, not all thirty: the same
+    // spending so far is "same", not "-80%".
+    expect(result.current.deltas.spent).toEqual({ kind: 'same' });
+    expect(result.current.deltas.byCategory.get('food')).toEqual({ kind: 'same' });
+    // And the label says which days, so it never claims all of September.
+    expect(result.current.versus).toBe('1–20 Sep');
+    expect(result.current.versusLong).toBe('1 to 20 September');
+  });
+
+  it('holds a finished month against the whole of the one before', async () => {
+    const { result } = await loaded();
+    await act(async () => {
+      result.current.stepPeriod(-1);
+    });
+    await settle();
+
+    expect(result.current.deltas.spent).toEqual({ kind: 'percent', direction: 'up', percent: 100 });
+    expect(result.current.versus).toBe('Aug');
+    expect(result.current.versusLong).toBe('August');
+  });
+});

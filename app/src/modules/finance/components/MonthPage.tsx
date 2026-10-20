@@ -12,7 +12,6 @@ import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-n
 import { Button, EmptyState, FadeInView } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { layout, motion, spacing } from '../../../core/theme';
-import { longMonth, shortMonth } from '../period';
 import type { DayGroup, ListItem } from '../summary';
 import type { QuickAdd } from '../types';
 import type { FinanceData } from '../useFinance';
@@ -66,9 +65,6 @@ export function MonthPage({
     return out;
   }, [data.days]);
 
-  const versus = shortMonth(data.previousPeriod);
-  const versusLong = longMonth(data.previousPeriod);
-
   return (
     <FlatList
       data={rows}
@@ -104,8 +100,8 @@ export function MonthPage({
             <MonthSummary
               summary={data.summary}
               deltas={data.deltas}
-              versus={versus}
-              versusLong={versusLong}
+              versus={data.versus}
+              versusLong={data.versusLong}
               onOpenCategory={onOpenCategory}
             />
           ) : (

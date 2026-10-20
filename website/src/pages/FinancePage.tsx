@@ -42,7 +42,7 @@ import * as api from '@app/modules/finance/api';
 import { budgetHistory, budgetStatus } from '@app/modules/finance/budget';
 import { quickAddAccount } from '@app/modules/finance/defaults';
 import {
-  longMonth,
+  comparisonFor,
   normalizeStartDay,
   periodBounds,
   periodOf,
@@ -52,7 +52,6 @@ import {
   rangeContains,
   recentPeriods,
   shiftPeriod,
-  shortMonth,
 } from '@app/modules/finance/period';
 import {
   compareToPrevious,
@@ -167,9 +166,11 @@ export function FinancePage() {
   const startDay = data?.startDay ?? 1;
   const today = data?.today ?? todayISO();
   const period = data?.period ?? shiftPeriod(periodOf(today, 1), offset);
-  const previous = shiftPeriod(period, -1);
-  const versus = shortMonth(previous);
-  const versusLong = longMonth(previous);
+  // Last month, or mid-month as many of its days as have gone in this one,
+  // as on the phone: "vs 1–20 Sep" rather than a part month against a whole.
+  const comparison = comparisonFor(period, startDay, today);
+  const { short: versus, long: versusLong } = comparison;
+  const { start: compareStart, end: compareEnd } = comparison.range;
 
   const accountsById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
   const accountsSummary = useMemo(() => summarizeAccounts(accounts, points), [accounts, points]);
@@ -181,9 +182,9 @@ export function FinancePage() {
   const periodMonth = period.month;
 
   const previousSummary = useMemo(() => {
-    const before = periodBounds(shiftPeriod({ year: periodYear, month: periodMonth }, -1), startDay);
+    const before = { start: compareStart, end: compareEnd };
     return summarize(points.filter((p) => rangeContains(before, p.date)));
-  }, [points, periodYear, periodMonth, startDay]);
+  }, [points, compareStart, compareEnd]);
 
   const deltas = useMemo(() => {
     const prevBy = new Map(previousSummary.categoryTotals.map((c) => [c.key, c.totalMinor]));

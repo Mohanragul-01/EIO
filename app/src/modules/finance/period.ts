@@ -179,6 +179,64 @@ export function periodSubtitle(period: Period, startDay: number): string | null 
   return formatRange(periodBounds(period, startDay));
 }
 
+/** `n` days on from a day, built from (y, m, d + n) so DST cannot move it. */
+function plusDays(iso: string, n: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(y, m - 1, d + n);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+const dayOf = (iso: string) => Number(iso.slice(8, 10));
+const monthOf = (iso: string) => MONTH_NAMES[Number(iso.slice(5, 7)) - 1];
+
+/** '1–5 Sep', '1 Sep', or '25 Aug – 19 Sep' across a month's end. */
+function shortSpan({ start, end }: DateRange): string {
+  if (start === end) return shortDate(start);
+  if (start.slice(0, 7) === end.slice(0, 7)) return `${dayOf(start)}–${shortDate(end)}`;
+  return formatRange({ start, end });
+}
+
+/** The same, as a screen reader says it: '1 to 5 September'. */
+function spokenSpan({ start, end }: DateRange): string {
+  const say = (iso: string) => `${dayOf(iso)} ${monthOf(iso)}`;
+  if (start === end) return say(start);
+  if (start.slice(0, 7) === end.slice(0, 7)) return `${dayOf(start)} to ${say(end)}`;
+  return `${say(start)} to ${say(end)}`;
+}
+
+export type Comparison = {
+  /** The days of the previous period the figures are held against. */
+  range: DateRange;
+  /** For "+18% vs Sep": 'Sep', or '1–5 Sep' for part of it. */
+  short: string;
+  /** For a screen reader: 'September', or '1 to 5 September'. */
+  long: string;
+};
+
+/**
+ * What a period is held against in "+18% vs Sep": the one before it, as of
+ * `today`.
+ *
+ * Once the period is over, the whole of the one before. While it is still
+ * running, only as many days of the one before as have gone in this one: on
+ * 5 October, 1-5 September. Against all of September, five days of October
+ * always read "85% less" and every category "down", which says the date, not
+ * the spending. The label then names the days, so it never claims the whole
+ * month. Days are counted like periodProgress's, today included.
+ */
+export function comparisonFor(period: Period, startDay: number, today: string): Comparison {
+  const before = shiftPeriod(period, -1);
+  const whole = periodBounds(before, startDay);
+  const { days, elapsed } = periodProgress(periodBounds(period, startDay), today);
+
+  const end = elapsed > 0 && elapsed < days ? plusDays(whole.start, elapsed - 1) : whole.end;
+  // A shorter month before runs out first: from 30 October, all of September.
+  if (end >= whole.end) return { range: whole, short: shortMonth(before), long: longMonth(before) };
+
+  const range = { start: whole.start, end };
+  return { range, short: shortSpan(range), long: spokenSpan(range) };
+}
+
 /** The last `count` periods, oldest first, ending with `current`. */
 export function recentPeriods(current: Period, count: number): Period[] {
   return Array.from({ length: count }, (_, i) => shiftPeriod(current, i - (count - 1)));
