@@ -12,7 +12,7 @@
  * Today view, the tab's frequency on a frequency page.
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { Button, Sheet, TextField } from '../../../core/components';
@@ -63,6 +63,11 @@ export function QuickAddSheet({
   const [added, setAdded] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Refs, read only in the handlers: two Enters can arrive before React has
+  // re-rendered with `saving`, and a save coming back needs to know what the
+  // field holds NOW, not what it held when the save began.
+  const inFlight = useRef(false);
+  const typedNow = useRef('');
 
   // Start clean each time it opens. During render rather than in an effect,
   // so the previous session's text is never painted for a frame.
@@ -91,6 +96,7 @@ export function QuickAddSheet({
   };
 
   const onChangeText = (value: string) => {
+    typedNow.current = value;
     setText(value);
     setError(null);
     setParsed(value.trim() ? parse(value, ignore) : null);
@@ -102,25 +108,45 @@ export function QuickAddSheet({
     setParsed(parse(text, next));
   };
 
+  /**
+   * Enter, or the button. One task per press: a second Enter while a save is
+   * on the wire is ignored (on a slow connection it used to add the task
+   * twice). The field is cleared as the save starts, so the next task can be
+   * typed meanwhile - clearing it when the save came back wiped whatever had
+   * been typed since. A failed save gives the line back, unless the field has
+   * something new in it.
+   */
   const add = async () => {
-    const result = text.trim() ? parse(text, ignore) : null;
+    if (inFlight.current) return;
+    const line = text;
+    const kept = ignore;
+    const result = line.trim() ? parse(line, kept) : null;
     if (!result || !result.title) {
       setError(result ? 'That is all date and time - what needs doing?' : 'Type what needs doing');
       return;
     }
+    inFlight.current = true;
     setSaving(true);
     setError(null);
+    typedNow.current = '';
+    setText('');
+    setIgnore([]);
+    setParsed(null);
     try {
       const todo = await api.createTodo(toTodoInput(result));
       success();
       setAdded((list) => [summary(todo), ...list].slice(0, 3));
-      setText('');
-      setIgnore([]);
-      setParsed(null);
       onAdded(todo);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not add that');
+      if (typedNow.current === '') {
+        typedNow.current = line;
+        setText(line);
+        setIgnore(kept);
+        setParsed(parse(line, kept));
+      }
     } finally {
+      inFlight.current = false;
       setSaving(false);
     }
   };
@@ -202,7 +228,9 @@ export function QuickAddSheet({
           </Text>
           <Text style={styles.previewMeta}>
             {[
-              preview.repeat ? describeRule(preview.repeat, preview.dueDate) : FREQUENCY_LABEL[preview.frequency],
+              preview.repeat
+                ? describeRule(preview.repeat, preview.dueDate)
+                : FREQUENCY_LABEL[preview.frequency],
               preview.dueDate ? dueLabel(preview.dueDate, preview.dueTime, today) : 'No date',
               `${PRIORITY_LABEL[preview.priority ?? 'normal']} priority`,
             ].join(' · ')}
@@ -226,7 +254,9 @@ export function QuickAddSheet({
   );
 
   function summary(todo: Todo): string {
-    return todo.due_date ? `${todo.title} · ${dueLabel(todo.due_date, todo.due_time, todayISO())}` : todo.title;
+    return todo.due_date
+      ? `${todo.title} · ${dueLabel(todo.due_date, todo.due_time, todayISO())}`
+      : todo.title;
   }
 }
 
