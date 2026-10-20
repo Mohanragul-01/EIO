@@ -1494,7 +1494,9 @@ table.data tbody tr.cm-group-row:hover { background: var(--surface-2); }
 }
 
 .task-card.closed { background: var(--completed); }
-.task-card.closed .task-title.strike { color: var(--text-secondary); }
+/* Text on --completed stays --text / --text-secondary: faint drops below 4.5:1. */
+.task-card.closed .task-title.strike,
+.task-card.closed .faint { color: var(--text-secondary); }
 
 .task-meta {
   display: flex;

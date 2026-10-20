@@ -73,6 +73,9 @@ export function TaskDialog({
   const [titleError, setTitleError] = useState<string | null>(null);
 
   const save = async () => {
+    // Enter reaches here too: a second one during a slow save would create
+    // the task twice.
+    if (saving) return;
     const trimmed = title.trim();
     if (!trimmed) return setTitleError('Give the task a title');
 
