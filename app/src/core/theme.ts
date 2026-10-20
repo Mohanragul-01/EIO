@@ -136,11 +136,12 @@ export const darkColors: ThemeColors = {
 
   text: '#F7F8FA',
   textSecondary: '#BFC5D2',
-  textMuted: '#8B93A5',
-  // Was #646C7E: 3.49:1 on the canvas and 3.23:1 on a sheet, below the 4.5:1
-  // that small text needs. Moved the least distance toward textMuted that
-  // clears it on both (5.04 / 4.66), so it is still visibly the faintest.
-  textFaint: '#7E8698',
+  // Muted and faint are measured on the brightest surface small text sits
+  // on - a card of glassStrong over the canvas - not only the bare canvas:
+  // there #8B93A5 / #7E8698 gave 4.10 / 3.46:1. Each moved the least
+  // distance that clears 4.5:1 there (4.76 / 4.53); faint stays the fainter.
+  textMuted: '#979FB1',
+  textFaint: '#939BAD',
 
   shadow: '#000000',
 };
