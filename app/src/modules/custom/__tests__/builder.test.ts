@@ -226,6 +226,31 @@ describe('validateBuilder', () => {
   it('passes a sound module', () => {
     expect(validateBuilder({ ...blankState(nextId), name: 'X', drafts: [draft({ label: 'A' })] })).toBeNull();
   });
+
+  it('will not save a saved field whose name was cleared, which would remove it', () => {
+    // A field with no label is left out of the save, so a saved one would
+    // be deleted with no toast and no Undo. Removing it is its own action.
+    const state = {
+      ...blankState(nextId),
+      name: 'X',
+      drafts: [
+        draft({ id: 'f1', key: 'pages', label: 'Pages' }),
+        draft({ id: 'f2', key: 'hours', label: '  ' }),
+      ],
+    };
+    expect(validateBuilder(state)?.fields).toBe(
+      'Field 2 has no name. Name it, or remove it if you meant to take it off.',
+    );
+  });
+
+  it('still leaves out a new field nobody named', () => {
+    const state = {
+      ...blankState(nextId),
+      name: 'X',
+      drafts: [draft({ label: 'A' }), draft({ label: '' })],
+    };
+    expect(validateBuilder(state)).toBeNull();
+  });
 });
 
 describe('templates fill the builder', () => {
