@@ -216,6 +216,19 @@ export function formatFieldValue(field: Pick<CustomField, 'type'>, value: unknow
 }
 
 /**
+ * What a Text or Long text box shows for a stored value.
+ *
+ * A string as it was typed, line breaks and all. Anything else Text can show
+ * - a number kept from a Number field, a yes/no, a list of tags - as the row
+ * shows it: an empty box for a value the row displays reads as the value
+ * being gone. Left untouched, the stored value is saved back as it was.
+ */
+export function textBoxValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  return formatFieldValue({ type: 'text' }, value) ?? '';
+}
+
+/**
  * Validate a record against its field definitions.
  *
  * Returns a map of field key -> error message; empty means valid. Required is

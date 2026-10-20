@@ -14,7 +14,13 @@
 import { useState } from 'react';
 
 import { minorToAmountString, parseAmountToMinor } from '@app/core/money';
-import { joinMinutes, numericValue, splitMinutes } from '@app/modules/custom/format';
+import {
+  isISODay,
+  joinMinutes,
+  numericValue,
+  splitMinutes,
+  textBoxValue,
+} from '@app/modules/custom/format';
 import type { CustomField } from '@app/modules/custom/types';
 
 import { Icon } from '../../components/Icon';
@@ -74,7 +80,7 @@ function Control({
         <textarea
           className={`input${invalid}`}
           rows={4}
-          value={typeof value === 'string' ? value : ''}
+          value={textBoxValue(value)}
           onChange={(e) => onChange(e.target.value)}
           autoFocus={autoFocus}
           aria-label={name}
@@ -98,7 +104,9 @@ function Control({
         <input
           className={`input${invalid}`}
           type="date"
-          value={typeof value === 'string' ? value : ''}
+          // Only a real day, as on the phone: text kept from a Text field
+          // shows as no date, as in the row, and is saved back untouched.
+          value={isISODay(value) ? value : ''}
           onChange={(e) => onChange(e.target.value || null)}
           autoFocus={autoFocus}
           aria-label={name}
@@ -174,7 +182,7 @@ function Control({
       return (
         <input
           className={`input${invalid}`}
-          value={typeof value === 'string' ? value : ''}
+          value={textBoxValue(value)}
           onChange={(e) => onChange(e.target.value)}
           autoFocus={autoFocus}
           maxLength={200}
