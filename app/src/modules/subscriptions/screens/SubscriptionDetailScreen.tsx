@@ -40,7 +40,7 @@ import {
   type Tone,
 } from '../lifecycle';
 import { priceSteps } from '../prices';
-import { effectiveOffsets } from '../reminders';
+import { reminderOffsets } from '../reminders';
 import { channelLabel, type PriceChange } from '../types';
 import { useSubscription } from '../useSubscription';
 
@@ -159,7 +159,10 @@ export function SubscriptionDetailScreen() {
   const accountName = sub.account_id
     ? (d.accounts.find((a) => a.id === sub.account_id)?.name ?? 'An account no longer listed')
     : null;
-  const offsets = effectiveOffsets(sub, d.settings);
+  // The days it is reminded: a trial's own 3, 1 and 0, not the defaults.
+  const offsets = reminderOffsets(sub, d.settings, today);
+  const offsetsSource =
+    state === 'trial' ? ' (every trial)' : sub.reminder_offsets === null ? ' (your defaults)' : '';
   const steps = priceSteps(d.priceChanges);
   const category = categoryDef(sub.category);
 
@@ -295,7 +298,7 @@ export function SubscriptionDetailScreen() {
             value={
               offsets.length === 0
                 ? 'Off'
-                : `${offsetsLabel(offsets)}, at ${timeLabel(d.settings.minutes)}${sub.reminder_offsets === null ? ' (your defaults)' : ''}`
+                : `${offsetsLabel(offsets)}, at ${timeLabel(d.settings.minutes)}${offsetsSource}`
             }
           />
           <Detail
