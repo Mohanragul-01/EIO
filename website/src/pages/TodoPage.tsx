@@ -920,7 +920,14 @@ function TaskCard({
             <span
               className="task-due task-meta-item"
               style={{
-                color: overdue ? 'var(--danger)' : dueSoon ? 'var(--warning)' : 'var(--text-faint)',
+                // Faint drops below 4.5:1 on a closed card's --completed tint.
+                color: overdue
+                  ? 'var(--danger)'
+                  : dueSoon
+                    ? 'var(--warning)'
+                    : todo.is_done
+                      ? 'var(--text-secondary)'
+                      : 'var(--text-faint)',
                 fontWeight: overdue ? 550 : 400,
               }}
             >
