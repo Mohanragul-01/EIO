@@ -140,7 +140,11 @@ export type IconName =
   | 'link'
   | 'list'
   // Tasks: a routine's streak, and skipping one occurrence.
-  | 'skip';
+  | 'skip'
+  // Fitness v3.
+  | 'lock'
+  | 'steps'
+  | 'minus';
 
 /**
  * Path data per icon. Several use more than one subpath; they are joined with
@@ -317,6 +321,10 @@ const PATHS: Record<IconName, string> = {
   link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1 M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
   list: 'M9 6h11 M9 12h11 M9 18h11 M4.5 6h.01 M4.5 12h.01 M4.5 18h.01',
   skip: 'M5 5.5l9 6.5-9 6.5z M18.5 5.5v13',
+  // Fitness v3: menus, records, pinned notes, ladders and the two modes.
+  lock: 'M7 11V8a5 5 0 0 1 10 0v3 M6 11h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z',
+  steps: 'M4 20h4v-4h4v-4h4V8h4',
+  minus: 'M5 12h14',
 };
 
 /**
