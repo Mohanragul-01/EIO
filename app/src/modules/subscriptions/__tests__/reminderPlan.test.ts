@@ -12,6 +12,7 @@ import {
   effectiveOffsets,
   offsetsToSave,
   reminderId,
+  reminderOffsets,
   reminderPlan,
 } from '../reminders';
 import type { ReminderSettings, Subscription } from '../types';
@@ -268,5 +269,23 @@ describe('reminderPlan: trials', () => {
     expect(
       reminderPlan(sub({ status: 'trial', trial_ends_on: '2026-10-10' }), SETTINGS, NOW),
     ).toEqual([]);
+  });
+});
+
+describe('reminderOffsets (what the detail screen lists)', () => {
+  const TODAY = '2026-10-19';
+  const trial = sub({ status: 'trial', trial_ends_on: '2026-11-25', next_due_date: '2026-11-25' });
+
+  it('is 3 days, 1 day and the morning of for a trial, whatever the defaults', () => {
+    expect(reminderOffsets(trial, { offsets: [7], minutes: 540 }, TODAY)).toEqual([3, 1, 0]);
+    // The days listed are the days it is reminded.
+    expect(reminderPlan(trial, { offsets: [7], minutes: 540 }, NOW).map((r) => r.offset)).toEqual(
+      reminderOffsets(trial, { offsets: [7], minutes: 540 }, TODAY),
+    );
+  });
+
+  it('is the chosen days for anything else, and none when off', () => {
+    expect(reminderOffsets(sub(), SETTINGS, TODAY)).toEqual([7, 3, 1, 0]);
+    expect(reminderOffsets({ ...trial, reminder_offsets: [] }, SETTINGS, TODAY)).toEqual([]);
   });
 });

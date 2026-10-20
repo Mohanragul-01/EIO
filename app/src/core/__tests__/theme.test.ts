@@ -65,6 +65,15 @@ describe.each([
     expect(contrastRatio(palette[token], palette.backgroundElevated)).toBeGreaterThanOrEqual(4.5);
   });
 
+  // Most rows sit on a glass card, not the bare canvas: the card's translucent
+  // white lifts the surface and, in the dark palette, eats into the contrast.
+  it.each(TEXT_TOKENS)('%s reaches 4.5:1 on a glass card', (token) => {
+    for (const glass of [palette.glass, palette.glassStrong]) {
+      const surface = blendOver(glass, palette.background);
+      expect(contrastRatio(palette[token], surface)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it('keeps faint text fainter than muted text, so the hierarchy survives', () => {
     expect(contrastRatio(palette.textFaint, palette.background)).toBeLessThan(
       contrastRatio(palette.textMuted, palette.background),

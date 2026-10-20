@@ -111,8 +111,10 @@ export type Subscription = {
   cycle_unit: CycleUnit | null;
   cycle_count: number | null;
   /**
-   * The day of the month it bills on, set from the date picked in the form.
-   * Null on rows a v2 app wrote: the due date's own day is used.
+   * The day of the month it bills on, set from the date picked in the form
+   * and moved with the due date by a pause, a resume or a restore. Null on
+   * rows a v2 app wrote: the due date's own day is used. So is a due date it
+   * does not match (see cycles.ts).
    */
   anchor_day: number | null;
 

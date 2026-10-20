@@ -56,6 +56,7 @@ import { TodoEditScreen } from '../modules/todo/screens/TodoEditScreen';
 import { TodoListScreen } from '../modules/todo/screens/TodoListScreen';
 import type { RootStackParamList } from './types';
 import { flushPendingNavigation, navigationRef } from './navigationRef';
+import { routeIds } from './routeIds';
 import { useNotificationRoutes } from './useNotificationRoutes';
 import { makeStyles, useTheme } from '../core/ThemeContext';
 
@@ -186,6 +187,9 @@ export function RootNavigator() {
         <Stack.Screen
           name="TodoEdit"
           component={TodoEditScreen}
+          // One screen per task: a reminder for another task opens its own,
+          // rather than swapping this form's params (see routeIds).
+          getId={routeIds.TodoEdit}
           // The title is set by the screen itself, since it depends on whether
           // we're creating or editing.
           options={{ presentation: 'card' }}
@@ -213,8 +217,8 @@ export function RootNavigator() {
           // One route per subscription: a reminder for another subscription
           // must open its own screen, not swap the params of the one on top
           // (which kept showing the old subscription for a render, and ran
-          // the reminder's action against it).
-          getId={({ params }) => params.id}
+          // the reminder's action against it). See routeIds.
+          getId={routeIds.SubscriptionDetail}
         />
         <Stack.Screen name="SubscriptionCatalogue" component={SubscriptionCatalogueScreen} />
         <Stack.Screen
@@ -234,7 +238,11 @@ export function RootNavigator() {
         />
         <Stack.Screen name="ProductEdit" component={ProductEditScreen} />
         {/* Title is the product's name, set by the screen once it has loaded. */}
-        <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
+        <Stack.Screen
+          name="ProductDetail"
+          component={ProductDetailScreen}
+          getId={routeIds.ProductDetail}
+        />
         {/* Titles are set by the screens themselves, from data the navigator
             does not have. */}
         <Stack.Screen name="WorkoutSession" component={WorkoutSessionScreen} />
@@ -254,8 +262,18 @@ export function RootNavigator() {
             set at runtime from the module's own data, so none are declared
             here. */}
         <Stack.Screen name="ModuleBuilder" component={ModuleBuilderScreen} />
-        <Stack.Screen name="CustomModuleList" component={CustomModuleListScreen} />
-        <Stack.Screen name="CustomRecordEdit" component={CustomRecordEditScreen} />
+        {/* One screen per module and per entry: a reminder tapped on top of
+            another must open its own (see routeIds). */}
+        <Stack.Screen
+          name="CustomModuleList"
+          component={CustomModuleListScreen}
+          getId={routeIds.CustomModuleList}
+        />
+        <Stack.Screen
+          name="CustomRecordEdit"
+          component={CustomRecordEditScreen}
+          getId={routeIds.CustomRecordEdit}
+        />
 
         {/* Finance v3. The capture link's form is the same screen as the
             add form; it reads which route it is on. */}

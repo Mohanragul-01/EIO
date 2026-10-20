@@ -252,10 +252,11 @@ four policies (select, insert, update, delete), all `user_id = auth.uid()`.
 `UPDATE` needs both `USING` and `WITH CHECK`. With only `USING`, a row's
 `user_id` could be reassigned to someone else.
 
-> `0008_finance_v2.sql` is written but **not applied**. It belongs to a
-> different, still-planned change (accounts, assets, net worth) and is unrelated
-> to the 0009-0012 v2 work. Migrations 0001 to 0007 and 0009 to 0012 are the
-> live schema.
+> `0008_finance_v2.sql` (accounts and transfers) was written early but applied
+> only with v3, which needs it: Finance's accounts and transfers, and
+> Subscriptions' "charged to", read its tables, and 0022 and 0023 depend on
+> it. For v3, after 0001-0007 and 0009-0016, run in this order:
+> 0017, 0018, **0008**, 0019, 0020, 0021, 0022, 0023, 0024, 0025, 0026.
 
 ### Auth
 

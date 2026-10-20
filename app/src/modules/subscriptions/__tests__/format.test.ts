@@ -1,7 +1,9 @@
 /**
  * The words both clients use for prices and reminders, written once.
  */
-import { offsetsLabel, priceParts, timeLabel } from '../format';
+import { offsetsLabel, priceParts, stripDayLabel, timeLabel } from '../format';
+import type { Subscription } from '../types';
+import type { Charge } from '../upcoming';
 
 describe('timeLabel', () => {
   it('writes minutes after midnight as a 24-hour time', () => {
@@ -40,5 +42,46 @@ describe('priceParts', () => {
       main: '$20',
       converted: 'No rate set',
     });
+  });
+});
+
+describe('stripDayLabel (what TalkBack reads for a day on the strip)', () => {
+  const charge = (kind: Charge['kind'], inrMinor = 64900): Charge => ({
+    sub: {} as Subscription,
+    date: '2026-10-19',
+    inrMinor,
+    kind,
+  });
+  const monday = new Date(2026, 9, 19).toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+
+  it('says today, and that nothing is due', () => {
+    expect(stripDayLabel({ iso: '2026-10-19', charges: [], totalMinor: 0 }, true)).toBe(
+      `Today, ${monday}, nothing due`,
+    );
+  });
+
+  it('counts renewals with what leaves that day', () => {
+    const day = {
+      iso: '2026-10-19',
+      charges: [charge('charge'), charge('charge')],
+      totalMinor: 129800,
+    };
+    expect(stripDayLabel(day, false)).toBe(`${monday}, 2 renewals, ₹1,298`);
+  });
+
+  it('calls a trial ending a trial ending, not a renewal', () => {
+    const trialOnly = { iso: '2026-10-19', charges: [charge('trial_end')], totalMinor: 0 };
+    expect(stripDayLabel(trialOnly, false)).toBe(`${monday}, 1 trial ends`);
+
+    const both = {
+      iso: '2026-10-19',
+      charges: [charge('charge'), charge('trial_end'), charge('trial_end')],
+      totalMinor: 64900,
+    };
+    expect(stripDayLabel(both, false)).toBe(`${monday}, 1 renewal, ₹649, 2 trials end`);
   });
 });

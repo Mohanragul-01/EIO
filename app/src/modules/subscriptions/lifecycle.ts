@@ -67,10 +67,17 @@ export function effectiveState(sub: Lifecycle, today: string): EffectiveState {
  * Whether it is part of "what this costs me". Active, and a cancellation
  * still within its paid access (the spec: it drops from totals after). Never
  * a trial - it costs nothing until it converts - and never a pause.
+ *
+ * Nor a trial cancelled before it converted: "I cancelled" keeps access
+ * until the trial's end, but that access was free, so a cancellation ending
+ * on or before the trial's end date was never paid for.
  */
 export function countsInTotals(sub: Lifecycle, today: string): boolean {
   const state = effectiveState(sub, today);
-  return state === 'active' || state === 'ending';
+  if (state === 'ending') {
+    return !(sub.trial_ends_on && sub.ends_on && sub.ends_on <= sub.trial_ends_on);
+  }
+  return state === 'active';
 }
 
 /**
@@ -206,4 +213,34 @@ export function notificationActionApplies(
     );
   }
   return sub.status === 'trial';
+}
+
+/**
+ * What to say when a notification's button no longer applies: what is true
+ * of the subscription now. "Already paid" only when it is charging and the
+ * cycle has moved on; a pause-until reminder's Mark paid, tapped before the
+ * resume date, is a pause - nothing was paid.
+ */
+export function staleActionMessage(
+  action: 'pay' | 'keep' | 'cancelled',
+  sub: Lifecycle,
+  today: string,
+): string {
+  if (action !== 'pay') return 'Already decided';
+  switch (effectiveState(sub, today)) {
+    case 'paused':
+      return sub.resume_on
+        ? `Paused · resumes ${relative(daysBetween(today, sub.resume_on))}, nothing to pay yet`
+        : 'Paused · nothing to pay';
+    case 'ending':
+    case 'ended':
+      return 'Cancelled · nothing more to pay';
+    case 'archived':
+      return 'Archived · nothing to pay';
+    case 'trial':
+    case 'trial_over':
+      return 'Still a trial · nothing to pay yet';
+    case 'active':
+      return 'Already paid for this cycle';
+  }
 }
