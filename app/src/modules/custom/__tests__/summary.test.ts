@@ -137,6 +137,28 @@ describe('summarise', () => {
     const result = summarise({ summary_field_key: 'hours', summary_agg: 'sum' }, numberField, []);
     expect(result.text).toBe('No entries');
   });
+
+  it('counts only the values the field can show: a 1-10 score changed to a rating', () => {
+    // The type-change guard says 9 and 8 "won't show as Rating", and the rows
+    // and the chart hide them. Averaging them anyway gave the tile "7/5".
+    const score = field({ key: 'score', type: 'rating' });
+    const records = [record({ score: 9 }), record({ score: 8 }), record({ score: 4 })];
+    expect(
+      summarise({ summary_field_key: 'score', summary_agg: 'average' }, score, records).text,
+    ).toBe('4/5');
+    expect(summarise({ summary_field_key: 'score', summary_agg: 'sum' }, score, records).text).toBe(
+      '4/5',
+    );
+  });
+
+  it('falls back to the count when no value can show as the field type', () => {
+    const score = field({ key: 'score', type: 'rating' });
+    const result = summarise({ summary_field_key: 'score', summary_agg: 'average' }, score, [
+      record({ score: 9 }),
+      record({ score: 10 }),
+    ]);
+    expect(result).toEqual({ text: '2 entries', isFallback: true });
+  });
 });
 
 describe('sortRecords', () => {
@@ -166,6 +188,17 @@ describe('sortRecords', () => {
 
     const desc = sortRecords(records, { sort_field_key: 'hours', sort_direction: 'desc' }, numberField);
     expect(desc[0].data.hours).toBe(5);
+  });
+
+  it('sorts a value the field cannot show with the blanks', () => {
+    // A 9 kept from a 1-10 score shows nothing in a rating row; sorting it
+    // above every five-star entry would put an empty-looking row first.
+    const rating = field({ key: 'score', type: 'rating' });
+    const records = [record({ score: 3 }), record({ score: 9 }), record({ score: 5 }), record({})];
+    const desc = sortRecords(records, { sort_field_key: 'score', sort_direction: 'desc' }, rating);
+    expect(desc.map((r) => r.data.score)).toEqual([5, 3, 9, undefined]);
+    const asc = sortRecords(records, { sort_field_key: 'score', sort_direction: 'asc' }, rating);
+    expect(asc.map((r) => r.data.score)).toEqual([3, 5, 9, undefined]);
   });
 
   it('sorts dates correctly as strings', () => {

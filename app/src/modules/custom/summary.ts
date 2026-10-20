@@ -97,8 +97,13 @@ export function summarise(
     return { text: formatLatest(field, withValue.data[field.key]), isFallback: false };
   }
 
+  // Only values the field can show, by the same rule as the rows and the
+  // chart. A 9 kept from a 1-10 score is hidden in every rating row, and
+  // averaging it in anyway gave the tile "7/5".
   const numbers = records
-    .map((record) => numericValue(record.data[field.key]))
+    .map((record) => record.data[field.key])
+    .filter((value) => !isEmptyValue(value) && readableAs(field.type, value))
+    .map(numericValue)
     .filter((value): value is number => value !== null);
 
   if (numbers.length === 0 || !isNumericType(field.type)) {
@@ -156,7 +161,8 @@ function formatLatest(field: CustomField, value: unknown): string {
  *
  * Records with no value always sort last, whichever direction is chosen. A
  * blank is not "smallest", it is "unanswered", and burying it under real data
- * is right in both directions.
+ * is right in both directions. A value the field's type cannot show (a 9 in a
+ * rating field) sorts with the blanks, since its row shows nothing either.
  */
 export function sortRecords(
   records: CustomRecord[],
@@ -180,8 +186,8 @@ export function sortRecords(
     const left = a.data[field.key];
     const right = b.data[field.key];
 
-    const leftEmpty = isEmptyValue(left);
-    const rightEmpty = isEmptyValue(right);
+    const leftEmpty = isEmptyValue(left) || !readableAs(field.type, left);
+    const rightEmpty = isEmptyValue(right) || !readableAs(field.type, right);
     if (leftEmpty && rightEmpty) return 0;
     if (leftEmpty) return 1; // unanswered sorts last regardless of direction
     if (rightEmpty) return -1;
