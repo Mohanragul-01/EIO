@@ -83,6 +83,21 @@ describe('projectedCharges', () => {
     ]);
   });
 
+  it('charges on the day a pause ends, not on the billing day it had before', () => {
+    // Billed on the 5th, paused until 20 Nov. The billing day was not moved
+    // with it (an older row, or the website before it learned to).
+    const paused = sub({
+      status: 'paused',
+      resume_on: '2026-11-20',
+      next_due_date: '2026-11-20',
+      anchor_day: 5,
+    });
+    expect(monthCharges([paused], [], 2026, 11, TODAY).days.get('2026-11-05')).toBeUndefined();
+    expect(
+      projectedCharges([paused], '2026-11-01', '2026-12-31', TODAY).map((c) => c.date),
+    ).toEqual(['2026-11-20', '2026-12-20']);
+  });
+
   it('converts a foreign price, and leaves it unpriced without a rate', () => {
     const usd = sub({ currency: 'USD', amount_minor: 2000, fx_rate: 86.5, next_due_date: '2026-10-20' });
     const noRate = sub({ currency: 'USD', amount_minor: 2000, fx_rate: null, next_due_date: '2026-10-21' });
@@ -103,6 +118,12 @@ describe('upcomingDays (the 14-day strip)', () => {
     expect(days[0].charges).toHaveLength(2);
     expect(days[13]).toMatchObject({ iso: '2026-11-01', totalMinor: 29900 });
     expect(days[1]).toMatchObject({ iso: '2026-10-20', totalMinor: 0, charges: [] });
+  });
+
+  it('shows a resumed subscription due today on today', () => {
+    // "Resume now" on a plan billed on the 5th: the list says Today, so must the strip.
+    const resumed = sub({ next_due_date: TODAY, anchor_day: 5, amount_minor: 64900 });
+    expect(upcomingDays([resumed], TODAY)[0]).toMatchObject({ iso: TODAY, totalMinor: 64900 });
   });
 
   it('marks a trial end without adding it to the day total', () => {

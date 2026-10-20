@@ -101,23 +101,29 @@ function addDays(iso: string, days: number): string {
   return toISODate(new Date(y, m - 1, d + days));
 }
 
+/** The last day of a month (`month` 0-based): day 0 of the next one. */
+const lastDayOf = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
+
 /**
  * `iso` plus `months` calendar months in ONE step, clamping the day to the
  * target month's last day. One step matters: 31 Jan + 2 months is 31 Mar,
  * whereas adding one month twice goes via 28 Feb and lands on 28 Mar.
  *
  * `anchorDay` is the day to aim for instead of `iso`'s own, which is how a
- * date already clamped to 28 Feb gets back to the 31st.
+ * date already clamped to 28 Feb gets back to the 31st. Only when `iso` IS
+ * the anchor day, or its clamped stand-in: a due date a pause or a resume
+ * moved to the 20th charges on the 20th, and on the 20th after that. Aiming
+ * for an anchor it does not match would move even the first charge (+0
+ * months) off the day it is due.
  */
 function addMonthsClamped(iso: string, months: number, anchorDay?: number): string {
   const [y, m, iday] = iso.split('-').map(Number);
-  const d = anchorDay ?? iday;
+  const onAnchor = anchorDay !== undefined && iday === Math.min(anchorDay, lastDayOf(y, m - 1));
+  const d = onAnchor ? anchorDay : iday;
   const absolute = y * 12 + (m - 1) + months;
   const year = Math.floor(absolute / 12);
   const month = absolute - year * 12; // 0-based
-  // Day 0 of the next month is the last day of this one.
-  const last = new Date(year, month + 1, 0).getDate();
-  return toISODate(new Date(year, month, Math.min(d, last)));
+  return toISODate(new Date(year, month, Math.min(d, lastDayOf(year, month))));
 }
 
 /** `iso` moved forward by `k` whole cycles. Null for a one-time charge. */
@@ -147,9 +153,9 @@ export function addCycle(iso: string, cycle: Cycle): string | null {
 
 /**
  * Every due date from `firstDue` onward that falls within [from, to], both
- * inclusive. Each one is measured from `firstDue` (first + k cycles) rather
- * than from the one before, so a 31st clamped to the 28th in February is back
- * on the 31st in March.
+ * inclusive. `firstDue` itself is always the first. Each one is measured from
+ * `firstDue` (first + k cycles) rather than from the one before, so a 31st
+ * clamped to the 28th in February is back on the 31st in March.
  *
  * `limit` guards a daily cycle over a long window; nothing here needs more.
  */

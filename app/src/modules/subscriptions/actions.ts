@@ -30,12 +30,31 @@ export type ActionKey =
 export type LifecyclePatch = Partial<
   Pick<
     SubscriptionInput,
-    'status' | 'next_due_date' | 'ends_on' | 'resume_on' | 'amount_minor' | 'fx_rate' | 'fx_rate_on'
+    | 'status'
+    | 'next_due_date'
+    | 'anchor_day'
+    | 'ends_on'
+    | 'resume_on'
+    | 'amount_minor'
+    | 'fx_rate'
+    | 'fx_rate_on'
   >
 >;
 
 /** The later of two ISO dates. */
 const later = (a: string, b: string) => (a > b ? a : b);
+
+/**
+ * The due date set to `date`. When that moves it (a pause until the 20th, a
+ * resume today) the billing day moves too: it charges on the 20th from then
+ * on, as services bill from the day they restart. cycles.ts would already
+ * read a 5th-of-the-month anchor as not applying to the 20th; storing the
+ * new day keeps the row itself true for every reader.
+ */
+function dueOn(sub: Subscription, date: string): LifecyclePatch {
+  if (date === sub.next_due_date) return { next_due_date: date };
+  return { next_due_date: date, anchor_day: Number(date.slice(8, 10)) };
+}
 
 export type MarkPaidChoice = {
   /** A new price you confirmed, in the subscription's own currency. */
@@ -90,13 +109,13 @@ export function pausePatch(sub: Subscription, resumeOn: string | null): Lifecycl
   return {
     status: 'paused',
     resume_on: resumeOn,
-    next_due_date: later(sub.next_due_date, resumeOn),
+    ...dueOn(sub, later(sub.next_due_date, resumeOn)),
   };
 }
 
 /** Resume now. A due date that passed while paused becomes today. */
 export function resumePatch(sub: Subscription, today: string): LifecyclePatch {
-  return { status: 'active', resume_on: null, next_due_date: later(sub.next_due_date, today) };
+  return { status: 'active', resume_on: null, ...dueOn(sub, later(sub.next_due_date, today)) };
 }
 
 /** Cancelled, with access until `endsOn` (it counts in totals until then). */
@@ -114,13 +133,13 @@ export function restorePatch(sub: Subscription, today: string): LifecyclePatch {
     status: 'active',
     ends_on: null,
     resume_on: null,
-    next_due_date: later(sub.next_due_date, today),
+    ...dueOn(sub, later(sub.next_due_date, today)),
   };
 }
 
 /** Keep a trial: active, first charge on the day the trial ends. */
 export function keepTrialPatch(sub: Subscription): LifecyclePatch {
-  return { status: 'active', next_due_date: trialEndsOn(sub) };
+  return { status: 'active', ...dueOn(sub, trialEndsOn(sub)) };
 }
 
 /** "I cancelled" a trial: access until it ends, then it has ended. */
@@ -133,6 +152,7 @@ export function snapshot(sub: Subscription): Required<LifecyclePatch> {
   return {
     status: sub.status,
     next_due_date: sub.next_due_date,
+    anchor_day: sub.anchor_day,
     ends_on: sub.ends_on,
     resume_on: sub.resume_on,
     amount_minor: sub.amount_minor,
