@@ -49,7 +49,8 @@ export function LogTab() {
   const styles = useHomeStyles();
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
-  const { sessions, summary, loading, refreshing, error, refresh, reload } = useFitnessHome();
+  const { sessions, summary, loading, refreshing, error, refresh, reload, sessionOn } =
+    useFitnessHome();
   const { mode } = useFitnessMode();
   const [starting, setStarting] = useState(false);
   const [routineChoices, setRoutineChoices] = useState<Routine[] | null>(null);
@@ -145,15 +146,23 @@ export function LogTab() {
   );
 
   /**
-   * Tapping a day in the week strip.
+   * Tapping a day in the week strip or the calendar.
    *
    * Already trained that day, so there is something to look at - open it rather
    * than starting a second session beside it. Nothing logged, so the obvious
-   * intent is to log it, on that day.
+   * intent is to log it, on that day. The calendar goes back further than the
+   * list, so sessionOn asks the database about a day the list does not hold.
    */
   const pickDay = useCallback(
-    (date: string) => {
-      const existing = sessions.find((s) => s.date === date);
+    async (date: string) => {
+      let existing: WorkoutSession | null;
+      try {
+        existing = await sessionOn(date);
+      } catch (e) {
+        // Unsure whether the day has a session: say so rather than risk a duplicate.
+        toast.show({ message: e instanceof Error ? e.message : 'Could not open that day' });
+        return;
+      }
       if (existing) {
         navigation.navigate('WorkoutSession', {
           sessionId: existing.id,
@@ -163,7 +172,7 @@ export function LogTab() {
       }
       void chooseStart(date);
     },
-    [sessions, navigation, chooseStart],
+    [sessionOn, navigation, chooseStart, toast],
   );
 
   /** 'freestyle' is a sentinel id: a session belonging to no routine. */
@@ -202,9 +211,9 @@ export function LogTab() {
               weekMax={summary.weekMax}
               streak={summary.streak}
               restDays={summary.restDays}
-              onPickDay={pickDay}
+              onPickDay={(date) => void pickDay(date)}
             />
-            <TrainingCalendar onPickDay={pickDay} refreshKey={sessions} />
+            <TrainingCalendar onPickDay={(date) => void pickDay(date)} refreshKey={sessions} />
             {sessions.length > 0 ? (
               <Text style={styles.sectionLabel}>
                 History · {summary.totalSessions}{' '}

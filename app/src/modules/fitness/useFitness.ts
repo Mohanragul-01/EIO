@@ -157,7 +157,24 @@ export function useFitnessHome() {
   const refresh = useStableCallback(() => load(true));
   const reload = useStableCallback(() => load(false));
 
-  return { sessions, summary, loading, refreshing, error, refresh, reload };
+  /**
+   * The session logged on a day, or null when that day has none: what tapping
+   * a day opens. The calendar reaches back past the recent page this hook
+   * holds, so a day not in it is asked for before it is called empty -
+   * otherwise tapping an old trained day started a second session on it.
+   */
+  const sessionOn = useCallback(
+    async (date: string): Promise<WorkoutSession | null> => {
+      const loaded = sessions.find((s) => s.date === date);
+      if (loaded) return loaded;
+      const found = await api.listSessionsBetween(date, date);
+      // The latest one, as the list would have it.
+      return [...found].sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null;
+    },
+    [sessions],
+  );
+
+  return { sessions, summary, loading, refreshing, error, refresh, reload, sessionOn };
 }
 
 // PLAN: exercises and routines ---------------------------------------------------

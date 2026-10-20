@@ -22,6 +22,7 @@ jest.mock('../api', () => ({
   getProfile: jest.fn(() => Promise.resolve(null)),
   listBodyMetrics: jest.fn(() => Promise.resolve([])),
   listRecentSets: jest.fn(() => Promise.resolve([])),
+  listSessionsBetween: jest.fn(),
 }));
 
 const api = jest.requireMock('../api') as Record<string, jest.Mock>;
@@ -78,4 +79,36 @@ it('counts the streak and the sessions over every session, not the loaded 60', a
   expect(result.current.summary.totalSessions).toBe(100);
   // The list itself is still the recent page.
   expect(result.current.sessions).toHaveLength(60);
+});
+
+describe('sessionOn: what tapping a day opens', () => {
+  it('finds a session older than the loaded 60, rather than starting a second one', async () => {
+    const all = weekly(100);
+    api.listSessions.mockResolvedValue(all.slice(0, 60));
+    api.listSessionDays.mockResolvedValue([]);
+    api.listSessionsBetween.mockImplementation((start: string, end: string) =>
+      Promise.resolve(all.filter((s) => s.date >= start && s.date <= end)),
+    );
+    const old = all[80];
+
+    const { result } = await renderHook(() => useFitnessHome());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await expect(result.current.sessionOn(old.date)).resolves.toMatchObject({ id: old.id });
+    expect(api.listSessionsBetween).toHaveBeenCalledWith(old.date, old.date);
+  });
+
+  it('uses the loaded list when the day is in it, and says null for an empty day', async () => {
+    const all = weekly(10);
+    api.listSessions.mockResolvedValue(all);
+    api.listSessionDays.mockResolvedValue([]);
+    api.listSessionsBetween.mockResolvedValue([]);
+
+    const { result } = await renderHook(() => useFitnessHome());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await expect(result.current.sessionOn(all[3].date)).resolves.toMatchObject({ id: 's3' });
+    expect(api.listSessionsBetween).not.toHaveBeenCalled();
+    await expect(result.current.sessionOn('2026-10-18')).resolves.toBeNull();
+  });
 });
