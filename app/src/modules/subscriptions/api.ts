@@ -39,6 +39,19 @@ const SETTINGS = 'subscription_settings';
 type Row = Record<string, unknown>;
 
 /**
+ * A row's status. v3 writes is_active in step with the status on every
+ * status change (withCompat), so is_active false beside a status that
+ * charges was written by a v2 app still running after the migration, whose
+ * Active toggle writes only is_active. Read it as v2 meant it - cancelled -
+ * or it keeps counting in totals and reminding about renewals.
+ */
+function statusOf(r: Subscription): Subscription['status'] {
+  if (!r.status) return r.is_active ? 'active' : 'cancelled';
+  if (r.is_active === false && (r.status === 'active' || r.status === 'trial')) return 'cancelled';
+  return r.status;
+}
+
+/**
  * A database row as the app's type. numeric columns are normalised to
  * numbers (fx_rate), and a row a v2 app wrote is given v3 defaults rather
  * than undefined.
@@ -48,7 +61,7 @@ function toSubscription(row: Row): Subscription {
   return {
     ...r,
     amount_minor: Number(r.amount_minor),
-    status: r.status ?? (r.is_active ? 'active' : 'cancelled'),
+    status: statusOf(r),
     cancel_notes: r.cancel_notes ?? '',
     currency: r.currency ?? 'INR',
     fx_rate: r.fx_rate === null || r.fx_rate === undefined ? null : Number(r.fx_rate),
@@ -88,10 +101,16 @@ export async function listSubscriptions(): Promise<Subscription[]> {
   return (data ?? []).map(toSubscription);
 }
 
-export async function getSubscription(id: string): Promise<Subscription> {
-  const { data, error } = await supabase.from(TABLE).select('*').eq('id', id).single();
+/**
+ * One subscription, or null when it no longer exists - deleted on the
+ * website while a reminder for it was still in the tray. maybeSingle, not
+ * single: single() reports no rows as an error whose text is PostgREST's,
+ * which is no way to say "this is gone".
+ */
+export async function getSubscription(id: string): Promise<Subscription | null> {
+  const { data, error } = await supabase.from(TABLE).select('*').eq('id', id).maybeSingle();
   if (error) throw new Error(error.message);
-  return toSubscription(data);
+  return data ? toSubscription(data) : null;
 }
 
 export async function createSubscription(input: SubscriptionInput): Promise<Subscription> {

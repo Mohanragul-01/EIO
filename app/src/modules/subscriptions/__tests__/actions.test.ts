@@ -112,12 +112,20 @@ describe('markPaidPatch', () => {
 });
 
 describe('pause and resume', () => {
-  it('moves the next charge to the resume date', () => {
-    expect(pausePatch(sub({ next_due_date: '2026-10-25' }), '2026-12-01')).toEqual({
+  it('moves the next charge, and the billing day, to the resume date', () => {
+    // Billed on the 25th, back on the 1st: it charges on the 1st from then on.
+    expect(pausePatch(sub({ next_due_date: '2026-10-25', anchor_day: 25 }), '2026-12-01')).toEqual({
       status: 'paused',
       resume_on: '2026-12-01',
       next_due_date: '2026-12-01',
+      anchor_day: 1,
     });
+  });
+
+  it('pays from the resume date after a pause, not the old billing day', () => {
+    const netflix = sub({ next_due_date: '2026-10-05', anchor_day: 5 });
+    const resumed = { ...netflix, ...resumePatch({ ...netflix, status: 'paused' }, TODAY) };
+    expect(markPaidPatch(resumed, {}, TODAY)).toEqual({ next_due_date: '2026-11-19' });
   });
 
   it('keeps a later due date, and pauses open-ended without one', () => {
@@ -130,11 +138,15 @@ describe('pause and resume', () => {
   });
 
   it('resumes from today when the due date has passed', () => {
-    expect(resumePatch(sub({ status: 'paused', next_due_date: '2026-09-01' }), TODAY)).toEqual({
+    expect(
+      resumePatch(sub({ status: 'paused', next_due_date: '2026-09-01', anchor_day: 1 }), TODAY),
+    ).toEqual({
       status: 'active',
       resume_on: null,
       next_due_date: TODAY,
+      anchor_day: 19,
     });
+    // A due date still ahead stays, and so does its billing day.
     expect(resumePatch(sub({ status: 'paused', next_due_date: '2026-11-01' }), TODAY)).toEqual({
       status: 'active',
       resume_on: null,
@@ -153,11 +165,14 @@ describe('cancel, archive, restore', () => {
   });
 
   it('restores to active, clearing the end and resume dates', () => {
-    expect(restorePatch(sub({ status: 'archived', next_due_date: '2026-05-01' }), TODAY)).toEqual({
+    expect(
+      restorePatch(sub({ status: 'archived', next_due_date: '2026-05-01', anchor_day: 1 }), TODAY),
+    ).toEqual({
       status: 'active',
       ends_on: null,
       resume_on: null,
       next_due_date: TODAY,
+      anchor_day: 19,
     });
   });
 });
@@ -189,6 +204,7 @@ describe('snapshot (undo)', () => {
       resume_on: '2026-11-01',
       ends_on: null,
       next_due_date: '2026-11-01',
+      anchor_day: 1,
       amount_minor: 100,
       fx_rate: null,
       fx_rate_on: null,
@@ -198,6 +214,7 @@ describe('snapshot (undo)', () => {
       resume_on: '2026-11-01',
       ends_on: null,
       next_due_date: '2026-11-01',
+      anchor_day: 1,
       amount_minor: 100,
       fx_rate: null,
       fx_rate_on: null,
@@ -208,5 +225,10 @@ describe('snapshot (undo)', () => {
     const before = sub({ next_due_date: '2026-10-10' });
     const after = { ...before, ...markPaidPatch(before, { newAmountMinor: 99 }, TODAY) };
     expect({ ...after, ...snapshot(before) }).toEqual(before);
+
+    // Including the billing day a pause moved.
+    const billed5 = sub({ next_due_date: '2026-11-05', anchor_day: 5 });
+    const paused = { ...billed5, ...pausePatch(billed5, '2026-11-20') };
+    expect({ ...paused, ...snapshot(billed5) }).toEqual(billed5);
   });
 });

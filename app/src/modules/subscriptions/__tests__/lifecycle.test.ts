@@ -5,6 +5,7 @@
  * nothing runs in the background to flip "paused" to "active" on the resume
  * date. Every function takes `today`, so these tests need no clock.
  */
+import { endTrialPatch } from '../actions';
 import {
   bucketOf,
   countdown,
@@ -15,6 +16,7 @@ import {
   needsTrialDecision,
   projectsCharges,
   notificationActionApplies,
+  staleActionMessage,
 } from '../lifecycle';
 import type { Subscription } from '../types';
 
@@ -113,6 +115,20 @@ describe('totals and projections', () => {
     expect(countsInTotals(sub({ status: 'trial', trial_ends_on: '2026-10-30' }), TODAY)).toBe(false);
     expect(countsInTotals(sub({ status: 'paused' }), TODAY)).toBe(false);
     expect(countsInTotals(sub({ status: 'archived' }), TODAY)).toBe(false);
+  });
+
+  it('never counts a trial cancelled before it charged', () => {
+    // "I cancelled" keeps access until the trial ends, but nothing was paid
+    // for it: the spec keeps a trial out of totals until it converts.
+    const trial = sub({
+      status: 'trial',
+      trial_ends_on: '2026-10-25',
+      next_due_date: '2026-10-25',
+    });
+    expect(countsInTotals({ ...trial, ...endTrialPatch(trial) }, TODAY)).toBe(false);
+    // A trial kept, paid for, then cancelled counts until its access ends.
+    const paidUp = sub({ status: 'cancelled', trial_ends_on: '2026-09-25', ends_on: '2026-11-25' });
+    expect(countsInTotals(paidUp, TODAY)).toBe(true);
   });
 
   it('projects charges only for what will actually renew', () => {
@@ -255,5 +271,46 @@ describe('notificationActionApplies', () => {
     expect(notificationActionApplies('keep', trial, '2026-10-19')).toBe(true);
     expect(notificationActionApplies('cancelled', trial, '2026-10-19')).toBe(true);
     expect(notificationActionApplies('keep', { ...trial, status: 'active' }, '2026-10-19')).toBe(false);
+  });
+});
+
+describe('staleActionMessage', () => {
+  // What a reminder's button says when it no longer applies: what is true of
+  // the subscription now, never "already paid" for something nobody paid.
+  it('says a cycle paid already was paid', () => {
+    expect(staleActionMessage('pay', sub({ next_due_date: '2026-11-19' }), TODAY)).toBe(
+      'Already paid for this cycle',
+    );
+  });
+
+  it('says a pause is a pause', () => {
+    expect(
+      staleActionMessage('pay', sub({ status: 'paused', resume_on: '2026-10-20' }), TODAY),
+    ).toBe('Paused · resumes tomorrow, nothing to pay yet');
+    expect(staleActionMessage('pay', sub({ status: 'paused', resume_on: null }), TODAY)).toBe(
+      'Paused · nothing to pay',
+    );
+  });
+
+  it('says a cancellation, an archive or a trial is what it is', () => {
+    expect(
+      staleActionMessage('pay', sub({ status: 'cancelled', ends_on: '2026-10-30' }), TODAY),
+    ).toBe('Cancelled · nothing more to pay');
+    expect(staleActionMessage('pay', sub({ status: 'cancelled', ends_on: null }), TODAY)).toBe(
+      'Cancelled · nothing more to pay',
+    );
+    expect(staleActionMessage('pay', sub({ status: 'archived' }), TODAY)).toBe(
+      'Archived · nothing to pay',
+    );
+    expect(
+      staleActionMessage('pay', sub({ status: 'trial', trial_ends_on: '2026-10-25' }), TODAY),
+    ).toBe('Still a trial · nothing to pay yet');
+  });
+
+  it('says a trial decision was already made', () => {
+    expect(staleActionMessage('keep', sub(), TODAY)).toBe('Already decided');
+    expect(staleActionMessage('cancelled', sub({ status: 'cancelled' }), TODAY)).toBe(
+      'Already decided',
+    );
   });
 });

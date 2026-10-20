@@ -92,6 +92,22 @@ export function effectiveOffsets(
 }
 
 /**
+ * The days-before it is actually reminded at: a trial's fixed 3, 1 and 0
+ * (unless its reminders are off), anything else its effectiveOffsets. What
+ * the detail screen lists, and what reminderPlan schedules, so the screen
+ * can never list days the plan does not use.
+ */
+export function reminderOffsets(
+  sub: Subscription,
+  settings: ReminderSettings,
+  today: string,
+): number[] {
+  const offsets = effectiveOffsets(sub, settings);
+  if (offsets.length > 0 && effectiveState(sub, today) === 'trial') return [...TRIAL_OFFSETS];
+  return offsets;
+}
+
+/**
  * What an edit form stores for its reminder choice: null follows the
  * defaults, [] is Off, and Custom always carries the same day (0) - so a
  * Custom choice with no days ticked still reminds on the morning, rather than
@@ -147,23 +163,24 @@ export function reminderPlan(
   });
 
   if (state === 'trial') {
-    if (effectiveOffsets(sub, settings).length === 0) return [];
     const ends = trialEndsOn(sub);
     const then = `${priceText(sub)} ${cycleSuffix(cycleOf(sub))}`;
-    return TRIAL_OFFSETS.map((offset) => ({
-      id: `${reminderId(sub.id)}-t${offset}`,
-      date: fireAt(ends, offset, settings.minutes),
-      title: `${sub.name} trial ends ${when(offset)}`,
-      body: `Then ${then}. Keep it, or cancel before it charges.`,
-      offset,
-      kind: 'trial' as const,
-      categoryId: TRIAL_CATEGORY,
-      data: {
-        subscriptionId: sub.id,
-        ...detail,
-        actions: { keep: to('keep'), cancelled: to('cancelled') },
-      },
-    })).filter((r) => r.date.getTime() > now.getTime());
+    return reminderOffsets(sub, settings, today)
+      .map((offset) => ({
+        id: `${reminderId(sub.id)}-t${offset}`,
+        date: fireAt(ends, offset, settings.minutes),
+        title: `${sub.name} trial ends ${when(offset)}`,
+        body: `Then ${then}. Keep it, or cancel before it charges.`,
+        offset,
+        kind: 'trial' as const,
+        categoryId: TRIAL_CATEGORY,
+        data: {
+          subscriptionId: sub.id,
+          ...detail,
+          actions: { keep: to('keep'), cancelled: to('cancelled') },
+        },
+      }))
+      .filter((r) => r.date.getTime() > now.getTime());
   }
 
   const resumes = state === 'paused' && !!sub.resume_on;

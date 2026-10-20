@@ -81,6 +81,39 @@ describe('the billing day (month-end anchor)', () => {
     ]);
   });
 
+  it('comes back to the 31st from a 30-day month too', () => {
+    expect(addCycle('2026-04-30', monthly31)).toBe('2026-05-31');
+    expect(
+      occurrences(
+        '2026-11-30',
+        { unit: 'month', count: 3, anchorDay: 31 },
+        '2026-11-01',
+        '2027-06-30',
+      ),
+    ).toEqual(['2026-11-30', '2027-02-28', '2027-05-31']);
+  });
+
+  // Pausing until the 20th, or resuming today, leaves the due date off the
+  // billing day. That date is when it charges: the first charge is never
+  // moved, and the billing day steers the later ones only when the due date
+  // is the billing day itself or its month-end stand-in (28 Feb for the 31st).
+  const monthly5 = { unit: 'month' as const, count: 1, anchorDay: 5 };
+
+  it('never moves the due date itself onto the billing day', () => {
+    expect(occurrences('2026-11-20', monthly5, '2026-11-01', '2026-12-31')).toEqual([
+      '2026-11-20',
+      '2026-12-20',
+    ]);
+    expect(occurrences('2026-10-19', monthly5, '2026-10-19', '2026-11-01')).toEqual(['2026-10-19']);
+  });
+
+  it('steps from a due date the billing day does not explain', () => {
+    expect(addCycle('2026-10-19', monthly5)).toBe('2026-11-19');
+    // The 15th is no month's stand-in for the 31st.
+    expect(addCycle('2026-11-15', monthly31)).toBe('2026-12-15');
+    expect(addCycle('2026-06-10', { unit: 'year', count: 1, anchorDay: 29 })).toBe('2027-06-10');
+  });
+
   it('is the day picked in the form, kept while the date is left alone', () => {
     expect(anchorFor('2026-01-31')).toBe(31);
     // Saving an edit without touching a clamped date keeps the 31st...
