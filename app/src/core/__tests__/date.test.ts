@@ -4,11 +4,14 @@
  */
 import {
   addDaysISO,
+  addMonths,
   daysUntil,
   formatDueDate,
   formatEventDate,
   fromISODate,
   isOverdue,
+  monthGrid,
+  timestampMs,
   toISODate,
   todayISO,
 } from '../date';
@@ -61,5 +64,119 @@ describe('due vs event wording', () => {
     // The bug this guards against: a purchase three days ago rendering as
     // "3 days overdue" because it went through the due-date formatter.
     expect(formatEventDate(addDaysISO(-3))).not.toContain('overdue');
+  });
+});
+
+describe('monthGrid', () => {
+  const weekday = (iso: string) => fromISODate(iso).getDay();
+
+  it('covers the month in whole weeks starting on Monday', () => {
+    const grid = monthGrid(2026, 10, 1);
+    // 1 October 2026 is a Thursday, so the grid opens on Monday 28 September.
+    expect(grid[0][0]).toBe('2026-09-28');
+    expect(weekday(grid[0][0])).toBe(1);
+    expect(grid.flat()).toContain('2026-10-01');
+    expect(grid.flat()).toContain('2026-10-31');
+    for (const week of grid) expect(week).toHaveLength(7);
+  });
+
+  it('crosses into a new year', () => {
+    const grid = monthGrid(2027, 1, 1);
+    expect(grid.flat()).toContain('2027-01-01');
+    expect(grid.flat()).toContain('2027-01-31');
+    // 1 January 2027 is a Friday: the leading days are December 2026.
+    expect(grid[0][0]).toBe('2026-12-28');
+  });
+
+  it('includes 29 February in a leap year', () => {
+    expect(monthGrid(2028, 2, 1).flat()).toContain('2028-02-29');
+  });
+
+  it('uses six rows when the month needs them', () => {
+    // 1 August 2026 is a Saturday and August has 31 days.
+    expect(monthGrid(2026, 8, 1)).toHaveLength(6);
+  });
+
+  it('starts every row on Sunday when asked to', () => {
+    for (const week of monthGrid(2026, 10, 0)) expect(weekday(week[0])).toBe(0);
+  });
+
+  it.each([
+    // [year, month, a day before the change, a day after it]
+    [2026, 3, 7, 9],
+    [2026, 11, 0, 2],
+  ])('lists consecutive days across a daylight-saving change (%i-%i)', (year, month, before, after) => {
+    // The suite runs in New York (jest.timezone.js). Stepping 24 hours from
+    // midnight there drifts to 01:00 when the clocks spring forward and to
+    // 23:00 THE DAY BEFORE when they fall back in November, so a grid built
+    // that way repeats a day. The first assertion proves the zone really is in
+    // effect; without it this test would be empty in India, which has no DST.
+    expect(new Date(year, month - 1, before).getTimezoneOffset()).not.toBe(
+      new Date(year, month - 1, after).getTimezoneOffset(),
+    );
+    const days = monthGrid(year, month, 1).flat();
+    for (let i = 1; i < days.length; i++) {
+      const [y, m, d] = days[i - 1].split('-').map(Number);
+      expect(days[i]).toBe(toISODate(new Date(y, m - 1, d + 1)));
+    }
+  });
+});
+
+describe('addMonths', () => {
+  it('rolls December forward into January of the next year', () => {
+    expect(addMonths(2026, 12, 1)).toEqual({ year: 2027, month: 1 });
+  });
+
+  it('rolls January back into December of the previous year', () => {
+    expect(addMonths(2027, 1, -1)).toEqual({ year: 2026, month: 12 });
+  });
+
+  it('handles jumps of more than a year either way', () => {
+    expect(addMonths(2026, 10, 15)).toEqual({ year: 2028, month: 1 });
+    expect(addMonths(2026, 10, -22)).toEqual({ year: 2024, month: 12 });
+  });
+});
+
+describe('timestampMs', () => {
+  // 10:00:00 UTC on 19 Oct 2026, the instant every case below names.
+  const instant = Date.UTC(2026, 9, 19, 10, 0, 0);
+
+  it('reads the six fractional digits Postgres sends, to the millisecond', () => {
+    expect(timestampMs('2026-10-19T10:00:00.123456+00:00')).toBe(instant + 123);
+    // Postgres drops trailing zeros: ".5" is half a second, not 5 ms.
+    expect(timestampMs('2026-10-19T10:00:00.5+00:00')).toBe(instant + 500);
+    expect(timestampMs('2026-10-19T10:00:00.999999Z')).toBe(instant + 999);
+  });
+
+  it('reads a timestamp with no fraction', () => {
+    expect(timestampMs('2026-10-19T10:00:00+00:00')).toBe(instant);
+    expect(timestampMs('2026-10-19T10:00:00Z')).toBe(instant);
+  });
+
+  it('applies the offset, whichever way it is written', () => {
+    expect(timestampMs('2026-10-19T15:30:00.000000+05:30')).toBe(instant);
+    expect(timestampMs('2026-10-19T15:30:00+0530')).toBe(instant);
+    expect(timestampMs('2026-10-19T06:00:00-04:00')).toBe(instant);
+    expect(timestampMs('2026-10-19T10:00:00+00')).toBe(instant);
+    expect(timestampMs('2026-10-19 10:00:00.123456+00')).toBe(instant + 123);
+  });
+
+  it('does not depend on Date.parse understanding microseconds', () => {
+    // Hermes is not V8: an engine that only reads three fractional digits
+    // returns NaN for Postgres's six. Stand one in and the answer must hold.
+    const realParse = Date.parse;
+    const strict = jest
+      .spyOn(Date, 'parse')
+      .mockImplementation((s: string) => (/\.\d{4,}/.test(s) ? NaN : realParse(s)));
+    try {
+      expect(timestampMs('2026-10-19T10:00:00.123456+00:00')).toBe(instant + 123);
+    } finally {
+      strict.mockRestore();
+    }
+  });
+
+  it('is NaN for something that is not a timestamp', () => {
+    expect(timestampMs('yesterday')).toBeNaN();
+    expect(timestampMs('')).toBeNaN();
   });
 });

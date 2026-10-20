@@ -16,31 +16,37 @@ import { Link } from 'react-router-dom';
 import { daysUntil, todayISO } from '@app/core/date';
 import { formatMoney } from '@app/core/money';
 import * as bucketApi from '@app/modules/bucket/api';
-import { formatBalance, runningBalance } from '@app/modules/finance/analytics';
+import { formatBalance } from '@app/modules/finance/analytics';
 import * as financeApi from '@app/modules/finance/api';
 import * as fitnessApi from '@app/modules/fitness/api';
 import * as notesApi from '@app/modules/notes/api';
 import * as productsApi from '@app/modules/products/api';
-import { project, urgencyOf } from '@app/modules/products/types';
+import { buildOutlooks, reorderSummary } from '@app/modules/products/outlook';
 import * as subsApi from '@app/modules/subscriptions/api';
-import { toMonthlyMinor } from '@app/modules/subscriptions/types';
+import { daysBetween, effectiveState, trialEndsOn } from '@app/modules/subscriptions/lifecycle';
+import { sections as subscriptionSections, summaryTotals } from '@app/modules/subscriptions/upcoming';
 import * as todoApi from '@app/modules/todo/api';
+import { summarizeOpen } from '@app/modules/todo/today';
 
 import { Icon, type IconName } from '../components/Icon';
 import { Shell } from '../components/Shell';
 import { Spinner } from '../components/ui';
 import { useAsync } from '../lib/useAsync';
+import { Sparkline } from '../modules/custom/Sparkline';
 import { useCustomModules } from '../modules/custom/useCustomModules';
 
 /* SUMMARIES - the same rules as the app's useHomeSummaries. ----------------- */
 
 async function todoSummary() {
   const open = await todoApi.listOpenTodos();
+  // The same counts as the phone's tile and Today view (todo/today.ts).
+  const { overdue, dueToday } = summarizeOpen(open, todayISO());
   if (open.length === 0) return { text: 'All clear', tone: 'ok' as const };
 
-  const overdue = open.filter((t) => t.due_date && daysUntil(t.due_date) < 0).length;
+  const rest = `${dueToday > 0 ? `${dueToday} due today · ` : ''}${open.length} open`;
   // Overdue is the more urgent fact, so it wins the line when there is any.
-  if (overdue > 0) return { text: `${overdue} overdue`, sub: `${open.length} open`, tone: 'bad' as const };
+  if (overdue > 0) return { text: `${overdue} overdue`, sub: rest, tone: 'bad' as const };
+  if (dueToday > 0) return { text: `${dueToday} today`, sub: `${open.length} open`, tone: 'warn' as const };
   return { text: `${open.length} open`, tone: 'neutral' as const };
 }
 
@@ -52,44 +58,58 @@ async function notesSummary() {
 }
 
 async function financeSummary() {
-  const now = new Date();
-  const [rows, ledger] = await Promise.all([
-    financeApi.listTransactions(now.getFullYear(), now.getMonth() + 1),
-    financeApi.listLedgerPoints(),
-  ]);
-
-  const balance = runningBalance(ledger);
-  const spent = rows
-    .filter((t) => t.kind === 'expense')
-    .reduce((total, t) => total + t.amount_minor, 0);
+  // Balance across accounts, and this finance month's spending with transfers
+  // left out: the Finance page's own figures (finance/overview.ts).
+  const { balanceMinor, spentMinor, overBudget } = await financeApi.loadOverview();
+  const spent = `${formatMoney(spentMinor, { compact: true })} out this month`;
 
   return {
-    text: formatBalance(balance),
-    sub: rows.length === 0 ? 'No activity this month' : `${formatMoney(spent, { compact: true })} out this month`,
-    tone: balance < 0 ? ('bad' as const) : ('ok' as const),
+    text: formatBalance(balanceMinor),
+    sub:
+      overBudget > 0
+        ? `${overBudget} over budget · ${spent}`
+        : spentMinor === 0
+          ? 'No spending this month'
+          : spent,
+    tone: balanceMinor < 0 ? ('bad' as const) : overBudget > 0 ? ('warn' as const) : ('ok' as const),
   };
 }
 
 async function subscriptionsSummary() {
   const rows = await subsApi.listSubscriptions();
-  const active = rows.filter((s) => s.is_active);
-  if (active.length === 0) return { text: 'Nothing tracked', tone: 'neutral' as const };
+  const today = todayISO();
+  const { sections } = subscriptionSections(rows, today);
+  if (sections.length === 0) return { text: 'Nothing tracked', tone: 'neutral' as const };
 
-  const overdue = active.filter((s) => daysUntil(s.next_due_date) < 0).length;
-  const dueSoon = active.filter((s) => {
-    const days = daysUntil(s.next_due_date);
-    return days >= 0 && days <= 7;
-  }).length;
+  const totals = summaryTotals(rows, today);
+  const perMonth = `${formatMoney(totals.perMonthMinor, { compact: true })} a month`;
 
-  const monthly = active.reduce(
-    (total, s) => total + toMonthlyMinor(s.amount_minor, s.billing_cycle),
-    0,
-  );
-  const perMonth = `${formatMoney(monthly, { compact: true })} a month`;
+  // In order of what costs money if ignored: overdue, a trial about to
+  // convert on its own, then what leaves this week.
+  const overdue = sections.find((s) => s.bucket === 'overdue');
+  if (overdue) return { text: `${overdue.count} overdue`, sub: perMonth, tone: 'bad' as const };
 
-  if (overdue > 0) return { text: `${overdue} overdue`, sub: perMonth, tone: 'bad' as const };
-  if (dueSoon > 0) return { text: `${dueSoon} due this week`, sub: perMonth, tone: 'warn' as const };
-  return { text: perMonth, sub: `${active.length} active`, tone: 'neutral' as const };
+  const trial = rows
+    .filter((s) => {
+      const state = effectiveState(s, today);
+      return state === 'trial_over' || (state === 'trial' && daysBetween(today, trialEndsOn(s)) <= 3);
+    })
+    .sort((a, b) => trialEndsOn(a).localeCompare(trialEndsOn(b)))[0];
+  if (trial) {
+    const days = daysBetween(today, trialEndsOn(trial));
+    const when = days < 0 ? 'is over' : days === 0 ? 'ends today' : days === 1 ? 'ends tomorrow' : `ends in ${days} days`;
+    return { text: `Trial ${when}`, sub: trial.name, tone: 'warn' as const };
+  }
+
+  const week = sections.find((s) => s.bucket === 'week');
+  if (week) {
+    return {
+      text: `${formatMoney(week.totalMinor ?? 0, { compact: true })} this week`,
+      sub: `${week.count} renewing · ${perMonth}`,
+      tone: 'warn' as const,
+    };
+  }
+  return { text: perMonth, sub: `${totals.count} active`, tone: 'neutral' as const };
 }
 
 async function fitnessSummary() {
@@ -106,8 +126,17 @@ async function fitnessSummary() {
 }
 
 async function bucketSummary() {
-  const { total, done, freeLeft } = await bucketApi.overview();
+  const { total, done, freeLeft, nowCount } = await bucketApi.overview();
   if (total === 0) return { text: 'Nothing yet', tone: 'neutral' as const };
+
+  // What you said you are doing next leads, as on the phone's tile.
+  if (nowCount > 0) {
+    return {
+      text: `${nowCount} on Now`,
+      sub: `${freeLeft} free · ${done} of ${total} done`,
+      tone: 'ok' as const,
+    };
+  }
 
   // The free ones are the actionable fact: what you could do this weekend
   // without spending anything. The total is context for it.
@@ -123,34 +152,19 @@ async function productsSummary() {
     productsApi.listAllUses(),
   ]);
 
-  const open = products.filter((p) => !p.finished_on);
-  if (open.length === 0) return { text: 'Nothing tracked', tone: 'neutral' as const };
+  // The same outlook the Products page and the phone tile use, so "to
+  // reorder" means one thing everywhere: Reorder now with no spare waiting.
+  // (This tile used to count Running low too, and disagreed with the page.)
+  const { toReorder, runningLow, inUse } = reorderSummary(buildOutlooks(products, uses, todayISO()));
+  if (inUse === 0) return { text: 'Nothing tracked', tone: 'neutral' as const };
 
-  // Unlike the phone tile, the desktop one can afford the usage history: it is
-  // one board on a wide screen rather than one of eight cards over mobile data,
-  // and "3 to reorder" is worth far more than "7 in use".
-  const byProduct = new Map<string, typeof uses>();
-  uses.forEach((use) => {
-    const bucket = byProduct.get(use.product_id);
-    if (bucket) bucket.push(use);
-    else byProduct.set(use.product_id, [use]);
-  });
-
-  const today = todayISO();
-  const urgent = open.filter((product) => {
-    const projection = project(product, byProduct.get(product.id) ?? [], today);
-    const urgency = urgencyOf(product, projection);
-    return urgency === 'critical' || urgency === 'soon';
-  }).length;
-
-  if (urgent > 0) {
-    return {
-      text: `${urgent} to reorder`,
-      sub: `${open.length} in use`,
-      tone: 'warn' as const,
-    };
+  if (toReorder > 0) {
+    return { text: `${toReorder} to reorder`, sub: `${inUse} in use`, tone: 'warn' as const };
   }
-  return { text: `${open.length} in use`, sub: 'all stocked up', tone: 'ok' as const };
+  if (runningLow > 0) {
+    return { text: `${inUse} in use`, sub: `${runningLow} running low`, tone: 'ok' as const };
+  }
+  return { text: `${inUse} in use`, sub: 'all stocked up', tone: 'ok' as const };
 }
 
 const TONE_COLOR = {
@@ -180,7 +194,7 @@ const TILES: {
 ];
 
 export function Dashboard() {
-  const { modules, summaries } = useCustomModules();
+  const { modules, summaries, sparklines } = useCustomModules();
 
   const greeting = (() => {
     const hour = new Date().getHours();
@@ -212,9 +226,14 @@ export function Dashboard() {
                 <span className="dot" style={{ background: module.color }} />
               </div>
               <div className="stat-value numeric">{summary?.text ?? '—'}</div>
-              <div className="faint" style={{ fontSize: 12.5, marginTop: 2 }}>
-                Your module
-              </div>
+              {/* The module's own trend, drawn from the same points as its chart. */}
+              {sparklines[module.id] ? (
+                <Sparkline values={sparklines[module.id] ?? []} color={module.color} />
+              ) : (
+                <div className="faint" style={{ fontSize: 12.5, marginTop: 2 }}>
+                  Your module
+                </div>
+              )}
             </Link>
           );
         })}

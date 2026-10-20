@@ -9,6 +9,7 @@
  * a missing param becomes a compile error instead of a blank screen at runtime.
  * Every new screen gets one line here.
  */
+import type { FitnessMode } from '../modules/fitness/types';
 export type RootStackParamList = {
   Home: undefined;
 
@@ -32,18 +33,46 @@ export type RootStackParamList = {
    * Same create-or-edit pattern as TodoEdit, plus:
    *   `type`  which kind of note to create (note, checklist, journal)
    *   `quick` quick capture: straight into the body, nothing else required
-   * Both are ignored when editing, since the row already knows what it is.
+   *   `prompt` a journal prompt to start a new entry from
+   * All are ignored when editing, since the row already knows what it is.
    */
-  NoteEdit: { id?: string; type?: 'note' | 'checklist' | 'journal'; quick?: boolean };
+  NoteEdit: { id?: string; type?: 'note' | 'checklist' | 'journal'; quick?: boolean; prompt?: string };
+  /** The notes the tabs hide: the Trash, or the Archive. */
+  NotesShelf: { shelf: 'trash' | 'archive' };
   FinanceList: undefined;
-  TransactionEdit: { id?: string };
+  /**
+   * Add or edit an entry. `id` edits an expense or income; `groupId` edits a
+   * transfer (both rows). When adding: `date` pre-dates it (the calendar's
+   * "Add for 16 Oct"), `kind` opens it as a transfer, `accountId` picks the
+   * account.
+   */
+  TransactionEdit: {
+    id?: string;
+    groupId?: string;
+    date?: string;
+    kind?: 'expense' | 'income' | 'transfer';
+    accountId?: string;
+  };
 
   SubscriptionsList: undefined;
-  SubscriptionEdit: { id?: string };
+  /** `serviceKey` pre-fills a new one from the quick-add catalogue. */
+  SubscriptionEdit: { id?: string; serviceKey?: string };
+  /**
+   * One subscription. `action` arrives from a notification: 'pay' opens Mark
+   * paid, 'keep' and 'cancelled' answer a trial that is ending.
+   */
+  /** `at` makes each notification tap distinct, so a second tap acts again. */
+  SubscriptionDetail: { id: string; action?: 'pay' | 'keep' | 'cancelled'; at?: string };
+  /** Quick-add: search the catalogue, or add your own. */
+  SubscriptionCatalogue: undefined;
   FitnessList: undefined;
   BucketList: undefined;
   ProductsList: undefined;
-  ProductEdit: { productId?: string } | undefined;
+  /**
+   * `restockFrom` starts a new container pre-filled from that one ("Start a
+   * new one"); with `spare` it is bought ahead and not opened yet.
+   */
+  ProductEdit: { productId?: string; restockFrom?: string; spare?: boolean } | undefined;
   ProductDetail: { productId: string };
   /**
    * The session row already exists before this opens, so every set has a parent
@@ -51,9 +80,19 @@ export type RootStackParamList = {
    * nothing.
    */
   WorkoutSession: { sessionId: string; routineId: string | null };
-  RoutineEdit: { routineId?: string };
+  /** `mode` only matters for a new routine: it decides which mode lists it. */
+  RoutineEdit: { routineId?: string; mode?: FitnessMode };
   /** `name` is passed so the header has a title before the query resolves. */
   ExerciseProgress: { exerciseId: string; name: string };
+  /** The finish screen; also reachable from a finished session. */
+  WorkoutSummary: { sessionId: string };
+  /** Resistance bands, remembered by colour. */
+  Bands: undefined;
+  /** One ladder: its rungs, where you are, and moving up or back. */
+  Ladder: { progressionId: string };
+  LadderEdit: { progressionId?: string };
+  /** The bar loaded for a weight, and your plates. */
+  PlateCalculator: { targetKg?: number } | undefined;
 
   //  User-created modules
   // Three screens serve EVERY module you build, however many you create.
@@ -62,8 +101,32 @@ export type RootStackParamList = {
   ModuleBuilder: { moduleId?: string };
   /** The entry list for one custom module. */
   CustomModuleList: { moduleId: string };
-  /** The generated form: omit recordId to create, pass it to edit. */
-  CustomRecordEdit: { moduleId: string; recordId?: string };
+  /**
+   * The generated form: omit recordId to create, pass it to edit. `date`
+   * pre-fills the module's date field when creating from a calendar day.
+   */
+  CustomRecordEdit: { moduleId: string; recordId?: string; date?: string };
+
+  //  Finance v3
+  /** Every account, its balance, and what you owe on cards. */
+  FinanceAccounts: undefined;
+  /** Search every entry ever, with a total of what matches. */
+  FinanceSearch: undefined;
+  /** One category in one finance month, with its six-month history. */
+  FinanceCategory: { category: string; year: number; month: number };
+  /**
+   * The add form opened by eio://finance/add. Its params come from OUTSIDE the
+   * app (an automation reading a bank SMS), so they are all raw strings here
+   * and are validated by modules/finance/capture.ts before anything uses them.
+   */
+  FinanceCapture: {
+    amount?: string;
+    note?: string;
+    category?: string;
+    kind?: string;
+    account?: string;
+    date?: string;
+  };
 };
 
 /** Every screen name in the app. */

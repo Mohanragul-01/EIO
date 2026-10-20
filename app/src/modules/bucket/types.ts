@@ -30,6 +30,39 @@ export const COST_SHORT: Record<Cost, string> = {
   high: 'Big',
 };
 
+/**
+ * How much you want it now, kept apart from cost on purpose: cost answers "can
+ * I afford it", this answers "am I actually going to do it". Stored as null for
+ * Someday, which is where everything starts.
+ */
+export type Focus = 'now' | 'next';
+export type Want = Focus | 'someday';
+
+export const WANTS: Want[] = ['now', 'next', 'someday'];
+
+export const WANT_LABEL: Record<Want, string> = {
+  now: 'Now',
+  next: 'Next',
+  someday: 'Someday',
+};
+
+/** Would you do it again? */
+export type Again = 'yes' | 'maybe' | 'no';
+
+export const AGAINS: Again[] = ['yes', 'maybe', 'no'];
+
+export const AGAIN_LABEL: Record<Again, string> = {
+  yes: 'Yes',
+  maybe: 'Maybe',
+  no: 'No',
+};
+
+/**
+ * How precisely a date is known. "2019", "March 2019" and "14 March 2019" are
+ * different claims, and a year stored as 1 January must never be shown as one.
+ */
+export type Precision = 'year' | 'month' | 'day';
+
 export type BucketItem = {
   id: string;
   user_id: string;
@@ -39,11 +72,75 @@ export type BucketItem = {
   is_done: boolean;
   /** The day you did it. Null while undone. */
   done_on: string | null;
+  /** How precisely done_on is known. Null on rows ticked before v3: a day. */
+  done_precision: Precision | null;
   note: string;
+
+  /** What happened, in your own words. */
+  memory: string;
+  place: string;
+  again: Again | null;
+
+  /** Pick for me skips the item until this day has passed. */
+  snoozed_until: string | null;
+  /** Null is Someday. */
+  focus: Focus | null;
+
+  /** A target with its precision: both set, or neither. */
+  target_on: string | null;
+  target_precision: Precision | null;
+  /** Paise. Null until you estimate it. */
+  est_cost_minor: number | null;
+  /** Paise saved towards it so far. */
+  saved_minor: number;
+
   position: number;
   created_at: string;
   updated_at: string;
 };
+
+/** One step of a planned item's checklist. */
+export type BucketStep = {
+  id: string;
+  user_id: string;
+  item_id: string;
+  title: string;
+  is_done: boolean;
+  position: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * The three columns a tick writes, together.
+ *
+ * Kept as one value so Undo can put back exactly what was there - including a
+ * backdated date and its precision - rather than "undone", which would lose a
+ * memory's date if you unticked by mistake and undid it.
+ */
+export type DoneState = {
+  is_done: boolean;
+  done_on: string | null;
+  done_precision: Precision | null;
+};
+
+export const UNDONE: DoneState = { is_done: false, done_on: null, done_precision: null };
+
+/** A tick: done today, to the day. */
+export function tickedState(today: string): DoneState {
+  return { is_done: true, done_on: today, done_precision: 'day' };
+}
+
+export function doneStateOf(item: BucketItem): DoneState {
+  if (!item.is_done) return { is_done: false, done_on: item.done_on, done_precision: null };
+  // Rows ticked before v3 carry no precision; every one of those was a tick on
+  // a real day.
+  return { is_done: true, done_on: item.done_on, done_precision: item.done_precision ?? 'day' };
+}
+
+export function wantOf(item: BucketItem): Want {
+  return item.focus ?? 'someday';
+}
 
 export type BucketInput = {
   category: string;
@@ -119,9 +216,13 @@ export function matchesQuery(item: BucketItem, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
 
+  // Memory and place too: "Goa" should find what you did in Goa, not only
+  // what is named after it.
   return (
     item.title.toLowerCase().includes(needle) ||
     item.category.toLowerCase().includes(needle) ||
-    item.note.toLowerCase().includes(needle)
+    item.note.toLowerCase().includes(needle) ||
+    item.memory.toLowerCase().includes(needle) ||
+    item.place.toLowerCase().includes(needle)
   );
 }

@@ -204,35 +204,55 @@ export function Modal({
   const ref = useRef<HTMLDialogElement>(null);
   /** What had focus before the dialog opened, so it can be given back. */
   const restoreTo = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-
-    // showModal() throws if it is already open, and close() on an already
-    // closed dialog fires a spurious cancel, so both are guarded.
-    if (open && !dialog.open) {
-      restoreTo.current = document.activeElement as HTMLElement | null;
-      dialog.showModal();
-    }
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
+  /** Where the current press began. See onClick. */
+  const pressedOn = useRef<EventTarget | null>(null);
 
   /**
-   * Give focus back to whatever opened this.
+   * Opens the dialog the moment its header is attached.
    *
-   * Keyed on `open` rather than done in an unmount cleanup. Most dialogs are
-   * conditionally rendered and do unmount, but the confirm dialog lives in the
-   * tree permanently and only toggles `open` - so a cleanup-only version
-   * restored focus for some dialogs and silently not for others. Without it,
-   * closing one drops focus onto <body> and the next Tab starts from the top of
-   * the page, which on a keyboard loses your place entirely.
+   * React focuses an `autoFocus` field while it commits, before any effect
+   * runs, and a field in a dialog that is not open yet cannot take focus. With
+   * showModal() in an effect every autoFocus was lost, and showModal() put
+   * focus on the first button it found: Close. Refs attach in tree order in
+   * that same commit, so the header's comes before React reaches any field in
+   * the body, and the dialog is already modal when it does.
+   */
+  const showOnAttach = useCallback((header: HTMLElement | null) => {
+    const dialog = header?.closest('dialog');
+    // showModal() throws if it is already open.
+    if (!dialog || dialog.open) return;
+    restoreTo.current = document.activeElement as HTMLElement | null;
+    dialog.showModal();
+  }, []);
+
+  /**
+   * Focus a field on open, and give focus back to whatever opened this on close.
+   *
+   * The give-back is a cleanup, so it runs both when `open` turns false (the
+   * confirm dialog lives in the tree permanently) and when the dialog unmounts
+   * (most are conditionally rendered). Without it, closing one drops focus
+   * onto <body> and the next Tab starts from the top of the page, which on a
+   * keyboard loses your place entirely.
    */
   useEffect(() => {
-    if (open) return;
-    const previous = restoreTo.current;
-    restoreTo.current = null;
-    previous?.focus?.();
+    if (!open) return;
+    const dialog = ref.current;
+    // No field asked for focus, so it is still on Close where showModal() put
+    // it: the first field takes it instead, so typing starts at once.
+    if (dialog?.querySelector('.modal-head')?.contains(document.activeElement)) {
+      dialog
+        .querySelector<HTMLElement>('.modal-body :is(input:not([type="hidden"]), textarea, select):not(:disabled)')
+        ?.focus();
+    }
+    return () => {
+      // StrictMode's rehearsal unmount leaves the dialog on screen.
+      if (dialog?.isConnected) return;
+      const previous = restoreTo.current;
+      restoreTo.current = null;
+      // Only when focus was lost with the dialog, not taken by something new.
+      if (document.activeElement && document.activeElement !== document.body) return;
+      previous?.focus?.();
+    };
   }, [open]);
 
   if (!open) return null;
@@ -248,14 +268,21 @@ export function Modal({
         event.preventDefault();
         onClose();
       }}
+      onPointerDown={(event) => {
+        pressedOn.current = event.target;
+      }}
       // A click that lands on the dialog element itself is a click on the
-      // backdrop, since the content sits in a child.
+      // backdrop, since the content sits in a child. The press must have begun
+      // there too: a text selection started in a field and released past the
+      // edge also clicks the dialog, the nearest element both ends share.
       onClick={(event) => {
-        if (event.target === ref.current) onClose();
+        const pressed = pressedOn.current;
+        pressedOn.current = null;
+        if (event.target === ref.current && pressed === ref.current) onClose();
       }}
     >
       <div className="modal-inner">
-        <header className="modal-head">
+        <header className="modal-head" ref={showOnAttach}>
           <h2 className="modal-title">{title}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
             <Icon name="close" />

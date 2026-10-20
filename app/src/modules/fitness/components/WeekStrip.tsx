@@ -8,13 +8,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect } from 'react';
-import {
-  Animated,
-  Pressable,
-  Text,
-  useAnimatedValue,
-  View,
-} from 'react-native';
+import { Animated, Pressable, Text, useAnimatedValue, View } from 'react-native';
 
 import { GlassCard } from '../../../core/components';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
@@ -26,7 +20,10 @@ type WeekStripProps = {
   weekSessions: number;
   weekVolume: number;
   weekMax: number;
+  /** Consecutive weeks with training. */
   streak: number;
+  /** Days since the last session; null before the first. */
+  restDays?: number | null;
   /**
    * Tap a day to open or log it.
    *
@@ -44,6 +41,7 @@ export function WeekStrip({
   weekVolume,
   weekMax,
   streak,
+  restDays = null,
   onPickDay,
 }: WeekStripProps) {
   const styles = useStyles();
@@ -62,16 +60,23 @@ export function WeekStrip({
           {/* Only when there is volume to report. "0 kg lifted" is a sentence
               that makes the card look broken rather than empty. */}
           {weekVolume > 0 ? (
+            <Text style={styles.sub}>{weekVolume.toLocaleString('en-IN')} kg moved</Text>
+          ) : null}
+          {restDays !== null && restDays > 0 ? (
             <Text style={styles.sub}>
-              {weekVolume.toLocaleString('en-IN')} kg moved
+              {restDays} rest {restDays === 1 ? 'day' : 'days'} since your last session
             </Text>
           ) : null}
         </View>
 
-        {streak > 1 ? (
-          <View style={styles.streak}>
+        {streak > 0 ? (
+          <View
+            style={styles.streak}
+            accessible
+            accessibilityLabel={`Trained ${streak} ${streak === 1 ? 'week' : 'weeks'} in a row`}
+          >
             <Ionicons name="flame" size={14} color={colors.warning} />
-            <Text style={styles.streakText}>{streak} day streak</Text>
+            <Text style={styles.streakText}>{streak}-week streak</Text>
           </View>
         ) : null}
       </View>
@@ -126,7 +131,9 @@ function DayBar({
             : `${day.date}, nothing logged`
           : undefined
       }
-      accessibilityHint={onPress ? (day.count > 0 ? 'Opens it' : 'Logs a workout on this day') : undefined}
+      accessibilityHint={
+        onPress ? (day.count > 0 ? 'Opens it' : 'Logs a workout on this day') : undefined
+      }
     >
       <View style={styles.barTrack}>
         {day.count > 0 ? (

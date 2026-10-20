@@ -23,12 +23,15 @@ import {
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { AuthProvider } from './src/core/auth';
+import { AuthProvider, useAuth } from './src/core/auth';
+import { ToastProvider } from './src/core/components';
+import { listenForResponses, runResync } from './src/core/notifications';
 import { ThemeProvider, useTheme } from './src/core/ThemeContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 
@@ -53,19 +56,29 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
-      {/*
-        KeyboardProvider tracks the real keyboard frame from the OS. It has to
-        sit above the navigator, because the screens that need it are inside.
-      */}
-      <KeyboardProvider>
-        <ThemeProvider>
-          <AuthProvider>
-            <Root ready={fontsLoaded || !!fontError} />
-          </AuthProvider>
-        </ThemeProvider>
-      </KeyboardProvider>
-    </SafeAreaProvider>
+    // Outermost, so every gesture in the app's window - swipe-to-delete a set,
+    // the tab pager - is recognised natively rather than in JS, and the pager's
+    // horizontal swipe and a row's swipe can arbitrate between them. A Modal is
+    // a separate window this does not reach, which is why Sheet has its own.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        {/*
+          KeyboardProvider tracks the real keyboard frame from the OS. It has to
+          sit above the navigator, because the screens that need it are inside.
+        */}
+        <KeyboardProvider>
+          <ThemeProvider>
+            {/* Inside the theme (it draws with it) and outside the navigator,
+                so a toast survives the screen that raised it going back. */}
+            <ToastProvider>
+              <AuthProvider>
+                <Root ready={fontsLoaded || !!fontError} />
+              </AuthProvider>
+            </ToastProvider>
+          </ThemeProvider>
+        </KeyboardProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -76,6 +89,23 @@ export default function App() {
  */
 function Root({ ready }: { ready: boolean }) {
   const { colors, isDark } = useTheme();
+  const { session } = useAuth();
+  const userId = session?.user.id;
+
+  // Rebuild every module's reminders once per launch, once someone is signed
+  // in: local notifications live on the phone, so a reinstall or a reminder
+  // edited on the website leaves them stale until something reschedules them.
+  // Keyed on the user, so signing in as someone else rebuilds for them. It
+  // never throws and never prompts; see core/notifications.
+  useEffect(() => {
+    if (userId) void runResync();
+  }, [userId]);
+
+  // Deliver notification button presses and taps (a task's Done, a digest
+  // opening Today) to the module that scheduled them, for as long as someone
+  // is signed in: the handlers read and write as that person. Also handles
+  // the tap that launched the app. Does nothing in Expo Go.
+  useEffect(() => (userId ? listenForResponses() : undefined), [userId]);
 
   const onLayoutRootView = useCallback(() => {
     if (ready) {

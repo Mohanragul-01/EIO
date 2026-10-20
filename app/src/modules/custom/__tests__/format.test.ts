@@ -19,6 +19,9 @@ const field = (over: Partial<CustomField> = {}): CustomField => ({
   required: false,
   options: [],
   position: 0,
+  default_mode: 'none',
+  default_value: null,
+  hint: '',
   created_at: '2026-01-01T00:00:00Z',
   ...over,
 });

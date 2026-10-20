@@ -40,10 +40,55 @@ declare module 'expo-notifications' {
   export function getPermissionsAsync(): Promise<PermissionResponse>;
   export function requestPermissionsAsync(): Promise<PermissionResponse>;
   export function cancelScheduledNotificationAsync(identifier: string): Promise<void>;
+  export function getAllScheduledNotificationsAsync(): Promise<{ identifier: string }[]>;
 
   export function scheduleNotificationAsync(request: {
     identifier?: string;
-    content: { title: string; body: string; data?: Record<string, unknown> };
+    content: {
+      title: string;
+      body: string;
+      data?: Record<string, unknown>;
+      categoryIdentifier?: string;
+    };
     trigger: { type: SchedulableTriggerInputTypes; date: Date; channelId?: string };
   }): Promise<string>;
+
+  // Buttons on a notification and the responses to them (core/notifications:
+  // categories, onResponse, onAnyResponse, listenForResponses).
+
+  export const DEFAULT_ACTION_IDENTIFIER: string;
+
+  export type NotificationResponse = {
+    actionIdentifier: string;
+    notification: {
+      date: number;
+      request: {
+        identifier: string;
+        content: {
+          title: string | null;
+          body: string | null;
+          data?: Record<string, unknown>;
+          categoryIdentifier: string | null;
+        };
+      };
+    };
+  };
+
+  export function setNotificationCategoryAsync(
+    identifier: string,
+    actions: {
+      identifier: string;
+      buttonTitle: string;
+      options?: { opensAppToForeground?: boolean };
+    }[],
+  ): Promise<unknown>;
+
+  export function addNotificationResponseReceivedListener(
+    listener: (response: NotificationResponse) => void,
+  ): { remove: () => void };
+
+  export function getLastNotificationResponse(): NotificationResponse | null;
+  export function clearLastNotificationResponse(): void;
+  export function dismissNotificationAsync(identifier: string): Promise<void>;
+  export function getPresentedNotificationsAsync(): Promise<{ request: { identifier: string } }[]>;
 }

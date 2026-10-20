@@ -628,3 +628,1027 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 .column.drop-target .column-body { min-height: 72px; }
 
 .column-body { transition: background var(--transition); }
+
+/* TOAST -------------------------------------------------------------------- */
+
+/* The dock spans the width so the pill can centre in it, but lets clicks
+   through everywhere except the pill itself. */
+.toast-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--space-2xl);
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--space-lg);
+  pointer-events: none;
+}
+
+/* Inverse in both themes - light on the dark canvas, dark on the light one -
+   so it reads as a layer above the page either way. Colours are the inverse
+   tokens in tokens.css, contrast-checked there. */
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  max-width: 480px;
+  min-height: 44px;
+  padding: 6px 6px 6px var(--space-lg);
+  border-radius: var(--radius-lg);
+  background: var(--inverse-surface);
+  color: var(--on-inverse-surface);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-sm);
+  animation: toast-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.toast-leaving { animation: toast-out 140ms ease-in both; }
+
+.toast-message { flex: 1; padding: 6px 0; }
+
+.toast-action {
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--inverse-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background var(--transition);
+}
+.toast-action:hover { background: color-mix(in srgb, var(--on-inverse-surface) 10%, transparent); }
+.toast-action:focus-visible { outline: 2px solid var(--inverse-primary); outline-offset: 1px; }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes toast-out {
+  to { opacity: 0; transform: translateY(4px); }
+}
+
+/* MONTH CALENDAR ----------------------------------------------------------- */
+
+.cal-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+.cal-title { flex: 1; font-size: var(--text-md); font-weight: 600; }
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.cal-weekday {
+  padding: var(--space-xs) 0;
+  text-align: center;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cal-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 2px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  transition: background var(--transition), border-color var(--transition);
+}
+button.cal-day:hover { background: var(--surface-2); }
+button.cal-day:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.cal-day-outside { color: var(--text-faint); }
+.cal-day-today { border-color: var(--primary); }
+.cal-day-selected,
+button.cal-day-selected:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+
+/* PRODUCTS ----------------------------------------------------------------- */
+/* Status chips: always a word and an icon, the tint only reinforces it. */
+
+.pchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pchip.danger { background: var(--danger-soft); color: var(--danger); }
+.pchip.warn { background: var(--warning-soft); color: var(--warning); }
+.pchip.ok { background: var(--success-soft); color: var(--success); }
+.pchip.info { background: var(--info-soft); color: var(--info); }
+.pchip.muted { background: var(--surface-3); color: var(--text-muted); }
+
+/* What is left, filling from the left, with a mark at the reorder point. */
+.supply { position: relative; height: 5px; border-radius: 3px; background: var(--surface-3); }
+.supply > i { display: block; height: 100%; border-radius: 3px; transition: width var(--transition); }
+.supply > b {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-secondary);
+}
+
+/* A ticked Today row; text on --completed stays --text / --text-secondary. */
+.list-row.done { background: var(--completed); }
+.list-row.done .muted { color: var(--text-secondary); }
+/* FINANCE ------------------------------------------------------------------ */
+/* Finance v3: the month toolbar and quick adds, the ledger's head, budget bars
+   with their pace tick, the account list, and the spending calendar. */
+
+.fin-toolbar {
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.fin-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; justify-content: flex-end; }
+.fin-quick-item {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  overflow: hidden;
+}
+.fin-quick-log,
+.fin-quick-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-xs);
+}
+.fin-quick-log { padding: 5px 6px 5px 10px; }
+.fin-quick-edit { padding: 5px 9px 5px 5px; color: var(--text-muted); }
+.fin-quick-log:hover,
+.fin-quick-edit:hover { background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.fin-quick-log:focus-visible,
+.fin-quick-edit:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+.fin-ledger-head { padding: var(--space-md) var(--space-md) 0; }
+.fin-filters { padding: var(--space-md) var(--space-md) 0; }
+.fin-filters .filter-bar { margin-bottom: var(--space-sm); }
+
+.fin-two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); }
+
+/* A row of the accounts card or a calendar day's list: name left, figure right. */
+.fin-account,
+.fin-slice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: 5px 6px;
+  margin: 0 -6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+}
+.fin-account:hover,
+.fin-slice:hover { background: var(--surface-2); }
+
+/* BUDGETS. The fill says how much is gone; the tick says how much should be,
+   if the limit were spread evenly over the month. The state is written beside
+   it too, so green against amber never carries the meaning alone. */
+.fin-budget { display: flex; align-items: center; gap: 4px; border-radius: var(--radius-md); }
+.fin-budget.on { background: var(--surface-2); }
+.fin-budget-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.fin-budget-main:hover { background: var(--surface-2); }
+.fin-budget-track {
+  position: relative;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.fin-budget-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--radius-pill); }
+.fin-budget-fill.ok { background: var(--success); }
+.fin-budget-fill.warn { background: var(--warning); }
+.fin-budget-fill.bad { background: var(--danger); }
+.fin-budget-tick { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text); }
+.fin-tick-key { display: inline-block; width: 2px; height: 11px; background: var(--text); }
+
+.fin-state { display: inline-flex; align-items: center; gap: 4px; font-weight: 550; }
+.fin-state.ok { color: var(--success); }
+.fin-state.warn { color: var(--warning); }
+.fin-state.bad { color: var(--danger); }
+
+.fin-history-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: var(--space-xs);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+/* CALENDAR. A day prints its spend and is tinted against the month's usual
+   spending day, four steps of the "out" colour; a + marks money in. */
+.fin-cal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-lg);
+  padding: var(--space-md);
+}
+@media (min-width: 900px) {
+  .fin-cal { grid-template-columns: minmax(0, 1fr) 240px; }
+}
+.fin-cal-side { min-width: 0; }
+
+.fin-cal-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 46px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md);
+}
+.fin-cal-day.lvl-1 { background: color-mix(in srgb, var(--accent-rose) 10%, transparent); }
+.fin-cal-day.lvl-2 { background: color-mix(in srgb, var(--accent-rose) 20%, transparent); }
+.fin-cal-day.lvl-3 { background: color-mix(in srgb, var(--accent-rose) 33%, transparent); }
+.fin-cal-day.lvl-4 { background: color-mix(in srgb, var(--accent-rose) 50%, transparent); }
+.fin-cal-day.today { border-color: var(--primary); }
+.fin-cal-day.selected { border-color: var(--text); border-width: 2px; }
+.fin-cal-num { font-size: var(--text-sm); }
+/* Full text colour, not secondary: secondary over the darkest tint is about
+   3.4:1 in light mode, under the 4.5:1 small text needs. */
+.fin-cal-amt { font-size: var(--text-2xs); color: var(--text); font-variant-numeric: tabular-nums; }
+.fin-cal-in { position: absolute; top: 1px; right: 5px; font-size: var(--text-2xs); font-weight: 700; color: var(--success); }
+/* CUSTOM MODULES (v3) ------------------------------------------------------ */
+/* The module builder's templates and settings, the entry form's new field
+   types, grouped tables, the calendar's day cells and the tile sparkline. */
+
+.cm-label-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+.cm-hint { font-size: var(--text-xs); color: var(--text-muted); }
+.cm-last {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+
+.cm-affix { position: relative; display: flex; align-items: center; flex: 1; }
+.cm-affix .input { width: 100%; }
+.cm-affix-text { margin: 0 6px; color: var(--text-muted); font-size: var(--text-sm); }
+.cm-duration { display: flex; gap: var(--space-md); }
+
+.cm-stars { display: flex; gap: 2px; }
+.cm-star {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  color: var(--text-faint);
+  transition: color var(--transition), background var(--transition);
+}
+.cm-star:hover { background: var(--surface-2); color: var(--text-secondary); }
+.cm-star.on { color: var(--accent-amber); }
+.cm-star:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.cm-stars-read { display: inline-flex; gap: 1px; vertical-align: middle; }
+
+.cm-switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  height: 30px;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.cm-th { display: inline-flex; align-items: center; gap: 4px; }
+.cm-group-row td { background: var(--surface-2); height: 34px; }
+table.data tbody tr.cm-group-row:hover { background: var(--surface-2); }
+.cm-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  font-size: var(--text-sm);
+  font-weight: 550;
+  color: var(--text);
+  text-align: left;
+}
+.cm-group-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.cm-day {
+/* SUBSCRIPTIONS ------------------------------------------------------------ */
+/* The brand tile, the 14-day strip, breakdown bars and the calendar's names.
+   Brand colours arrive inline from the data; everything else is a token. */
+
+.sub-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  user-select: none;
+}
+
+.sub-strip {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(52px, 1fr));
+  gap: var(--space-xs);
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.sub-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  padding: 3px 0;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md);
+  font-variant-numeric: tabular-nums;
+}
+.cm-day.today { border-color: var(--border-strong); }
+.cm-day.selected { background: var(--surface-3); border-color: var(--text-faint); font-weight: 600; }
+.cm-day.outside { color: var(--text-faint); }
+.cm-day-dot { width: 5px; height: 5px; border-radius: 50%; }
+
+.cm-sparkline { display: block; width: 100%; height: 24px; margin-top: var(--space-sm); }
+
+.cm-templates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--space-sm);
+}
+.cm-template {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  text-align: left;
+  transition: border-color var(--transition), background var(--transition);
+}
+.cm-template:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.cm-template.selected { border-color: var(--primary); background: var(--primary-soft); }
+.cm-template:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.cm-template-preview { font-size: var(--text-xs); line-height: 1.35; }
+
+.cm-swatch {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  color: var(--background);
+}
+.cm-swatch.selected { border-color: var(--text); }
+.cm-swatch:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.cm-field-card {
+  padding: var(--space-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.cm-settings { display: flex; flex-direction: column; gap: var(--space-sm); }
+.cm-settings .label { margin-top: var(--space-sm); }
+.cm-note { font-size: 12.5px; margin: 0 0 var(--space-xs); }
+  min-height: 92px;
+  padding: var(--space-sm) 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+.sub-day:hover { background: var(--surface-2); }
+.sub-day:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.sub-day.today { border-color: var(--primary); }
+.sub-day.selected { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.sub-day.selected .sub-day-meta { color: var(--on-primary); }
+.sub-day-weekday { font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: 0.04em; }
+.sub-day-number { font-size: var(--text-md); font-weight: 600; font-variant-numeric: tabular-nums; }
+.sub-day-tiles { display: flex; align-items: center; height: 18px; }
+.sub-day-tiles > * + * { margin-left: -5px; }
+.sub-day-meta { font-size: var(--text-2xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+.sub-rise {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.sub-bar { margin-top: var(--space-md); }
+.sub-bar-head { display: flex; align-items: center; gap: var(--space-sm); font-size: var(--text-sm); }
+.sub-bar-track { height: 8px; margin-top: 5px; border-radius: var(--radius-pill); background: var(--surface-3); overflow: hidden; }
+.sub-bar-track > i { display: block; height: 100%; border-radius: var(--radius-pill); }
+
+.sub-cal-cell { width: 100%; min-height: 72px; align-items: stretch; justify-content: flex-start; padding: 4px; }
+.sub-cal-number { align-self: flex-end; font-size: var(--text-xs); font-variant-numeric: tabular-nums; padding: 0 4px; border-radius: var(--radius-sm); }
+.sub-cal-number.today { outline: 1.5px solid var(--primary); }
+.sub-cal-names { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; min-width: 0; }
+.sub-cal-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cal-day-selected .sub-cal-name { color: var(--on-primary); }
+
+.sub-swatches { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.sub-swatch {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.sub-swatch[aria-checked='true'] { outline: 2px solid var(--text); outline-offset: 2px; }
+.sub-swatch:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.sub-catalogue { max-height: 340px; overflow-y: auto; margin: 0 calc(-1 * var(--space-sm)); }
+.sub-catalogue .list-row { width: 100%; background: transparent; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+/* B-LIST ------------------------------------------------------------------- */
+/*
+ * The B-List page: the list beside a rail that holds the choosing (Pick for
+ * me, the Now shelf), the Lived timeline with its year cards, and the item
+ * dialog's plan and memory fields. Everything is prefixed bl- so it cannot
+ * collide with another page's styles.
+ */
+
+.bl-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-xl); align-items: start; }
+.bl-layout.with-rail { grid-template-columns: minmax(0, 1fr) 320px; }
+.bl-main { min-width: 0; }
+.bl-rail { display: flex; flex-direction: column; gap: var(--space-lg); position: sticky; top: var(--space-lg); }
+
+/* Narrow windows put the rail above the list: choosing comes first. */
+@media (max-width: 1180px) {
+  .bl-layout.with-rail { grid-template-columns: minmax(0, 1fr); }
+  .bl-rail { position: static; order: -1; }
+}
+
+.bl-small { font-size: var(--text-xs); }
+.bl-accent { color: var(--accent-amber); }
+
+/* A category glyph on a small tile, as section headings and picks show it. */
+.bl-glyph {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.bl-section-head { gap: var(--space-sm); margin-bottom: 8px; }
+.bl-want { background: var(--primary-soft); color: var(--primary); }
+
+/* Pick for me */
+.bl-card { display: flex; flex-direction: column; gap: var(--space-sm); }
+.bl-card-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  text-align: left;
+}
+.bl-card-toggle .grow { display: flex; flex-direction: column; }
+.bl-card-title { font-size: var(--text-sm); font-weight: 600; color: var(--text); }
+.bl-card-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--radius-sm); }
+
+.bl-pick { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; border-top: 1px solid var(--border); }
+.bl-pick:first-child { border-top: 0; }
+.bl-pick-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 4px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.bl-pick-main:hover { background: var(--surface-2); }
+.bl-pick-main:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.bl-pick-title { font-size: 13px; }
+.bl-pick-actions { display: flex; gap: 6px; padding-left: 34px; }
+
+/* The Now shelf */
+.bl-now { display: flex; flex-direction: column; gap: var(--space-sm); }
+.bl-now-head { padding: 0 2px; }
+.bl-now-card { overflow: hidden; }
+.bl-now-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: var(--space-md);
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.bl-now-body:hover { background: var(--surface-2); }
+.bl-now-body:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.bl-now-category { gap: 5px; font-size: var(--text-xs); color: var(--text-muted); min-width: 0; }
+.bl-now-title { font-size: var(--text-sm); font-weight: 550; }
+.bl-now-target { gap: 5px; font-size: var(--text-xs); color: var(--text-secondary); }
+
+/* A passed target: neutral, never red. A date that slipped is a fact with a
+   way forward. */
+.bl-move {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px var(--space-md);
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  text-align: left;
+}
+.bl-move:hover { color: var(--text); background: var(--surface-3); }
+.bl-passed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.bl-move-option { width: 100%; text-align: left; color: var(--text); font-size: var(--text-sm); }
+
+/* The Lived timeline */
+.bl-year { display: flex; flex-direction: column; gap: var(--space-md); }
+.bl-year-card { display: flex; flex-direction: column; gap: var(--space-md); }
+.bl-year-title { font-size: var(--text-md); font-weight: 600; }
+.bl-year-count { font-size: var(--text-2xl); font-weight: 700; letter-spacing: -0.02em; margin-right: 4px; }
+.bl-year-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-lg);
+  align-items: start;
+}
+.bl-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.bl-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.bl-tile-number { font-size: var(--text-md); font-weight: 600; }
+.bl-tile-label { gap: 4px; font-size: var(--text-2xs); color: var(--text-muted); }
+.bl-strip { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; }
+.bl-strip-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.bl-strip-fill { display: block; width: 100%; height: 22px; border-radius: 4px; }
+.bl-strip-label { font-size: var(--text-2xs); color: var(--text-faint); }
+.bl-top { gap: 6px; font-size: var(--text-xs); color: var(--text-secondary); min-width: 0; }
+
+.bl-month { display: flex; flex-direction: column; gap: 6px; }
+.bl-month-head { gap: var(--space-sm); }
+.bl-lived-row { width: 100%; align-items: flex-start; text-align: left; color: var(--text); }
+.bl-lived-title { font-size: 13px; }
+.bl-date-col { display: flex; flex-direction: column; align-items: center; width: 34px; flex-shrink: 0; }
+.bl-date-day { font-size: var(--text-md); font-weight: 600; line-height: 1.1; }
+.bl-date-month { font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+
+/* The item dialog's fields */
+.bl-period { display: flex; flex-direction: column; gap: var(--space-sm); }
+.bl-period-year { max-width: 160px; }
+.bl-months .chip:disabled { opacity: 0.4; cursor: not-allowed; }
+.bl-date { max-width: 200px; }
+.bl-when { font-size: var(--text-sm); margin-top: -4px; }
+.bl-step { padding: 4px 6px; }
+.bl-step .grow { font-size: 13px; }
+.bl-money { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); }
+.bl-money-line { font-size: var(--text-sm); color: var(--text); }
+.bl-someday { display: flex; flex-direction: column; gap: var(--space-md); }
+.bl-delete { margin-right: auto; color: var(--danger); }
+.bl-delete:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger); }
+.bl-category-input { position: relative; }
+.bl-category-input .input { padding-left: 32px; width: 100%; }
+.bl-category-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+
+/* The done bar sits where the toast does; the page never shows both. */
+.bl-done-dock { z-index: 51; }
+/* NOTES (v3) --------------------------------------------------------------- */
+
+/* A colour is a tint plus a stripe down the left edge; the card also names
+   the colour in words, so it is never the colour alone. */
+.note-card { border-left: 3px solid transparent; }
+.note-card-open {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  min-width: 0;
+  color: inherit;
+}
+.note-card-preview {
+  font-size: 13px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+.note-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.note-progress {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+.note-progress > div {
+  height: 100%;
+  background: var(--success);
+  transition: width var(--transition);
+}
+.note-undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 6px 6px 6px var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  font-size: 13px;
+}
+
+/* Markdown, read. */
+.note-md { display: flex; flex-direction: column; gap: 4px; line-height: 1.6; }
+.note-md-blank { height: 6px; }
+.note-md-p, .note-md-quote { margin: 0; }
+.note-md-h1 { font-size: var(--text-lg); font-weight: 650; margin: 6px 0 0; }
+.note-md-h2 { font-size: var(--text-md); font-weight: 650; margin: 4px 0 0; }
+.note-md-h3 { font-size: var(--text-base); font-weight: 650; margin: 2px 0 0; }
+.note-md-quote {
+  padding-left: var(--space-md);
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+.note-md-li { display: flex; align-items: flex-start; gap: var(--space-sm); }
+.note-md-bullet {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 0.65em;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+.note-md-bullet.hollow { background: none; border: 1.5px solid var(--text-secondary); }
+.note-md-number { min-width: 1.4em; color: var(--text-secondary); }
+.note-md-task .check { margin-top: 0.25em; flex: none; }
+.note-md-done { color: var(--text-secondary); }
+.note-md a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+
+/* Colour choices: a named chip per colour. */
+.note-swatches { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.note-swatch { display: inline-flex; align-items: center; gap: 6px; }
+.note-swatch.selected { border-color: var(--primary); color: var(--text); }
+.note-swatch-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: var(--on-primary);
+}
+.note-swatch-dot.none { border: 1.5px dashed var(--border-strong); color: var(--text); }
+
+/* The formatting bar over the body. */
+.md-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: var(--surface-2);
+}
+.md-tool { width: 32px; height: 32px; }
+.md-tool-text { font-size: 13px; font-weight: 650; }
+.md-tool-italic { font-style: italic; font-family: Georgia, serif; }
+.md-textarea { border-top-left-radius: 0; border-top-right-radius: 0; font-family: var(--font-mono); font-size: 13px; }
+
+/* Journal strip. */
+.journal-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-secondary);
+}
+.journal-streak.on { color: var(--warning); }
+.journal-day {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+}
+.journal-day.filled { background: var(--primary); border-color: var(--primary); }
+.journal-day.today { outline: 2px solid var(--primary); outline-offset: 2px; }
+/* TASKS v3 ------------------------------------------------------------------ */
+/* Quick add, the richer card, column overdue counts, the repeat and checklist
+   fields of the task dialog, and the month calendar of tasks. All colour comes
+   from tokens, so both themes follow. */
+
+.quick-add {
+  margin-bottom: var(--space-lg);
+}
+
+.quick-add-form {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.quick-add-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.quick-add-input { padding-left: 32px; }
+
+.quick-add-tokens { margin-top: var(--space-sm); }
+
+.quick-add-preview {
+  margin-top: 6px;
+  font-size: var(--text-xs);
+}
+
+.column-overdue {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--danger);
+  font-size: var(--text-2xs);
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-card.closed { background: var(--completed); }
+/* Text on --completed stays --text / --text-secondary: faint drops below 4.5:1. */
+.task-card.closed .task-title.strike,
+.task-card.closed .faint { color: var(--text-secondary); }
+
+.task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 2px;
+}
+
+.task-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.task-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--warning-soft);
+  color: var(--text);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+.task-streak svg { color: var(--accent-amber); }
+
+.repeat-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+
+.repeat-summary {
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--primary-soft);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+.repeat-summary svg { color: var(--primary); }
+
+.checklist { display: flex; flex-direction: column; gap: 2px; }
+
+.checklist-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.checklist-input {
+  flex: 1;
+  height: 30px;
+  border-color: transparent;
+  background: transparent;
+}
+.checklist-input:hover,
+.checklist-input:focus { border-color: var(--border); background: var(--surface); }
+
+.task-cal-day {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  width: 100%;
+  min-height: 84px;
+  gap: 2px;
+  padding: 2px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md);
+  text-align: left;
+  overflow: hidden;
+}
+.task-cal-day.today { border-color: var(--primary); }
+.task-cal-day.selected { background: var(--primary-soft); }
+
+.task-cal-number {
+  align-self: flex-end;
+  padding: 0 3px;
+  font-size: var(--text-xs);
+  font-weight: 550;
+}
+
+.task-cal-entry {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  font-size: var(--text-2xs);
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+.task-cal-entry.closed { color: var(--text-muted); text-decoration: line-through; }
+.task-cal-entry.projected { color: var(--text-faint); }
+.task-cal-entry svg { flex-shrink: 0; }
+
+.task-cal-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.task-cal-more {
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.task-cal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  align-self: start;
+}
+
+.task-cal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-cal-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.task-cal-row:last-child { border-bottom: 0; }
+.task-cal-row .check { margin-top: 2px; }
+
+.task-cal-glyph { margin-top: 1px; }
+
+.task-cal-open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.task-cal-open:hover > span:first-child { text-decoration: underline; }

@@ -19,6 +19,7 @@ import { useAuth } from '../core/auth';
 import { FadeInView, GlassCard, Screen } from '../core/components';
 import { makeStyles, useTheme, type ThemeMode } from '../core/ThemeContext';
 import { motion, radius, spacing } from '../core/theme';
+import { Sparkline } from '../modules/custom/components/Sparkline';
 import { useCustomModules } from '../modules/custom/useCustomModules';
 import { MODULES, type AccentKey } from '../modules/registry';
 import type { RootStackParamList } from '../navigation/types';
@@ -35,6 +36,8 @@ type Tile = {
   accent: string;
   badge: string | null;
   onPress: () => void;
+  /** A custom module's trend, drawn under its summary. Absent for built-ins. */
+  sparkline?: number[] | null;
 };
 
 export function HomeScreen() {
@@ -42,7 +45,12 @@ export function HomeScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
 
-  const { modules: customModules, summaries: customSummaries, reload: reloadModules } = useCustomModules();
+  const {
+    modules: customModules,
+    summaries: customSummaries,
+    sparklines: customSparklines,
+    reload: reloadModules,
+  } = useCustomModules();
   const { summaries, reload: reloadSummaries } = useHomeSummaries();
 
   // Refresh when returning, so a task ticked off or a module just created is
@@ -95,11 +103,12 @@ export function HomeScreen() {
         accent: module.color,
         badge: null,
         onPress: () => navigation.navigate('CustomModuleList', { moduleId: module.id }),
+        sparkline: customSparklines[module.id] ?? null,
       };
     });
 
     return [...builtIn, ...custom];
-  }, [customModules, customSummaries, summaries, navigation, accentFor]);
+  }, [customModules, customSummaries, customSparklines, summaries, navigation, accentFor]);
 
   return (
     <Screen padded={false}>
@@ -295,6 +304,12 @@ function ModuleTile({ tile, onPress }: { tile: Tile; onPress: () => void }) {
           </Text>
         </View>
 
+        {tile.sparkline ? (
+          <View style={styles.sparkline}>
+            <Sparkline values={tile.sparkline} color={tile.accent} />
+          </View>
+        ) : null}
+
         {tile.badge ? (
           <View style={styles.chip}>
             <Text style={styles.chipText}>{tile.badge}</Text>
@@ -446,6 +461,9 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   tileSubtitle: {
     ...typography.caption,
     marginTop: 3,
+  },
+  sparkline: {
+    marginTop: spacing.sm,
   },
   chip: {
     alignSelf: 'flex-start',

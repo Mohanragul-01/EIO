@@ -35,6 +35,12 @@ type DateFieldProps = {
   mode?: DateFieldMode;
   /** False for columns that are NOT NULL: an event happened on some day. */
   allowClear?: boolean;
+  /**
+   * Lets an 'event' date be in the future too, keeping its wording. For a
+   * date whose direction only the person knows: a custom module's "Due
+   * back" has no reminder to mark it as pointing forward.
+   */
+  allowFuture?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -56,6 +62,7 @@ export function DateField({
   onChange,
   mode = 'due',
   allowClear = true,
+  allowFuture = false,
   style,
 }: DateFieldProps) {
   const styles = useStyles();
@@ -111,7 +118,7 @@ export function DateField({
           display={Platform.OS === 'ios' ? 'inline' : 'default'}
           // An event cannot happen in the future. Constraining the input beats
           // validating it after the fact.
-          maximumDate={mode === 'event' ? new Date() : undefined}
+          maximumDate={mode === 'event' && !allowFuture ? new Date() : undefined}
           /*
            * onValueChange / onDismiss, not onChange.
            *

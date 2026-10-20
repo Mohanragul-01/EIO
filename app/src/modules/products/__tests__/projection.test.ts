@@ -26,6 +26,10 @@ const product = (over: Partial<Product> = {}): Product => ({
   opened_on: '2026-01-01',
   finished_on: null,
   note: '',
+  previous_id: null,
+  expires_on: null,
+  pao_months: null,
+  reorder_lead_days: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
   ...over,
@@ -81,7 +85,7 @@ describe('project', () => {
   });
 
   it('projects an empty date from today, not from when it was opened', () => {
-    const uses = [use('2026-01-01', 500)];
+    const uses = [use('2026-01-01', 300), use('2026-01-02', 100), use('2026-01-03', 100)];
     const p = project(product(), uses, '2026-01-11');
     // 500 used over 11 days ≈ 45.45/day, 500 left ≈ 11 days.
     expect(p.daysLeft).toBe(11);
@@ -90,21 +94,97 @@ describe('project', () => {
 
   it('works out cost per day from the price of what is consumed', () => {
     // 3000 rupees for 1000g is 300 paise per gram; 50g a day is 15000 paise.
-    const uses = [use('2026-01-01', 50), use('2026-01-02', 50)];
-    const p = project(product(), uses, '2026-01-02');
+    const uses = [use('2026-01-01', 50), use('2026-01-02', 50), use('2026-01-03', 50)];
+    const p = project(product(), uses, '2026-01-03');
     expect(p.dailyRate).toBe(50);
     expect(p.costPerDay).toBe(15000);
   });
 
   it('has no cost per day without a price', () => {
-    const uses = [use('2026-01-01', 50), use('2026-01-02', 50)];
-    const p = project(product({ price_minor: null }), uses, '2026-01-02');
+    const uses = [use('2026-01-01', 50), use('2026-01-02', 50), use('2026-01-03', 50)];
+    const p = project(product({ price_minor: null }), uses, '2026-01-03');
+    expect(p.dailyRate).toBe(50);
     expect(p.costPerDay).toBeNull();
   });
 
   it('counts the opening day, so a product opened today is one day old', () => {
     const p = project(product({ opened_on: '2026-03-04' }), [], '2026-03-04');
     expect(p.daysOpen).toBe(1);
+  });
+
+  it('projects nothing for a spare, which has not started emptying', () => {
+    const p = project(product({ opened_on: null }), [], '2026-03-04');
+    expect(p.daysOpen).toBe(0);
+    expect(p.remaining).toBe(1000);
+    expect(p.dailyRate).toBeNull();
+    expect(p.daysLeft).toBeNull();
+    expect(p.emptyOn).toBeNull();
+  });
+
+  it("ends a finished container's life on the day it was finished", () => {
+    // v2 counted to TODAY, so "Lasted 10 days" grew by one every day the
+    // finished card was looked at.
+    const uses = [use('2026-01-01', 500), use('2026-01-10', 500)];
+    const p = project(product({ finished_on: '2026-01-10' }), uses, '2026-03-01');
+    expect(p.daysOpen).toBe(10);
+    expect(p.dailyRate).toBe(100);
+  });
+
+  it('has no days left once finished, whatever was logged', () => {
+    const uses = [use('2026-01-01', 100), use('2026-01-02', 100)];
+    const p = project(product({ finished_on: '2026-01-02' }), uses, '2026-01-02');
+    expect(p.daysLeft).toBeNull();
+    expect(p.emptyOn).toBeNull();
+  });
+});
+
+/*
+ * Reminders are planned from these numbers, so a pace must rest on enough
+ * evidence. Two cases v2 got confidently wrong: one scoop the morning after
+ * opening a new tub replaced "~32 days (last one lasted 33)" with "about 2
+ * months", and a tub added with its true opened date weeks ago and a first
+ * log today projected 2004 days.
+ */
+describe('project, before there is enough evidence', () => {
+  it('measures nothing from uses on one day', () => {
+    const p = project(product({ opened_on: '2026-01-01' }), [use('2026-01-01')], '2026-01-02');
+    expect(p.dailyRate).toBeNull();
+    expect(p.daysLeft).toBeNull();
+  });
+
+  it('counts several uses on one day as one day of evidence', () => {
+    const uses = [use('2026-01-01'), use('2026-01-01'), use('2026-01-02'), use('2026-01-02')];
+    expect(project(product(), uses, '2026-01-05').dailyRate).toBeNull();
+  });
+
+  it('measures once uses are logged on three different days', () => {
+    const uses = [use('2026-01-01'), use('2026-01-02'), use('2026-01-03')];
+    const p = project(product(), uses, '2026-01-03');
+    expect(p.dailyRate).toBe(30);
+    expect(p.measuredDays).toBe(3);
+    expect(p.daysLeft).toBe(30);
+  });
+
+  it('never counts an opened date with nothing logged after it as days of use', () => {
+    // Opened in November, first logged in January: the weeks before the
+    // first log are not weeks of nothing used, they are weeks not logged.
+    const opened = product({ opened_on: '2025-11-01' });
+    expect(project(opened, [use('2026-01-01')], '2026-01-01').daysLeft).toBeNull();
+
+    const uses = [use('2026-01-01'), use('2026-01-02'), use('2026-01-03')];
+    const p = project(opened, uses, '2026-01-03');
+    expect(p.dailyRate).toBe(30);
+    expect(p.measuredDays).toBe(3);
+    expect(p.daysLeft).toBe(30);
+    // The age of the container is still its age.
+    expect(p.daysOpen).toBe(64);
+  });
+
+  it('counts the days since the last use, which are days nothing was used', () => {
+    const uses = [use('2026-01-01'), use('2026-01-02'), use('2026-01-03')];
+    const p = project(product(), uses, '2026-01-09');
+    expect(p.measuredDays).toBe(9);
+    expect(p.dailyRate).toBe(10);
   });
 });
 
@@ -132,7 +212,28 @@ describe('urgencyOf', () => {
   });
 
   it('is ok beyond three weeks', () => {
+    expect(urgencyOf(product(), at(21))).toBe('soon');
     expect(urgencyOf(product(), at(22))).toBe('ok');
+  });
+
+  it('calls a spare unopened, not unknown', () => {
+    expect(urgencyOf(product({ opened_on: null }), at(null))).toBe('unopened');
+  });
+
+  it("moves both bands with the product's own lead time", () => {
+    // Something that takes two weeks to arrive is "Reorder now" at 14 days,
+    // and Running low two weeks before that.
+    const slow = product({ reorder_lead_days: 14 });
+    expect(urgencyOf(slow, at(14))).toBe('critical');
+    expect(urgencyOf(slow, at(15))).toBe('soon');
+    expect(urgencyOf(slow, at(28))).toBe('soon');
+    expect(urgencyOf(slow, at(29))).toBe('ok');
+
+    const fast = product({ reorder_lead_days: 2 });
+    expect(urgencyOf(fast, at(2))).toBe('critical');
+    expect(urgencyOf(fast, at(3))).toBe('soon');
+    expect(urgencyOf(fast, at(16))).toBe('soon');
+    expect(urgencyOf(fast, at(17))).toBe('ok');
   });
 });
 

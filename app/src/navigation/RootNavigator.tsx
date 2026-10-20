@@ -11,9 +11,13 @@
  * a module ever gets large it can graduate to its own nested navigator without
  * changing how the home screen works.
  */
-import { NavigationContainer, type Theme as NavTheme } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  type LinkingOptions,
+  type Theme as NavTheme,
+} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import React from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
 import { useAuth } from '../core/auth';
@@ -25,30 +29,80 @@ import { CustomRecordEditScreen } from '../modules/custom/screens/CustomRecordEd
 import { ModuleBuilderScreen } from '../modules/custom/screens/ModuleBuilderScreen';
 import { FinanceListScreen } from '../modules/finance/screens/FinanceListScreen';
 import { TransactionEditScreen } from '../modules/finance/screens/TransactionEditScreen';
+import { AccountsScreen } from '../modules/finance/screens/AccountsScreen';
+import { CategoryDetailScreen } from '../modules/finance/screens/CategoryDetailScreen';
+import { FinanceSearchScreen } from '../modules/finance/screens/FinanceSearchScreen';
 import { SubscriptionEditScreen } from '../modules/subscriptions/screens/SubscriptionEditScreen';
 import { BucketListScreen } from '../modules/bucket/screens/BucketListScreen';
 import { FitnessListScreen } from '../modules/fitness/screens/FitnessListScreen';
 import { ProductDetailScreen } from '../modules/products/screens/ProductDetailScreen';
 import { ProductEditScreen } from '../modules/products/screens/ProductEditScreen';
 import { ProductsListScreen } from '../modules/products/screens/ProductsListScreen';
-import { ExerciseProgressScreen } from '../modules/fitness/screens/ExerciseProgressScreen';
+import { ExerciseDetailScreen } from '../modules/fitness/screens/ExerciseDetailScreen';
 import { RoutineEditScreen } from '../modules/fitness/screens/RoutineEditScreen';
 import { WorkoutSessionScreen } from '../modules/fitness/screens/WorkoutSessionScreen';
+import { WorkoutSummaryScreen } from '../modules/fitness/screens/WorkoutSummaryScreen';
+import { BandsScreen } from '../modules/fitness/screens/BandsScreen';
+import { LadderScreen } from '../modules/fitness/screens/LadderScreen';
+import { LadderEditScreen } from '../modules/fitness/screens/LadderEditScreen';
+import { PlateCalculatorScreen } from '../modules/fitness/screens/PlateCalculatorScreen';
 import { NoteEditScreen } from '../modules/notes/screens/NoteEditScreen';
 import { NotesListScreen } from '../modules/notes/screens/NotesListScreen';
+import { NotesShelfScreen } from '../modules/notes/screens/NotesShelfScreen';
 import { SubscriptionsListScreen } from '../modules/subscriptions/screens/SubscriptionsListScreen';
+import { SubscriptionCatalogueScreen } from '../modules/subscriptions/screens/SubscriptionCatalogueScreen';
+import { SubscriptionDetailScreen } from '../modules/subscriptions/screens/SubscriptionDetailScreen';
 import { TodoEditScreen } from '../modules/todo/screens/TodoEditScreen';
 import { TodoListScreen } from '../modules/todo/screens/TodoListScreen';
 import type { RootStackParamList } from './types';
+import { flushPendingNavigation, navigationRef } from './navigationRef';
+import { routeIds } from './routeIds';
+import { useNotificationRoutes } from './useNotificationRoutes';
 import { makeStyles, useTheme } from '../core/ThemeContext';
 
 // Passing the param list here is what makes navigate() calls type-safe.
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+/**
+ * DEEP LINKS - eio://finance/add?amount=250&note=Swiggy&category=food opens a
+ * pre-filled add form, so an automation app (MacroDroid, Tasker) can turn a
+ * bank SMS into an entry without EIO holding an SMS or notification
+ * permission. The `eio` scheme is set in app.json, which is build-time: it
+ * exists only in an APK built after it was added, and never in Expo Go.
+ *
+ * Only these paths are mapped. Any other eio:// link matches nothing and is
+ * ignored, and the capture screen reads its own parameters through
+ * modules/finance/capture.ts, which treats every one as untrusted.
+ *
+ * initialRouteName puts Home underneath when the link cold-starts the app, so
+ * Back after saving lands somewhere. When the app is already open the form
+ * opens on top of wherever you were, and saving returns you there.
+ *
+ * Module scope, as React Navigation asks: a new object every render would
+ * look like a new config.
+ */
+const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: ['eio://'],
+  config: {
+    initialRouteName: 'Home',
+    screens: {
+      FinanceCapture: 'finance/add',
+      FinanceList: 'finance',
+    },
+  },
+};
+
 export function RootNavigator() {
   const styles = useStyles();
   const { colors, isDark } = useTheme();
   const { session, initializing } = useAuth();
+
+  // A tapped reminder opens the screen its data names (a subscription, its
+  // Mark paid sheet). Only once the navigator is ready, and ready for THIS
+  // person: the container remounts on every sign-in. Up here, above the early
+  // returns, because hooks must run on every render.
+  const [readyFor, setReadyFor] = useState<string | null>(null);
+  useNotificationRoutes(navigationRef, !!session && readyFor === session.user.id);
 
   /**
    *  THE AUTH GATE
@@ -82,7 +136,26 @@ export function RootNavigator() {
 
   return (
     // NavigationContainer owns the navigation state. Exactly one, at the root.
-    <NavigationContainer theme={makeNavigationTheme(colors, isDark)}>
+    // The ref lets a notification tap navigate from outside a screen; onReady
+    // runs one that arrived before the container mounted (see navigationRef)
+    // and switches on tap routing for this signed-in session.
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        flushPendingNavigation();
+        setReadyFor(session.user.id);
+      }}
+      theme={makeNavigationTheme(colors, isDark)}
+      linking={linking}
+      // Shown for the moment it takes to read the link that opened the app
+      // (none, usually); the same spinner as the auth boot, so launch does not
+      // flash an empty frame.
+      fallback={
+        <View style={styles.boot}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      }
+    >
       <Stack.Navigator
         // screenOptions applies to EVERY screen - set header styling once here
         // rather than repeating it per screen.
@@ -114,12 +187,16 @@ export function RootNavigator() {
         <Stack.Screen
           name="TodoEdit"
           component={TodoEditScreen}
+          // One screen per task: a reminder for another task opens its own,
+          // rather than swapping this form's params (see routeIds).
+          getId={routeIds.TodoEdit}
           // The title is set by the screen itself, since it depends on whether
           // we're creating or editing.
           options={{ presentation: 'card' }}
         />
         <Stack.Screen name="NotesList" component={NotesListScreen} options={{ title: 'Notes' }} />
         <Stack.Screen name="NoteEdit" component={NoteEditScreen} />
+        <Stack.Screen name="NotesShelf" component={NotesShelfScreen} />
         <Stack.Screen
           name="FinanceList"
           component={FinanceListScreen}
@@ -132,6 +209,18 @@ export function RootNavigator() {
           options={{ title: 'Subscriptions' }}
         />
         <Stack.Screen name="SubscriptionEdit" component={SubscriptionEditScreen} />
+        {/* Titles set by the screens: the subscription's name, and the
+            catalogue's own. */}
+        <Stack.Screen
+          name="SubscriptionDetail"
+          component={SubscriptionDetailScreen}
+          // One route per subscription: a reminder for another subscription
+          // must open its own screen, not swap the params of the one on top
+          // (which kept showing the old subscription for a render, and ran
+          // the reminder's action against it). See routeIds.
+          getId={routeIds.SubscriptionDetail}
+        />
+        <Stack.Screen name="SubscriptionCatalogue" component={SubscriptionCatalogueScreen} />
         <Stack.Screen
           name="FitnessList"
           component={FitnessListScreen}
@@ -149,19 +238,66 @@ export function RootNavigator() {
         />
         <Stack.Screen name="ProductEdit" component={ProductEditScreen} />
         {/* Title is the product's name, set by the screen once it has loaded. */}
-        <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
+        <Stack.Screen
+          name="ProductDetail"
+          component={ProductDetailScreen}
+          getId={routeIds.ProductDetail}
+        />
         {/* Titles are set by the screens themselves, from data the navigator
             does not have. */}
         <Stack.Screen name="WorkoutSession" component={WorkoutSessionScreen} />
         <Stack.Screen name="RoutineEdit" component={RoutineEditScreen} />
-        <Stack.Screen name="ExerciseProgress" component={ExerciseProgressScreen} />
+        <Stack.Screen name="ExerciseProgress" component={ExerciseDetailScreen} />
+        <Stack.Screen name="WorkoutSummary" component={WorkoutSummaryScreen} />
+        <Stack.Screen name="Bands" component={BandsScreen} options={{ title: 'Bands' }} />
+        <Stack.Screen name="Ladder" component={LadderScreen} />
+        <Stack.Screen name="LadderEdit" component={LadderEditScreen} />
+        <Stack.Screen
+          name="PlateCalculator"
+          component={PlateCalculatorScreen}
+          options={{ title: 'Plates' }}
+        />
 
         {/* Three screens covering every module you create. Their titles are
             set at runtime from the module's own data, so none are declared
             here. */}
         <Stack.Screen name="ModuleBuilder" component={ModuleBuilderScreen} />
-        <Stack.Screen name="CustomModuleList" component={CustomModuleListScreen} />
-        <Stack.Screen name="CustomRecordEdit" component={CustomRecordEditScreen} />
+        {/* One screen per module and per entry: a reminder tapped on top of
+            another must open its own (see routeIds). */}
+        <Stack.Screen
+          name="CustomModuleList"
+          component={CustomModuleListScreen}
+          getId={routeIds.CustomModuleList}
+        />
+        <Stack.Screen
+          name="CustomRecordEdit"
+          component={CustomRecordEditScreen}
+          getId={routeIds.CustomRecordEdit}
+        />
+
+        {/* Finance v3. The capture link's form is the same screen as the
+            add form; it reads which route it is on. */}
+        <Stack.Screen
+          name="FinanceAccounts"
+          component={AccountsScreen}
+          options={{ title: 'Accounts' }}
+        />
+        <Stack.Screen
+          name="FinanceSearch"
+          component={FinanceSearchScreen}
+          options={{ title: 'Search' }}
+        />
+        <Stack.Screen name="FinanceCategory" component={CategoryDetailScreen} />
+        <Stack.Screen
+          name="FinanceCapture"
+          component={TransactionEditScreen}
+          // One payment often fires two automations (the UPI app's alert and
+          // the bank's SMS). Without an id, the second link would land on the
+          // form already open and replace its params under it, silently losing
+          // one. Keyed by its params, a different link opens its own form on
+          // top, and an identical one lands on the form already showing it.
+          getId={({ params }) => JSON.stringify(params ?? {})}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
@@ -183,15 +319,15 @@ const useStyles = makeStyles(({ colors }) => ({
  */
 function makeNavigationTheme(colors: ThemeColors, isDark: boolean): NavTheme {
   return {
-  dark: isDark,
-  colors: {
-    primary: colors.primary,
-    background: colors.background,
-    card: colors.background,
-    text: colors.text,
-    border: colors.glassBorder,
-    notification: colors.primary,
-  },
+    dark: isDark,
+    colors: {
+      primary: colors.primary,
+      background: colors.background,
+      card: colors.background,
+      text: colors.text,
+      border: colors.glassBorder,
+      notification: colors.primary,
+    },
     fonts: {
       regular: { fontFamily: fonts.regular, fontWeight: '400' },
       medium: { fontFamily: fonts.medium, fontWeight: '500' },

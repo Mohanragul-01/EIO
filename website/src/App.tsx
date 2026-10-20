@@ -9,6 +9,7 @@
 import { lazy, Suspense } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 
+import { ToastProvider } from './components/Toast';
 import { Spinner } from './components/ui';
 import { AuthProvider, useAuth } from './lib/auth';
 import { SignIn } from './pages/SignIn';
@@ -72,9 +73,12 @@ function Routed() {
 export function App() {
   return (
     <AuthProvider>
-      <HashRouter>
-        <Routed />
-      </HashRouter>
+      {/* Outside the router, so a toast outlives the page that raised it. */}
+      <ToastProvider>
+        <HashRouter>
+          <Routed />
+        </HashRouter>
+      </ToastProvider>
     </AuthProvider>
   );
 }

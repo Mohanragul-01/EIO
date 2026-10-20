@@ -1,52 +1,86 @@
 /**
- * ModuleBuilderScreen - where you design a module: name, icon, colour, fields.
+ * ModuleBuilderScreen - where you design a module: what it records, how each
+ * field fills itself in, how its list, tile and chart look, and when it
+ * reminds you.
  *
  * This is a form whose OUTPUT is another form. Everything you set here becomes
  * rows in user_modules / user_module_fields, and the record screens read those
- * rows to decide what to render.
+ * rows to decide what to render. The state and every rule about it live in
+ * builder.ts, shared with the website; this screen lays them out.
  *
  * Editing an existing module is intentionally forgiving:
  *   • adding a field   - existing entries just have no value for it (blank)
  *   • renaming a field - the underlying key never changes, so stored values
  *                        stay attached
- *   • deleting a field - the definition goes, the values stay in each record's
- *                        jsonb. Invisible, harmless, and re-adding a field
- *                        with the same name brings them back.
+ *   • retyping a field - nothing stored changes; the guard says how many
+ *                        values will stop showing before you commit
+ *   • removing a field - the definition goes, the values stay in each record's
+ *                        jsonb. Undo brings the field back before you save;
+ *                        re-adding one with the same name brings it back after.
  * A builder that could silently destroy data on a mistyped edit would be one
  * you'd never trust with anything important.
+ *
+ * A NEW module starts at the templates. Choosing one fills the builder for
+ * review; nothing is created until you press Create.
  */
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useEffect, useLayoutEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 
-import { Button, FadeInView, GlassCard, Screen, TextField,
+import {
+  Button,
+  FadeInView,
   FormScroll,
+  GlassCard,
+  Screen,
+  TextField,
+  useToast,
 } from '../../../core/components';
+import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { radius, spacing } from '../../../core/theme';
 import type { RootStackParamList } from '../../../navigation/types';
 import * as api from '../api';
-import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import {
-  FIELD_TYPES,
+  assignKeys,
+  blankDraft,
+  blankState,
+  retypeDraft,
+  stateFromModule,
+  stateFromTemplate,
+  toModuleInput,
+  usableDrafts,
+  validateBuilder,
+  type BuilderErrors,
+  type BuilderState,
+} from '../builder';
+import { FieldEditor } from '../components/FieldEditor';
+import { PickerChip } from '../components/PickerChip';
+import { ReminderSettings } from '../components/ReminderSettings';
+import { TemplatePicker } from '../components/TemplatePicker';
+import { TypeChangeSheet } from '../components/TypeChangeSheet';
+import { clearModuleReminders, resyncModule } from '../notifications';
+import { TEMPLATES, type ModuleTemplate } from '../templates';
+import { typeChangeImpact, type TypeChangeImpact } from '../typeChange';
+import {
+  aggsForFieldType,
+  CHART_BUCKET_LABEL,
+  fieldTypeLabel,
+  isGroupableType,
+  isNumericType,
+  isSortableFieldType,
+  MODULE_COLOR_NAMES,
   MODULE_COLORS,
   MODULE_ICONS,
   SUMMARY_AGG_LABEL,
-  aggsForFieldType,
-  isSortableFieldType,
-  needsOptions,
+  SUMMARY_PERIOD_LABEL,
+  type ChartBucket,
   type CustomField,
+  type CustomRecord,
   type FieldDraft,
   type FieldType,
-  type SortDirection,
-  type SummaryAgg,
+  type SummaryPeriod,
 } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'ModuleBuilder'>;
@@ -56,35 +90,31 @@ type Route = RouteProp<RootStackParamList, 'ModuleBuilder'>;
 let draftCounter = 0;
 const nextLocalId = () => `draft-${(draftCounter += 1)}`;
 
+const PERIODS: SummaryPeriod[] = ['all', 'week', 'month'];
+const BUCKETS: ChartBucket[] = ['entry', 'day', 'week', 'month'];
+const WINDOWS: (number | null)[] = [null, 3, 7];
+
+/** "moon-outline" -> "moon", for a screen reader. */
+const iconName = (icon: string) => icon.replace(/-outline$/, '').replace(/-/g, ' ');
+
+type PendingType = { localId: string; label: string; type: FieldType; impact: TypeChangeImpact };
+
 export function ModuleBuilderScreen() {
   const styles = useStyles();
   const { colors } = useTheme();
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
+  const toast = useToast();
   const editingId = route.params?.moduleId;
   const isEditing = !!editingId;
 
-  const [name, setName] = useState('');
-  const [icon, setIcon] = useState(MODULE_ICONS[0]);
-  const [color, setColor] = useState(MODULE_COLORS[0]);
-  const [drafts, setDrafts] = useState<FieldDraft[]>([
-    // Start with one text field so a brand-new module is never empty.
-    { localId: nextLocalId(), label: '', type: 'text', required: false, options: [] },
-  ]);
-
+  const [state, setState] = useState<BuilderState>(() => blankState(nextLocalId));
+  const [templateId, setTemplateId] = useState<string | null>(null);
   const [existingFields, setExistingFields] = useState<CustomField[]>([]);
-
-  /**
-   * Tile stat and list order. Held as field KEYS rather than draft ids, because
-   * that is what the database stores and what survives a rename. A field that
-   * has not been saved yet has no key, which is why the pickers below only
-   * offer saved fields.
-   */
-  const [summaryKey, setSummaryKey] = useState<string | null>(null);
-  const [summaryAgg, setSummaryAgg] = useState<SummaryAgg | null>(null);
-  const [sortKey, setSortKey] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [nameError, setNameError] = useState<string | null>(null);
+  /** The module's entries, for the type-change guard and the delete warning. */
+  const [records, setRecords] = useState<CustomRecord[]>([]);
+  const [errors, setErrors] = useState<BuilderErrors | null>(null);
+  const [pendingType, setPendingType] = useState<PendingType | null>(null);
   const [loading, setLoading] = useState(isEditing);
   const [saving, setSaving] = useState(false);
 
@@ -98,31 +128,15 @@ export function ModuleBuilderScreen() {
     let active = true;
     (async () => {
       try {
-        const [module, fields] = await Promise.all([
+        const [module, fields, rows] = await Promise.all([
           api.getModule(editingId),
           api.listFields(editingId),
+          api.listRecords(editingId),
         ]);
         if (!active) return;
-
-        setName(module.name);
-        setIcon(module.icon as (typeof MODULE_ICONS)[number]);
-        setColor(module.color);
-        setSummaryKey(module.summary_field_key);
-        setSummaryAgg(module.summary_agg);
-        setSortKey(module.sort_field_key);
-        setSortDirection(module.sort_direction);
+        setState(stateFromModule(module, fields, nextLocalId));
         setExistingFields(fields);
-        setDrafts(
-          fields.map((f) => ({
-            localId: nextLocalId(),
-            id: f.id,
-            key: f.key,
-            label: f.label,
-            type: f.type,
-            required: f.required,
-            options: f.options ?? [],
-          })),
-        );
+        setRecords(rows);
       } catch (e) {
         Alert.alert('Could not load', e instanceof Error ? e.message : 'Please try again.');
       } finally {
@@ -135,86 +149,103 @@ export function ModuleBuilderScreen() {
     };
   }, [editingId]);
 
-  const updateDraft = (localId: string, patch: Partial<FieldDraft>) => {
-    setDrafts((current) =>
-      current.map((d) => (d.localId === localId ? { ...d, ...patch } : d)),
-    );
+  const update = (patch: Partial<BuilderState>) => {
+    setState((current) => ({ ...current, ...patch }));
+    if (errors) setErrors(null);
   };
 
-  const addField = () => {
-    setDrafts((current) => [
+  const updateDraft = (localId: string, patch: Partial<FieldDraft>) =>
+    setState((current) => ({
       ...current,
-      { localId: nextLocalId(), label: '', type: 'text', required: false, options: [] },
-    ]);
+      drafts: current.drafts.map((d) => (d.localId === localId ? { ...d, ...patch } : d)),
+    }));
+
+  const applyRetype = (localId: string, type: FieldType) =>
+    setState((current) => ({
+      ...current,
+      drafts: current.drafts.map((d) => (d.localId === localId ? retypeDraft(d, type) : d)),
+    }));
+
+  /**
+   * A saved field with values gets the guard first. A new field, or one
+   * nobody has answered, has nothing to lose and changes straight away.
+   */
+  const retype = (draft: FieldDraft, type: FieldType) => {
+    const saved = existingFields.find((field) => field.id === draft.id);
+    if (saved) {
+      const impact = typeChangeImpact(records, { key: saved.key, type: draft.type }, { type });
+      if (impact.withValue > 0) {
+        setPendingType({ localId: draft.localId, label: draft.label.trim(), type, impact });
+        return;
+      }
+    }
+    applyRetype(draft.localId, type);
   };
 
-  const removeField = (draft: FieldDraft) => {
-    const doRemove = () =>
-      setDrafts((current) => current.filter((d) => d.localId !== draft.localId));
+  const addField = () =>
+    setState((current) => ({ ...current, drafts: [...current.drafts, blankDraft(nextLocalId())] }));
 
-    // Only warn for fields that already exist - removing an unsaved draft row
-    // can't lose anything.
-    if (draft.id) {
-      Alert.alert(
-        `Remove "${draft.label || 'this field'}"?`,
-        'It disappears from the form and the list. Values already saved stay in the database, so re-adding a field with the same name brings them back.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Remove', style: 'destructive', onPress: doRemove },
-        ],
-      );
-    } else {
-      doRemove();
-    }
+  /**
+   * Removing is a draft change until Save, so it is undone, not confirmed.
+   * The toast says what happens to a saved field's values, which is the
+   * question a confirm dialog used to answer.
+   */
+  const removeField = (draft: FieldDraft) => {
+    const index = state.drafts.findIndex((d) => d.localId === draft.localId);
+    setState((current) => ({
+      ...current,
+      drafts: current.drafts.filter((d) => d.localId !== draft.localId),
+    }));
+    if (!draft.id && !draft.label.trim()) return; // an empty new row: nothing to undo
+    const name = draft.label.trim() || 'Field';
+    toast.show({
+      message: draft.id ? `${name} removed. Its values stay in your entries.` : `${name} removed`,
+      actionLabel: 'Undo',
+      onAction: () =>
+        setState((current) => {
+          if (current.drafts.some((d) => d.localId === draft.localId)) return current;
+          const drafts = [...current.drafts];
+          drafts.splice(Math.min(index, drafts.length), 0, draft);
+          return { ...current, drafts };
+        }),
+    });
+  };
+
+  const pickTemplate = (template: ModuleTemplate | null) => {
+    setState(template ? stateFromTemplate(template, nextLocalId) : blankState(nextLocalId));
+    setTemplateId(template?.id ?? 'blank');
+    setErrors(null);
   };
 
   const handleSave = async () => {
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      setNameError('Give the module a name');
+    const problem = validateBuilder(state);
+    if (problem) {
+      setErrors(problem);
       return;
     }
 
-    const usable = drafts.filter((d) => d.label.trim().length > 0);
-    if (usable.length === 0) {
-      Alert.alert('Add at least one field', 'A module needs somewhere to put information.');
-      return;
-    }
-
-    // A choice field with no options would render as an empty row you can't
-    // answer - catch it here rather than letting it save.
-    const brokenSelect = usable.find((d) => needsOptions(d.type) && d.options.length === 0);
-    if (brokenSelect) {
-      Alert.alert(
-        'Add some choices',
-        `"${brokenSelect.label}" is a Choice field, so it needs at least one option.`,
-      );
-      return;
-    }
-
-    setNameError(null);
     setSaving(true);
+    const keyed = assignKeys(usableDrafts(state.drafts), existingFields.map((f) => f.key));
+    const input = toModuleInput(state, keyed);
 
     try {
-      const moduleInput = {
-        name: trimmedName,
-        icon,
-        color,
-        // A count needs no field, so the key is cleared rather than left
-        // pointing at something the summary will not read.
-        summary_field_key: summaryAgg && summaryAgg !== 'count' ? summaryKey : null,
-        summary_agg: summaryAgg,
-        sort_field_key: sortKey,
-        sort_direction: sortDirection,
-      };
-
-      if (isEditing) {
-        await api.updateModule(editingId, moduleInput);
-        await api.saveFields(editingId, usable, existingFields);
+      let moduleId: string;
+      if (editingId) {
+        // Fields first: the module's settings may point at a field this same
+        // save creates, so it should exist before anything refers to it.
+        await api.saveFields(editingId, keyed, existingFields);
+        await api.updateModule(editingId, input);
+        moduleId = editingId;
+        navigation.goBack();
       } else {
-        await api.createModule(moduleInput, usable);
+        const created = await api.createModule(input, keyed);
+        moduleId = created.id;
+        // Straight into the new module, not back to the home screen.
+        navigation.replace('CustomModuleList', { moduleId: created.id });
       }
-      navigation.goBack();
+      // Reminders follow the saved settings. Fire and forget: a phone that
+      // cannot schedule them has still saved the module.
+      void resyncModule(moduleId).catch(() => {});
     } catch (e) {
       setSaving(false);
       Alert.alert('Could not save', e instanceof Error ? e.message : 'Please try again.');
@@ -223,28 +254,29 @@ export function ModuleBuilderScreen() {
 
   const handleDelete = () => {
     if (!editingId) return;
-    Alert.alert(
-      'Delete this module?',
-      'Every entry in it is deleted too. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.deleteModule(editingId);
-              // Back twice: past the module's own list screen, which is now
-              // pointing at something that no longer exists.
-              navigation.getParent()?.goBack();
-              navigation.goBack();
-            } catch (e) {
-              Alert.alert('Could not delete', e instanceof Error ? e.message : 'Try again.');
-            }
-          },
+    const count = records.length;
+    // The database cascades the delete to every entry; say so, with the number.
+    const entries =
+      count === 0
+        ? 'It has no entries.'
+        : `Its ${count} ${count === 1 ? 'entry is' : 'entries are'} deleted too.`;
+    Alert.alert(`Delete ${state.name.trim() || 'this module'}?`, `${entries} This cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.deleteModule(editingId);
+            void clearModuleReminders(editingId).catch(() => {});
+            // Past the module's own list screen, which now points at nothing.
+            navigation.popToTop();
+          } catch (e) {
+            Alert.alert('Could not delete', e instanceof Error ? e.message : 'Try again.');
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   if (loading) {
@@ -257,391 +289,371 @@ export function ModuleBuilderScreen() {
     );
   }
 
+  const accent = state.color;
+  const named = state.drafts.filter((d) => d.label.trim());
+  const labelOf = (d: FieldDraft) => d.label.trim();
+  const numeric = named.filter((d) => isNumericType(d.type));
+  const dates = named.filter((d) => d.type === 'date');
+  const chosenTemplate = TEMPLATES.find((t) => t.id === templateId);
+
+  /** A row of "Automatic, field, field..." for a role or a setting. */
+  const fieldChoices = (
+    current: string | null,
+    candidates: FieldDraft[],
+    onPick: (ref: string | null) => void,
+    noneLabel: string,
+  ) => (
+    <View style={styles.row} accessibilityRole="radiogroup">
+      <PickerChip text={noneLabel} selected={current === null} accent={accent} onPress={() => onPick(null)} />
+      {candidates.map((draft) => (
+        <PickerChip
+          key={draft.localId}
+          text={labelOf(draft)}
+          selected={current === draft.localId}
+          accent={accent}
+          onPress={() => onPick(draft.localId)}
+        />
+      ))}
+    </View>
+  );
+
   return (
     <Screen padded={false}>
-        <FormScroll contentContainerStyle={styles.scroll}>
-          {/*  Identity  */}
+      <FormScroll contentContainerStyle={styles.scroll}>
+        {/*  Templates (new modules only)  */}
+        {!isEditing ? (
           <FadeInView>
-            <GlassCard>
-              <TextField
-                label="Module name"
-                value={name}
-                onChangeText={(text) => {
-                  setName(text);
-                  if (nameError) setNameError(null);
-                }}
-                placeholder="Sleep log, Reading list, Documents..."
-                error={nameError}
-                autoFocus={!isEditing}
-                maxLength={40}
-              />
+            <Text style={styles.sectionLabel}>Start from</Text>
+            <Text style={styles.sectionHint}>
+              {chosenTemplate
+                ? `Filled in from ${chosenTemplate.name}. Change anything below; nothing is saved until you press Create.`
+                : 'A template fills in the fields for you to review. Nothing is created until you press Create.'}
+            </Text>
+            <TemplatePicker chosen={templateId} onPick={pickTemplate} />
+          </FadeInView>
+        ) : null}
 
-              <Text style={styles.label}>Icon</Text>
-              <View style={styles.iconGrid}>
-                {MODULE_ICONS.map((option) => {
-                  const selected = option === icon;
-                  return (
-                    <Pressable
-                      key={option}
-                      onPress={() => setIcon(option)}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected: option === icon }}
-                      accessibilityLabel={`${option} icon`}
-                      style={({ pressed }) => [
-                        styles.iconTile,
-                        selected && { backgroundColor: color + '26', borderColor: color + '66' },
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <Ionicons
-                        name={option}
-                        size={19}
-                        color={selected ? color : colors.textMuted}
-                      />
-                    </Pressable>
-                  );
-                })}
-              </View>
+        {/*  Identity  */}
+        <FadeInView delay={30}>
+          <GlassCard style={!isEditing ? styles.spaced : undefined}>
+            <TextField
+              label="Module name"
+              value={state.name}
+              onChangeText={(text) => update({ name: text })}
+              placeholder="Sleep log, Reading list, Documents..."
+              error={errors?.name}
+              maxLength={40}
+            />
 
-              <Text style={styles.label}>Colour</Text>
-              <View style={styles.colorRow}>
-                {MODULE_COLORS.map((option) => (
+            <Text style={styles.label}>Icon</Text>
+            <View style={styles.iconGrid} accessibilityRole="radiogroup">
+              {MODULE_ICONS.map((option) => {
+                const selected = option === state.icon;
+                return (
                   <Pressable
                     key={option}
-                    onPress={() => setColor(option)}
+                    onPress={() => update({ icon: option })}
+                    hitSlop={2}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={`${iconName(option)} icon`}
+                    style={({ pressed }) => [
+                      styles.iconTile,
+                      selected && { backgroundColor: accent + '26', borderColor: accent + '99' },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Ionicons name={option} size={19} color={selected ? accent : colors.textMuted} />
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={styles.label}>Colour</Text>
+            <View style={styles.colorRow} accessibilityRole="radiogroup">
+              {MODULE_COLORS.map((option) => {
+                const selected = option === state.color;
+                return (
+                  <Pressable
+                    key={option}
+                    onPress={() => update({ color: option })}
+                    hitSlop={6}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={MODULE_COLOR_NAMES[option] ?? 'Colour'}
                     style={({ pressed }) => [
                       styles.colorDot,
                       { backgroundColor: option },
-                      option === color && styles.colorDotSelected,
+                      selected && styles.colorDotSelected,
                       pressed && styles.pressed,
                     ]}
+                  >
+                    {/* A tick as well as the ring: the choice never rests on an outline alone. */}
+                    {selected ? <Ionicons name="checkmark" size={17} color={colors.background} /> : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </GlassCard>
+        </FadeInView>
+
+        {/*  Fields  */}
+        <FadeInView delay={60}>
+          <Text style={styles.sectionLabel}>Fields</Text>
+          <Text style={styles.sectionHint}>
+            What you want to record each time, in the order the form asks for it.
+          </Text>
+
+          {state.drafts.map((draft, index) => (
+            <FieldEditor
+              key={draft.localId}
+              draft={draft}
+              index={index}
+              accent={accent}
+              canRemove={state.drafts.length > 1}
+              onChange={(patch) => {
+                updateDraft(draft.localId, patch);
+                if (errors) setErrors(null);
+              }}
+              onRetype={(type) => retype(draft, type)}
+              onRemove={() => removeField(draft)}
+            />
+          ))}
+
+          <Button label="Add a field" icon="add" variant="glass" onPress={addField} style={styles.addField} />
+        </FadeInView>
+
+        {named.length > 0 ? (
+          <FadeInView delay={90}>
+            {/*  Row layout and grouping  */}
+            <Text style={styles.sectionLabel}>In the list</Text>
+            <Text style={styles.sectionHint}>
+              What each entry shows. Automatic uses the first text field, the first date and the first
+              rating. Yes/no fields can always be ticked in the row.
+            </Text>
+            <GlassCard>
+              <Text style={styles.cardLabelFirst}>Title</Text>
+              {fieldChoices(state.titleRef, named, (ref) => update({ titleRef: ref }), 'Automatic')}
+              <Text style={styles.cardLabel}>Under it</Text>
+              {fieldChoices(state.subtitleRef, named, (ref) => update({ subtitleRef: ref }), 'Automatic')}
+              <Text style={styles.cardLabel}>On the right</Text>
+              {fieldChoices(state.badgeRef, named, (ref) => update({ badgeRef: ref }), 'Automatic')}
+              <Text style={styles.cardLabel}>Group entries by</Text>
+              {fieldChoices(
+                state.groupRef,
+                named.filter((d) => isGroupableType(d.type)),
+                (ref) => update({ groupRef: ref }),
+                'No groups',
+              )}
+            </GlassCard>
+
+            {/*  Home tile  */}
+            <Text style={styles.sectionLabel}>Home tile</Text>
+            <Text style={styles.sectionHint}>What the tile says, and over how long.</Text>
+            <GlassCard>
+              <View style={styles.row} accessibilityRole="radiogroup">
+                <PickerChip
+                  text="How many"
+                  selected={!state.summaryAgg || state.summaryAgg === 'count'}
+                  accent={accent}
+                  onPress={() => update({ summaryAgg: 'count', summaryRef: null })}
+                />
+                {named.flatMap((draft) =>
+                  // aggsForFieldType keeps this honest: you cannot total a
+                  // date or average a note, and offering it would produce a
+                  // tile showing NaN.
+                  aggsForFieldType(draft.type)
+                    .filter((agg) => agg !== 'count')
+                    .map((agg) => (
+                      <PickerChip
+                        key={`${draft.localId}-${agg}`}
+                        text={`${SUMMARY_AGG_LABEL[agg]} ${labelOf(draft)}`}
+                        selected={state.summaryAgg === agg && state.summaryRef === draft.localId}
+                        accent={accent}
+                        onPress={() => update({ summaryAgg: agg, summaryRef: draft.localId })}
+                      />
+                    )),
+                )}
+              </View>
+              <Text style={styles.cardLabel}>Covering</Text>
+              <View style={styles.row} accessibilityRole="radiogroup">
+                {PERIODS.map((period) => (
+                  <PickerChip
+                    key={period}
+                    text={SUMMARY_PERIOD_LABEL[period]}
+                    selected={state.summaryPeriod === period}
+                    accent={accent}
+                    onPress={() => update({ summaryPeriod: period })}
                   />
                 ))}
               </View>
             </GlassCard>
-          </FadeInView>
 
-          {/*  Fields  */}
-          <FadeInView delay={60}>
-            <Text style={styles.sectionLabel}>Fields</Text>
-            <Text style={styles.sectionHint}>
-              What you want to record each time. The first text field becomes the row title in
-              the list.
-            </Text>
-
-            {drafts.map((draft, index) => (
-              <FieldEditor
-                key={draft.localId}
-                draft={draft}
-                index={index}
-                accent={color}
-                canRemove={drafts.length > 1}
-                onChange={(patch) => updateDraft(draft.localId, patch)}
-                onRemove={() => removeField(draft)}
-              />
-            ))}
-
-            <Button
-              label="Add a field"
-              icon="add"
-              variant="glass"
-              onPress={addField}
-              style={styles.addField}
-            />
-          </FadeInView>
-
-          {/*
-            Only offered once fields exist AND have been saved. Both settings
-            reference a field KEY, which is assigned on save, so offering them
-            for unsaved drafts would mean pointing at something with no key yet.
-          */}
-          {existingFields.length > 0 ? (
-            <FadeInView delay={90}>
-              <Text style={styles.sectionLabel}>Home tile</Text>
-              <Text style={styles.sectionHint}>
-                What the tile shows instead of a plain count.
-              </Text>
-
-              <GlassCard style={styles.fieldCard}>
-                <View style={styles.typeRow}>
-                  <PickerChip
-                    text="Count"
-                    selected={!summaryAgg || summaryAgg === 'count'}
-                    accent={color}
-                    onPress={() => {
-                      setSummaryAgg('count');
-                      setSummaryKey(null);
-                    }}
-                  />
-                  {existingFields.flatMap((field) =>
-                    // aggsForFieldType keeps this honest: you cannot total a
-                    // date or average a note, and offering it would produce a
-                    // tile showing NaN.
-                    aggsForFieldType(field.type)
-                      .filter((agg) => agg !== 'count')
-                      .map((agg) => (
-                        <PickerChip
-                          key={field.key + '-' + agg}
-                          text={SUMMARY_AGG_LABEL[agg] + ' ' + field.label}
-                          selected={summaryAgg === agg && summaryKey === field.key}
-                          accent={color}
-                          onPress={() => {
-                            setSummaryAgg(agg);
-                            setSummaryKey(field.key);
-                          }}
-                        />
-                      )),
-                  )}
-                </View>
-              </GlassCard>
-
-              <Text style={styles.sectionLabel}>Sort entries by</Text>
-              <GlassCard style={styles.fieldCard}>
-                <View style={styles.typeRow}>
-                  <PickerChip
-                    text="Newest first"
-                    selected={!sortKey}
-                    accent={color}
-                    onPress={() => {
-                      setSortKey(null);
-                      setSortDirection('desc');
-                    }}
-                  />
-                  {existingFields
-                    .filter((field) => isSortableFieldType(field.type))
-                    .map((field) => (
-                      <PickerChip
-                        key={field.key}
-                        text={field.label}
-                        selected={sortKey === field.key}
-                        accent={color}
-                        onPress={() => setSortKey(field.key)}
-                      />
-                    ))}
-                </View>
-
-                {sortKey ? (
-                  <View style={styles.directionRow}>
+            {/*  Chart: offered only when there is something to chart  */}
+            {numeric.length > 0 ? (
+              <>
+                <Text style={styles.sectionLabel}>Trend chart</Text>
+                <Text style={styles.sectionHint}>
+                  A line above the list, and the sparkline on the home tile.
+                </Text>
+                <GlassCard>
+                  <View style={styles.row} accessibilityRole="radiogroup">
                     <PickerChip
-                      text="Ascending"
-                      selected={sortDirection === 'asc'}
-                      accent={color}
-                      onPress={() => setSortDirection('asc')}
+                      text={`Automatic (${labelOf(numeric[0])})`}
+                      selected={!state.chartHidden && state.chartRef === null}
+                      accent={accent}
+                      onPress={() => update({ chartRef: null, chartHidden: false })}
                     />
+                    {numeric.length > 1
+                      ? numeric.map((draft) => (
+                          <PickerChip
+                            key={draft.localId}
+                            text={labelOf(draft)}
+                            selected={!state.chartHidden && state.chartRef === draft.localId}
+                            accent={accent}
+                            onPress={() => update({ chartRef: draft.localId, chartHidden: false })}
+                          />
+                        ))
+                      : null}
                     <PickerChip
-                      text="Descending"
-                      selected={sortDirection === 'desc'}
-                      accent={color}
-                      onPress={() => setSortDirection('desc')}
+                      text="No chart"
+                      selected={state.chartHidden}
+                      accent={accent}
+                      onPress={() => update({ chartHidden: true })}
                     />
                   </View>
-                ) : null}
-              </GlassCard>
-            </FadeInView>
-          ) : null}
 
-          <FadeInView delay={120}>
-            <Button
-              label={isEditing ? 'Save module' : 'Create module'}
-              icon="checkmark"
-              onPress={handleSave}
-              loading={saving}
-              style={styles.save}
-            />
-
-            {isEditing ? (
-              <Button
-                label="Delete module"
-                icon="trash-outline"
-                variant="ghost"
-                onPress={handleDelete}
-                style={styles.delete}
-              />
+                  {!state.chartHidden ? (
+                    <>
+                      <Text style={styles.cardLabel}>Points</Text>
+                      <View style={styles.row} accessibilityRole="radiogroup">
+                        {BUCKETS.map((bucket) => (
+                          <PickerChip
+                            key={bucket}
+                            text={CHART_BUCKET_LABEL[bucket]}
+                            selected={state.chartBucket === bucket}
+                            accent={accent}
+                            onPress={() => update({ chartBucket: bucket })}
+                          />
+                        ))}
+                      </View>
+                      {state.chartBucket !== 'entry' ? (
+                        <View style={[styles.row, styles.rowSpaced]} accessibilityRole="radiogroup">
+                          <PickerChip
+                            text="Total"
+                            selected={state.chartAgg === 'sum'}
+                            accent={accent}
+                            onPress={() => update({ chartAgg: 'sum' })}
+                          />
+                          <PickerChip
+                            text="Average"
+                            selected={state.chartAgg === 'average'}
+                            accent={accent}
+                            onPress={() => update({ chartAgg: 'average' })}
+                          />
+                        </View>
+                      ) : null}
+                      <Text style={styles.cardLabel}>Smoothing</Text>
+                      <View style={styles.row} accessibilityRole="radiogroup">
+                        {WINDOWS.map((window) => (
+                          <PickerChip
+                            key={String(window)}
+                            text={window === null ? 'Off' : `${window}-point average`}
+                            selected={state.chartWindow === window}
+                            accent={accent}
+                            onPress={() => update({ chartWindow: window })}
+                          />
+                        ))}
+                      </View>
+                    </>
+                  ) : null}
+                </GlassCard>
+              </>
             ) : null}
-          </FadeInView>
-        </FormScroll>
-    </Screen>
-  );
-}
 
-/** A selectable chip, shared by the summary and sort pickers. */
-function PickerChip({
-  text,
-  selected,
-  accent,
-  onPress,
-}: {
-  text: string;
-  selected: boolean;
-  accent: string;
-  onPress: () => void;
-}) {
-  const styles = useStyles();
+            {/*  Sort  */}
+            <Text style={styles.sectionLabel}>Sort entries by</Text>
+            <GlassCard>
+              {fieldChoices(
+                state.sortRef,
+                named.filter((d) => isSortableFieldType(d.type)),
+                (ref) => update(ref ? { sortRef: ref } : { sortRef: null, sortDirection: 'desc' }),
+                'Newest first',
+              )}
+              {state.sortRef ? (
+                <View style={[styles.row, styles.rowSpaced]} accessibilityRole="radiogroup">
+                  <PickerChip
+                    text="Ascending"
+                    selected={state.sortDirection === 'asc'}
+                    accent={accent}
+                    onPress={() => update({ sortDirection: 'asc' })}
+                  />
+                  <PickerChip
+                    text="Descending"
+                    selected={state.sortDirection === 'desc'}
+                    accent={accent}
+                    onPress={() => update({ sortDirection: 'desc' })}
+                  />
+                </View>
+              ) : null}
+            </GlassCard>
 
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.typeChip,
-        selected && { backgroundColor: accent + '26', borderColor: accent + '66' },
-        pressed && styles.pressed,
-      ]}
-      accessibilityRole="radio"
-      accessibilityState={{ selected }}
-    >
-      <Text style={[styles.typeText, selected && { color: accent }]}>{text}</Text>
-    </Pressable>
-  );
-}
-
-/** One field's editor: label, type, required flag, and choices if it needs them. */
-function FieldEditor({
-  draft,
-  index,
-  accent,
-  canRemove,
-  onChange,
-  onRemove,
-}: {
-  draft: FieldDraft;
-  index: number;
-  accent: string;
-  canRemove: boolean;
-  onChange: (patch: Partial<FieldDraft>) => void;
-  onRemove: () => void;
-}) {
-  const styles = useStyles();
-  const { colors } = useTheme();
-  const [optionText, setOptionText] = useState('');
-
-  const addOption = () => {
-    const value = optionText.trim();
-    if (!value || draft.options.includes(value)) {
-      setOptionText('');
-      return;
-    }
-    onChange({ options: [...draft.options, value] });
-    setOptionText('');
-  };
-
-  return (
-    <GlassCard style={styles.fieldCard}>
-      <View style={styles.fieldHeader}>
-        <Text style={styles.fieldIndex}>Field {index + 1}</Text>
-        {canRemove ? (
-          <Pressable
-            onPress={onRemove}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Remove this field"
-          >
-            <Ionicons name="close-circle-outline" size={19} color={colors.textMuted} />
-          </Pressable>
-        ) : null}
-      </View>
-
-      <TextField
-        label="Label"
-        value={draft.label}
-        onChangeText={(text) => onChange({ label: text })}
-        placeholder="Hours slept, Title, Amount..."
-        maxLength={40}
-      />
-
-      <Text style={styles.label}>Type</Text>
-      <View style={styles.typeRow}>
-        {FIELD_TYPES.map((option) => {
-          const selected = option.type === draft.type;
-          return (
-            <Pressable
-              key={option.type}
-              onPress={() =>
-                onChange({
-                  type: option.type as FieldType,
-                  // Options only mean something for 'select'; clear them when
-                  // switching away so stale choices don't reappear later.
-                  options: needsOptions(option.type) ? draft.options : [],
-                })
-              }
-              style={({ pressed }) => [
-                styles.typeChip,
-                selected && { backgroundColor: accent + '26', borderColor: accent + '66' },
-                pressed && styles.pressed,
-              ]}
-            >
-              <Ionicons
-                name={option.icon}
-                size={13}
-                color={selected ? accent : colors.textMuted}
+            {/*  Reminders  */}
+            <Text style={styles.sectionLabel}>Reminders</Text>
+            <GlassCard style={styles.spacedTop}>
+              <ReminderSettings
+                accent={accent}
+                time={state.reminderTime}
+                days={state.reminderDays}
+                fieldRef={state.reminderFieldRef}
+                offset={state.reminderOffset}
+                dateDrafts={dates}
+                onChange={update}
               />
-              <Text style={[styles.typeText, selected && { color: accent }]}>{option.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
+            </GlassCard>
+          </FadeInView>
+        ) : null}
 
-      {needsOptions(draft.type) ? (
-        <View style={styles.optionsBlock}>
-          <Text style={styles.label}>Choices</Text>
-
-          {draft.options.length > 0 ? (
-            <View style={styles.optionList}>
-              {draft.options.map((option) => (
-                <Pressable
-                  key={option}
-                  onPress={() =>
-                    onChange({ options: draft.options.filter((o) => o !== option) })
-                  }
-                  style={styles.optionPill}
-                >
-                  <Text style={styles.optionPillText}>{option}</Text>
-                  <Ionicons name="close" size={12} color={colors.textMuted} />
-                </Pressable>
-              ))}
+        <FadeInView delay={120}>
+          {errors?.fields || errors?.reminders ? (
+            <View style={styles.errorBox} accessibilityLiveRegion="polite">
+              <Ionicons name="alert-circle-outline" size={17} color={colors.danger} />
+              <Text style={styles.errorText}>{errors.fields ?? errors.reminders}</Text>
             </View>
           ) : null}
 
-          <View style={styles.optionAdd}>
-            <TextField
-              label=""
-              value={optionText}
-              onChangeText={setOptionText}
-              placeholder="Add a choice, e.g. Good"
-              onSubmitEditing={addOption}
-              returnKeyType="done"
-              maxLength={30}
-              style={styles.optionInput}
-            />
-            <Pressable
-              onPress={addOption}
-              style={styles.optionAddButton}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Add an option"
-            >
-              <Ionicons name="add" size={20} color={colors.primary} />
-            </Pressable>
-          </View>
-        </View>
-      ) : null}
+          <Button
+            label={isEditing ? 'Save module' : 'Create module'}
+            icon="checkmark"
+            onPress={handleSave}
+            loading={saving}
+            style={styles.save}
+          />
 
-      <Pressable
-        onPress={() => onChange({ required: !draft.required })}
-        style={styles.requiredRow}
-      >
-        <View
-          style={[
-            styles.checkbox,
-            draft.required && { backgroundColor: accent, borderColor: accent },
-          ]}
-        >
-          {draft.required ? (
-            <Ionicons name="checkmark" size={13} color={colors.onPrimary} />
+          {isEditing ? (
+            <Button
+              label="Delete module"
+              icon="trash-outline"
+              variant="ghost"
+              onPress={handleDelete}
+              style={styles.delete}
+            />
           ) : null}
-        </View>
-        <Text style={styles.requiredText}>Required</Text>
-      </Pressable>
-    </GlassCard>
+        </FadeInView>
+      </FormScroll>
+
+      <TypeChangeSheet
+        visible={pendingType !== null}
+        fieldLabel={pendingType?.label ?? ''}
+        typeLabel={pendingType ? fieldTypeLabel(pendingType.type) : ''}
+        impact={pendingType?.impact ?? null}
+        onClose={() => setPendingType(null)}
+        onConfirm={() => {
+          if (pendingType) applyRetype(pendingType.localId, pendingType.type);
+          setPendingType(null);
+        }}
+      />
+    </Screen>
   );
 }
 
@@ -656,9 +668,24 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  spaced: {
+    marginTop: spacing.xxl,
+  },
+  spacedTop: {
+    marginTop: spacing.lg,
+  },
   label: {
     ...typography.overline,
     marginTop: spacing.xxl,
+    marginBottom: spacing.md,
+  },
+  cardLabelFirst: {
+    ...typography.overline,
+    marginBottom: spacing.md,
+  },
+  cardLabel: {
+    ...typography.overline,
+    marginTop: spacing.xl,
     marginBottom: spacing.md,
   },
   pressed: {
@@ -686,11 +713,13 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     gap: spacing.md,
   },
   colorDot: {
-    width: 30,
-    height: 30,
+    width: 36,
+    height: 36,
     borderRadius: radius.pill,
     borderWidth: 2,
     borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   colorDotSelected: {
     borderColor: colors.text,
@@ -705,112 +734,32 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     marginTop: spacing.xs,
     marginBottom: spacing.lg,
   },
-
-  fieldCard: {
-    marginBottom: spacing.md,
-  },
-  fieldHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  fieldIndex: {
-    ...typography.overline,
-    fontSize: 10,
-  },
-  typeRow: {
+  row: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
   },
-  typeChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
-    borderRadius: radius.pill,
-    backgroundColor: colors.glass,
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
-  },
-  typeText: {
-    ...typography.caption,
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-
-  optionsBlock: {},
-  optionList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  optionPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.glassStrong,
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
-  },
-  optionPillText: {
-    ...typography.caption,
-    fontSize: 12,
-    color: colors.text,
-  },
-  optionAdd: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  optionInput: {
-    flex: 1,
-  },
-  optionAddButton: {
-    width: 44,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: colors.glass,
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
-  },
-
-  requiredRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    marginTop: spacing.xl,
-  },
-  checkbox: {
-    width: 21,
-    height: 21,
-    borderRadius: radius.sm,
-    borderWidth: 1.5,
-    borderColor: colors.glassBorderStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  requiredText: {
-    ...typography.caption,
-    fontSize: 13,
-    color: colors.textSecondary,
+  rowSpaced: {
+    marginTop: spacing.md,
   },
 
   addField: {
     marginTop: spacing.sm,
   },
-  directionRow: {
+  errorBox: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginTop: spacing.md,
+    marginTop: spacing.xxl,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.danger + '55',
+    backgroundColor: colors.glass,
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.text,
+    flex: 1,
   },
   save: {
     marginTop: spacing.xxl,

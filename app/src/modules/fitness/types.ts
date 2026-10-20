@@ -21,6 +21,33 @@ export type BodyMetric = {
   created_at: string;
 };
 
+/** Which mode's library lists an exercise. 'both' shows it in either. */
+export type Discipline = 'gym' | 'calisthenics' | 'both';
+
+/**
+ * What the load is. 'external': the barbell or dumbbell is the load and
+ * weight_kg is it. 'bodyweight': the body is, weight_kg is what you ADD (a
+ * vest, a belt) and assistance is its own number - never a negative weight.
+ */
+export type LoadMode = 'external' | 'bodyweight';
+
+/** The lens over Fitness. A mode filters and sets defaults; it is not a separate log. */
+export type FitnessMode = 'gym' | 'calisthenics';
+
+export type Equipment =
+  | 'none'
+  | 'barbell'
+  | 'dumbbell'
+  | 'kettlebell'
+  | 'machine'
+  | 'cable'
+  | 'band'
+  | 'pull_up_bar'
+  | 'rings'
+  | 'dip_bars'
+  | 'parallettes'
+  | 'other';
+
 export type Exercise = {
   id: string;
   user_id: string;
@@ -29,6 +56,18 @@ export type Exercise = {
   muscle_group: string | null;
   /** Whether a set of this exercise counts reps or seconds held. */
   tracking_type: TrackingType;
+  discipline: Discipline;
+  load_mode: LoadMode;
+  /** Share of bodyweight one rep moves (push-up about 0.65). Volume and e1RM only. */
+  bodyweight_factor: number;
+  equipment: Equipment | null;
+  /** Logged per side. */
+  is_unilateral: boolean;
+  default_rest_seconds: number | null;
+  /** Shown every time the exercise is logged. */
+  pinned_note: string;
+  /** Your own how-to. */
+  instructions: string;
   created_at: string;
 };
 
@@ -36,18 +75,34 @@ export type Routine = {
   id: string;
   user_id: string;
   name: string;
+  mode: FitnessMode;
   created_at: string;
   updated_at: string;
 };
 
+/**
+ * A slot in a routine: a fixed exercise OR a ladder (exactly one is set). A
+ * ladder slot becomes the ladder's current rung when a session starts, so a
+ * routine written once never needs editing as you progress.
+ */
 export type RoutineExercise = {
   id: string;
   routine_id: string;
-  exercise_id: string;
+  exercise_id: string | null;
+  progression_id: string | null;
   user_id: string;
   position: number;
   target_sets: number | null;
+  /** The top of the rep range; target_reps_min is the bottom. */
   target_reps: number | null;
+  target_reps_min: number | null;
+  target_seconds_min: number | null;
+  target_seconds_max: number | null;
+  rest_seconds: number | null;
+  /** Slots sharing a letter alternate as a superset. */
+  pair_group: string | null;
+  /** What to add when every set hits the top of the range. */
+  increment_kg: number | null;
 };
 
 export type WorkoutSession = {
@@ -57,6 +112,13 @@ export type WorkoutSession = {
   /** Null for an ad-hoc session that came from no routine. */
   routine_id: string | null;
   notes: string;
+  mode: FitnessMode;
+  /** Null for sessions logged before v3. */
+  started_at: string | null;
+  /** Null until Finish, which is optional. */
+  ended_at: string | null;
+  /** The weigh-in in force when the session started. */
+  bodyweight_kg: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -74,8 +136,20 @@ export type SessionSet = {
   weight_kg: number;
   /** Rate of perceived exertion, 1 to 10. Optional: not everyone tracks it. */
   rpe: number | null;
+  set_type: SetType;
+  /** Assistance subtracted from bodyweight. Positive, or null. */
+  assist_kg: number | null;
+  band_id: string | null;
+  side: Side | null;
+  /** Whether it counts toward a ladder level-up. */
+  clean: boolean;
   created_at: string;
 };
+
+/** Warm-ups count toward nothing; a failure set may record 0 reps; no rest before a drop set. */
+export type SetType = 'normal' | 'warmup' | 'failure' | 'drop';
+
+export type Side = 'left' | 'right';
 
 /** A set being entered, before it has an id. */
 export type SetInput = {
@@ -86,6 +160,105 @@ export type SetInput = {
   duration_seconds: number | null;
   weight_kg: number;
   rpe: number | null;
+  set_type?: SetType;
+  assist_kg?: number | null;
+  band_id?: string | null;
+  side?: Side | null;
+  clean?: boolean;
+};
+
+/** One exercise's block in a session: its order, rest, note and superset. */
+export type SessionExercise = {
+  id: string;
+  session_id: string;
+  exercise_id: string;
+  user_id: string;
+  position: number;
+  rest_seconds: number | null;
+  note: string;
+  superset_group: string | null;
+  created_at: string;
+};
+
+/** A resistance band, remembered by colour. */
+export type Band = {
+  id: string;
+  user_id: string;
+  label: string;
+  color: string;
+  approx_kg: number | null;
+  position: number;
+  created_at: string;
+};
+
+export type ProgressionFamily = 'push' | 'pull' | 'legs' | 'core' | 'balance' | 'statics' | 'other';
+
+/** A ladder for one skill. Which rungs are mastered is derived from its moves. */
+export type Progression = {
+  id: string;
+  user_id: string;
+  name: string;
+  family: ProgressionFamily;
+  current_step_id: string | null;
+  position: number;
+  level_up_rule: 'two_of_three' | 'one';
+  paused_at: string | null;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+};
+
+/** A rung: an ordinary library exercise with a graduation target. */
+export type ProgressionStep = {
+  id: string;
+  progression_id: string;
+  user_id: string;
+  exercise_id: string;
+  position: number;
+  goal_sets: number;
+  /** Exactly one of goal_reps and goal_seconds is set. */
+  goal_reps: number | null;
+  goal_seconds: number | null;
+  goal_added_kg: number | null;
+  start_reps: number | null;
+  start_seconds: number | null;
+  cue: string;
+  created_at: string;
+};
+
+export type ProgressionMove = {
+  id: string;
+  progression_id: string;
+  user_id: string;
+  from_step_id: string | null;
+  to_step_id: string;
+  kind: 'start' | 'up' | 'back';
+  date: string;
+  session_id: string | null;
+  note: string;
+  created_at: string;
+};
+
+export type BodyMeasurement = {
+  id: string;
+  user_id: string;
+  date: string;
+  neck: number | null;
+  shoulders: number | null;
+  chest: number | null;
+  waist: number | null;
+  hips: number | null;
+  arm_left: number | null;
+  arm_right: number | null;
+  forearm_left: number | null;
+  forearm_right: number | null;
+  thigh_left: number | null;
+  thigh_right: number | null;
+  calf_left: number | null;
+  calf_right: number | null;
+  body_fat_pct: number | null;
+  created_at: string;
+  updated_at: string;
 };
 
 /**
@@ -189,9 +362,7 @@ export const MUSCLE_GROUPS: readonly string[] = MUSCLE_REGIONS.flatMap(
  * disappearing from every tab.
  */
 const REGION_OF: Record<string, MuscleRegion> = Object.fromEntries(
-  MUSCLE_REGIONS.flatMap((region) =>
-    MUSCLES_BY_REGION[region].map((muscle) => [muscle, region]),
-  ),
+  MUSCLE_REGIONS.flatMap((region) => MUSCLES_BY_REGION[region].map((muscle) => [muscle, region])),
 );
 
 export function regionOf(muscle: string | null): MuscleRegion {
@@ -214,21 +385,56 @@ export const TRACKING_LABEL: Record<TrackingType, string> = {
   time: 'Time',
 };
 
+/**
+ * The starter library. Pull-up and Plank are bodyweight work listed in both
+ * modes, exactly as migration 0019 classifies an existing library - seeded as
+ * gym lifts, a fresh Calisthenics tab had no pull-up, and a pull-up rep record
+ * could never fire. Every row states every field: a bulk insert sends the
+ * same columns for each row, so one left out would be written as null rather
+ * than take its column default.
+ */
 export const DEFAULT_EXERCISES: {
   name: string;
   muscle_group: string;
   tracking_type: TrackingType;
+  discipline: Discipline;
+  load_mode: LoadMode;
+  equipment: Equipment | null;
 }[] = [
-  { name: 'Bench Press', muscle_group: 'Chest', tracking_type: 'reps' },
-  { name: 'Squat', muscle_group: 'Legs', tracking_type: 'reps' },
-  { name: 'Deadlift', muscle_group: 'Lower back', tracking_type: 'reps' },
-  { name: 'Overhead Press', muscle_group: 'Shoulders', tracking_type: 'reps' },
-  { name: 'Bicep Curl', muscle_group: 'Biceps', tracking_type: 'reps' },
-  { name: 'Pull-up', muscle_group: 'Back', tracking_type: 'reps' },
+  { name: 'Bench Press', muscle_group: 'Chest', ...lift('barbell') },
+  { name: 'Squat', muscle_group: 'Legs', ...lift('barbell') },
+  { name: 'Deadlift', muscle_group: 'Lower back', ...lift('barbell') },
+  { name: 'Overhead Press', muscle_group: 'Shoulders', ...lift('barbell') },
+  { name: 'Bicep Curl', muscle_group: 'Biceps', ...lift(null) },
+  {
+    name: 'Pull-up',
+    muscle_group: 'Back',
+    tracking_type: 'reps',
+    discipline: 'both',
+    load_mode: 'bodyweight',
+    equipment: 'pull_up_bar',
+  },
   // One timed movement in the starter set, so the mode is discoverable
   // without having to create an exercise to find out it exists.
-  { name: 'Plank', muscle_group: 'Abs', tracking_type: 'time' },
+  {
+    name: 'Plank',
+    muscle_group: 'Abs',
+    tracking_type: 'time',
+    discipline: 'both',
+    load_mode: 'bodyweight',
+    equipment: 'none',
+  },
 ];
+
+/** A gym lift's fields in the starter library. */
+function lift(equipment: Equipment | null) {
+  return {
+    tracking_type: 'reps' as const,
+    discipline: 'gym' as const,
+    load_mode: 'external' as const,
+    equipment,
+  };
+}
 
 /**
  * Body mass index, or null when height is unknown.
@@ -268,9 +474,7 @@ export function bestWeightAtReps(
   exerciseId: string,
   reps: number,
 ): number | null {
-  const matching = history.filter(
-    (set) => set.exercise_id === exerciseId && set.reps === reps,
-  );
+  const matching = history.filter((set) => set.exercise_id === exerciseId && set.reps === reps);
   if (matching.length === 0) return null;
   return Math.max(...matching.map((set) => set.weight_kg));
 }

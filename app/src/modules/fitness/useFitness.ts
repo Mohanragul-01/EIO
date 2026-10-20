@@ -8,13 +8,14 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { addDaysISO, todayISO } from '../../core/date';
+import { addDaysISO, fromISODate, todayISO } from '../../core/date';
 import { useLatestRun } from '../../core/useLatestRun';
 import { useStableCallback } from '../../core/useStableCallback';
 import * as api from './api';
+import { toSetFact, workingVolume } from './load';
+import { restDays, weeklyStreak } from './streak';
 import {
   bmi,
-  totalVolume,
   type BodyMetric,
   type Exercise,
   type Profile,
@@ -42,6 +43,8 @@ export type DayCell = {
 
 export function useFitnessHome() {
   const [sessions, setSessions] = useState<WorkoutSession[]>([]);
+  /** Every session's day, for the streak and the count; `sessions` is the recent page. */
+  const [days, setDays] = useState<string[]>([]);
   const [sets, setSets] = useState<SessionSet[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [metrics, setMetrics] = useState<BodyMetric[]>([]);
@@ -51,44 +54,49 @@ export function useFitnessHome() {
 
   const { begin } = useLatestRun();
 
-  const load = useCallback(async (showSpinner = false) => {
-    const isCurrent = begin();
-    if (showSpinner) setRefreshing(true);
-    else setLoading(true);
-    setError(null);
+  const load = useCallback(
+    async (showSpinner = false) => {
+      const isCurrent = begin();
+      if (showSpinner) setRefreshing(true);
+      else setLoading(true);
+      setError(null);
 
-    try {
-      // Sessions first, because the sets query needs their ids. Everything that
-      // does not depend on that runs alongside it.
-      const [sessionRows, profileRow, metricRows] = await Promise.all([
-        api.listSessions(),
-        api.getProfile(),
-        api.listBodyMetrics(30),
-      ]);
+      try {
+        // Sessions first, because the sets query needs their ids. Everything that
+        // does not depend on that runs alongside it.
+        const [sessionRows, dayRows, profileRow, metricRows] = await Promise.all([
+          api.listSessions(),
+          api.listSessionDays(),
+          api.getProfile(),
+          api.listBodyMetrics(30),
+        ]);
 
-      // Only the last fortnight's sets: the strip covers seven days and the
-      // volume figure covers the same window, so fetching every set ever would
-      // be downloading a training history to render two numbers.
-      const recentIds = sessionRows
-        .filter((session) => session.date >= addDaysISO(-14))
-        .map((session) => session.id);
-      const setRows = await api.listRecentSets(recentIds);
+        // Only the last fortnight's sets: the strip covers seven days and the
+        // volume figure covers the same window, so fetching every set ever would
+        // be downloading a training history to render two numbers.
+        const recentIds = sessionRows
+          .filter((session) => session.date >= addDaysISO(-14))
+          .map((session) => session.id);
+        const setRows = await api.listRecentSets(recentIds);
 
-      if (isCurrent()) {
-        setSessions(sessionRows);
-        setSets(setRows);
-        setProfile(profileRow);
-        setMetrics(metricRows);
+        if (isCurrent()) {
+          setSessions(sessionRows);
+          setDays(dayRows.map((row) => row.date));
+          setSets(setRows);
+          setProfile(profileRow);
+          setMetrics(metricRows);
+        }
+      } catch (e) {
+        if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
+      } finally {
+        if (isCurrent()) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
-    } catch (e) {
-      if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
-    } finally {
-      if (isCurrent()) {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    }
-  }, [begin]);
+    },
+    [begin],
+  );
 
   useEffect(() => {
     // Starts a fetch rather than computing derived state - see useTodos.
@@ -111,7 +119,9 @@ export function useFitnessHome() {
       const date = addDaysISO(offset);
       week.push({
         date,
-        label: new Date(date).toLocaleDateString(undefined, { weekday: 'narrow' }),
+        // fromISODate, not new Date(iso): the latter is UTC midnight, which is
+        // the previous day anywhere behind UTC.
+        label: fromISODate(date).toLocaleDateString(undefined, { weekday: 'narrow' }),
         count: byDate.get(date)?.length ?? 0,
         isToday: date === today,
       });
@@ -122,40 +132,49 @@ export function useFitnessHome() {
     );
     const weekSets = sets.filter((set) => weekSessionIds.has(set.session_id));
 
-    /**
-     * Consecutive days ending today, or yesterday if today is still empty.
-     *
-     * Starting from yesterday is deliberate: a streak should not visibly break
-     * at midnight just because you have not trained yet today. It breaks when a
-     * whole day passes with nothing.
-     */
-    let streak = 0;
-    let cursor = byDate.has(today) ? 0 : -1;
-    for (let i = 0; i < 400; i += 1) {
-      if (!byDate.has(addDaysISO(cursor))) break;
-      streak += 1;
-      cursor -= 1;
-    }
+    // Weeks, not days: a daily streak breaks on every planned rest day,
+    // which punishes you for following your plan. See streak.ts. Counted over
+    // every session, not the recent page the list shows.
+    const streak = weeklyStreak(days, today);
 
     const latestWeight = metrics[0]?.weight_kg ?? null;
 
     return {
       week,
       weekSessions: weekSessionIds.size,
-      weekVolume: totalVolume(weekSets),
+      // Working sets only: warm-ups are preparation, not the week's work.
+      weekVolume: workingVolume(weekSets.map(toSetFact), {}, null),
       streak,
+      restDays: restDays(days, today),
       weekMax: Math.max(1, ...week.map((day) => day.count)),
-      totalSessions: sessions.length,
+      totalSessions: days.length,
       latestWeight,
       heightCm: profile?.height_cm ?? null,
       currentBmi: latestWeight ? bmi(latestWeight, profile?.height_cm ?? null) : null,
     };
-  }, [sessions, sets, metrics, profile]);
+  }, [sessions, days, sets, metrics, profile]);
 
   const refresh = useStableCallback(() => load(true));
   const reload = useStableCallback(() => load(false));
 
-  return { sessions, summary, loading, refreshing, error, refresh, reload };
+  /**
+   * The session logged on a day, or null when that day has none: what tapping
+   * a day opens. The calendar reaches back past the recent page this hook
+   * holds, so a day not in it is asked for before it is called empty -
+   * otherwise tapping an old trained day started a second session on it.
+   */
+  const sessionOn = useCallback(
+    async (date: string): Promise<WorkoutSession | null> => {
+      const loaded = sessions.find((s) => s.date === date);
+      if (loaded) return loaded;
+      const found = await api.listSessionsBetween(date, date);
+      // The latest one, as the list would have it.
+      return [...found].sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null;
+    },
+    [sessions],
+  );
+
+  return { sessions, summary, loading, refreshing, error, refresh, reload, sessionOn };
 }
 
 // PLAN: exercises and routines ---------------------------------------------------
@@ -169,32 +188,35 @@ export function usePlan() {
 
   const { begin } = useLatestRun();
 
-  const load = useCallback(async (showSpinner = false) => {
-    const isCurrent = begin();
-    if (showSpinner) setRefreshing(true);
-    else setLoading(true);
-    setError(null);
+  const load = useCallback(
+    async (showSpinner = false) => {
+      const isCurrent = begin();
+      if (showSpinner) setRefreshing(true);
+      else setLoading(true);
+      setError(null);
 
-    try {
-      // Seeds the starter library only when there is nothing at all, then
-      // returns whatever exists either way.
-      const [exerciseRows, routineRows] = await Promise.all([
-        api.seedDefaultExercisesIfEmpty(),
-        api.listRoutines(),
-      ]);
-      if (isCurrent()) {
-        setExercises(exerciseRows);
-        setRoutines(routineRows);
+      try {
+        // Seeds the starter library only when there is nothing at all, then
+        // returns whatever exists either way.
+        const [exerciseRows, routineRows] = await Promise.all([
+          api.seedDefaultExercisesIfEmpty(),
+          api.listRoutines(),
+        ]);
+        if (isCurrent()) {
+          setExercises(exerciseRows);
+          setRoutines(routineRows);
+        }
+      } catch (e) {
+        if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
+      } finally {
+        if (isCurrent()) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
-    } catch (e) {
-      if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
-    } finally {
-      if (isCurrent()) {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    }
-  }, [begin]);
+    },
+    [begin],
+  );
 
   useEffect(() => {
     // Starts a fetch rather than computing derived state - see useTodos.
@@ -210,9 +232,11 @@ export function usePlan() {
       name: string,
       muscleGroup: string | null,
       trackingType: TrackingType = 'reps',
+      extra: api.ExerciseFields = {},
     ) => {
       try {
         await api.createExercise({
+          ...extra,
           name: name.trim(),
           muscle_group: muscleGroup,
           tracking_type: trackingType,
@@ -287,10 +311,7 @@ export function useBody() {
     const isCurrent = begin();
     setError(null);
     try {
-      const [profileRow, metricRows] = await Promise.all([
-        api.getProfile(),
-        api.listBodyMetrics(),
-      ]);
+      const [profileRow, metricRows] = await Promise.all([api.getProfile(), api.listBodyMetrics()]);
       if (isCurrent()) {
         setProfile(profileRow);
         setMetrics(metricRows);
@@ -334,30 +355,33 @@ export function useBody() {
     [load],
   );
 
-  const removeWeight = useCallback(async (id: string) => {
-    let index = -1;
-    let removed: BodyMetric | undefined;
-    setMetrics((current) => {
-      index = current.findIndex((m) => m.id === id);
-      removed = current[index];
-      return current.filter((m) => m.id !== id);
-    });
-
-    try {
-      await api.deleteBodyMetric(id);
-    } catch (e) {
-      if (!isMounted()) return;
-      // Only this row comes back. Restoring a whole-list snapshot would also
-      // resurrect anything else deleted while this delete was in flight.
+  const removeWeight = useCallback(
+    async (id: string) => {
+      let index = -1;
+      let removed: BodyMetric | undefined;
       setMetrics((current) => {
-        if (!removed || current.some((m) => m.id === id)) return current;
-        const next = [...current];
-        next.splice(index < 0 ? next.length : index, 0, removed);
-        return next;
+        index = current.findIndex((m) => m.id === id);
+        removed = current[index];
+        return current.filter((m) => m.id !== id);
       });
-      setError(e instanceof Error ? e.message : 'Could not delete that entry');
-    }
-  }, [isMounted]);
+
+      try {
+        await api.deleteBodyMetric(id);
+      } catch (e) {
+        if (!isMounted()) return;
+        // Only this row comes back. Restoring a whole-list snapshot would also
+        // resurrect anything else deleted while this delete was in flight.
+        setMetrics((current) => {
+          if (!removed || current.some((m) => m.id === id)) return current;
+          const next = [...current];
+          next.splice(index < 0 ? next.length : index, 0, removed);
+          return next;
+        });
+        setError(e instanceof Error ? e.message : 'Could not delete that entry');
+      }
+    },
+    [isMounted],
+  );
 
   /** BMI from the latest weight, computed rather than stored. See types.ts. */
   const currentBmi = useMemo(

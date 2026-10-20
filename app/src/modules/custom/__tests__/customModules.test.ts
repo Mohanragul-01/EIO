@@ -19,6 +19,9 @@ function field(partial: Partial<CustomField>): CustomField {
     required: partial.required ?? false,
     options: partial.options ?? [],
     position: partial.position ?? 0,
+    default_mode: 'none',
+    default_value: null,
+    hint: '',
     created_at: '2026-01-01T00:00:00Z',
   };
 }

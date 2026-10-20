@@ -40,6 +40,34 @@ export type ThemeColors = {
   success: string;
   warning: string;
   danger: string;
+  /**
+   * Neutral information - a drop set's "D", a notice that is neither good
+   * news nor a problem. A blue kept clear of the indigo accent and of the
+   * normal-priority dot, since those already mean something.
+   */
+  info: string;
+  /**
+   * The background of something you have finished: a ticked set row, a done
+   * checklist item. Translucent, so it reads as a tint over whatever surface
+   * it lands on rather than a solid block, and calm enough that a screen full
+   * of completed rows is not a wall of green.
+   *
+   * TEXT ON IT IS `text` OR `textSecondary`, never muted or faint. The tint
+   * lifts the surface toward green, which drops those two below 4.5:1 (faint
+   * to about 3.5 in dark); the theme test pins the two that pass.
+   */
+  completed: string;
+
+  /**
+   * A surface that sits ABOVE the page in either theme - the toast. Light on
+   * the dark palette and dark on the light one, the way Android's snackbars
+   * are, so it stands out from whatever it floats over. Its text and its
+   * action have their own tokens, because the page's primary is tuned for the
+   * page's background, not this one.
+   */
+  inverseSurface: string;
+  onInverseSurface: string;
+  inversePrimary: string;
 
   /**
    * Task priority, as a three-step scale: red, blue, green.
@@ -96,6 +124,11 @@ export const darkColors: ThemeColors = {
   success: '#4ADEA9',
   warning: '#FCC53D',
   danger: '#FF8497',
+  info: '#7CB7FF',
+  completed: 'rgba(74, 222, 169, 0.14)',
+  inverseSurface: '#E6E8EF',
+  onInverseSurface: '#12141B',
+  inversePrimary: '#4F46E5',
 
   priorityHigh: 'rgb(251, 113, 133)',
   priorityNormal: 'rgb(96, 165, 250)',
@@ -103,8 +136,12 @@ export const darkColors: ThemeColors = {
 
   text: '#F7F8FA',
   textSecondary: '#BFC5D2',
-  textMuted: '#8B93A5',
-  textFaint: '#646C7E',
+  // Muted and faint are measured on the brightest surface small text sits
+  // on - a card of glassStrong over the canvas - not only the bare canvas:
+  // there #8B93A5 / #7E8698 gave 4.10 / 3.46:1. Each moved the least
+  // distance that clears 4.5:1 there (4.76 / 4.53); faint stays the fainter.
+  textMuted: '#979FB1',
+  textFaint: '#939BAD',
 
   shadow: '#000000',
 };
@@ -145,6 +182,11 @@ export const lightColors: ThemeColors = {
   success: '#047857',
   warning: '#B45309',
   danger: '#BE123C',
+  info: '#0A5DC2',
+  completed: 'rgba(4, 120, 87, 0.10)',
+  inverseSurface: '#1E2330',
+  onInverseSurface: '#F7F8FA',
+  inversePrimary: '#A3ABFF',
 
   priorityHigh: 'rgb(225, 29, 72)',
   priorityNormal: 'rgb(37, 99, 235)',
@@ -153,7 +195,10 @@ export const lightColors: ThemeColors = {
   text: '#111827',
   textSecondary: '#3F4757',
   textMuted: '#606B7E',
-  textFaint: '#8B94A6',
+  // Was #8B94A6: 2.82:1 on the canvas, the worst text contrast in the app.
+  // Darkened to the least that clears 4.5:1 on the canvas and on white
+  // (4.61 / 4.99), staying a shade lighter than textMuted.
+  textFaint: '#667083',
 
   shadow: '#1E293B',
 };
@@ -187,6 +232,24 @@ export const fonts = {
   medium: 'Inter_500Medium',
   semibold: 'Inter_600SemiBold',
   bold: 'Inter_700Bold',
+} as const;
+
+/**
+ * Where floating things sit, so they cannot cover each other.
+ *
+ * Every list screen's add button is 58dp, 28dp above the bottom inset. A toast
+ * or an error banner that also floated at the bottom covered it for five
+ * seconds after every tick or delete, which is exactly when you reach for it
+ * next. They sit one gap above it instead.
+ */
+const FAB_SIZE = 58;
+const FAB_INSET = spacing.xxl;
+
+export const layout = {
+  fabSize: FAB_SIZE,
+  fabInset: FAB_INSET,
+  /** Bottom edge of a toast or banner, measured up from the safe-area inset. */
+  aboveFab: FAB_INSET + FAB_SIZE + spacing.md,
 } as const;
 
 /** Shared motion constants, so every animation feels like one hand. */
@@ -251,6 +314,15 @@ export function makeTypography(colors: ThemeColors) {
       letterSpacing: 1.1,
       textTransform: 'uppercase' as const,
       color: colors.textMuted,
+    },
+    /**
+     * Spread into any style whose digits must line up: weights and reps down a
+     * set table, rupee amounts down a list, a running timer. Proportional
+     * digits make "57.5" and "60" wobble against each other, and a ticking
+     * clock visibly jitters as its width changes every second.
+     */
+    numeric: {
+      fontVariant: ['tabular-nums'] as ['tabular-nums'],
     },
   } as const;
 }

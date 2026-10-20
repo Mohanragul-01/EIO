@@ -25,7 +25,10 @@
  */
 import React from 'react';
 import type { ScrollViewProps } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
+import {
+  KeyboardAwareScrollView,
+  type KeyboardAwareScrollViewRef,
+} from 'react-native-keyboard-controller';
 
 /**
  * Everything a ScrollView takes, since this replaces one - pull-to-refresh
@@ -38,6 +41,8 @@ type FormScrollProps = ScrollViewProps & {
    * has an error line or a helper under it.
    */
   bottomOffset?: number;
+  /** For screens that scroll to a place themselves (React 19 passes refs as props). */
+  ref?: React.Ref<KeyboardAwareScrollViewRef>;
 };
 
 export function FormScroll({

@@ -60,18 +60,44 @@ export type LedgerEntry = {
   note: string;
   /** 'YYYY-MM-DD' - the day the money actually moved. */
   date: string;
+  /**
+   * The account the money moved through (0008), when the writer knows it.
+   * Optional because not every writer does; Finance can attach one later.
+   */
+  account_id?: string | null;
+  /**
+   * The subscription a payment was for (0023), so the subscription can list
+   * its payments and the calendar can mark the day paid.
+   */
+  subscription_id?: string | null;
 };
 
 /**
- * Write one entry to the ledger.
+ * Write one entry to the ledger, and return its id.
  *
  * The owner id is stamped here, so callers never deal with identity - the
- * same contract every module's api.ts follows.
+ * same contract every module's api.ts follows. The id comes back so a writer
+ * can offer Undo: removeEntry() below takes exactly that id.
  */
-export async function recordEntry(entry: LedgerEntry): Promise<void> {
+export async function recordEntry(entry: LedgerEntry): Promise<string> {
   const ownerId = await getOwnerId();
 
-  const { error } = await supabase.from(TABLE).insert({ ...entry, user_id: ownerId });
+  const { data, error } = await supabase
+    .from(TABLE)
+    .insert({ ...entry, user_id: ownerId })
+    .select('id')
+    .single();
 
+  if (error) throw new Error(error.message);
+  return (data as { id: string }).id;
+}
+
+/**
+ * Remove one entry this writer just made - the Undo for recordEntry. Only by
+ * id, never by matching amount and date, which could take someone else's
+ * identical entry with it.
+ */
+export async function removeEntry(id: string): Promise<void> {
+  const { error } = await supabase.from(TABLE).delete().eq('id', id);
   if (error) throw new Error(error.message);
 }

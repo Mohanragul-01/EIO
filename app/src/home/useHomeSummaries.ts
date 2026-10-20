@@ -17,30 +17,28 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLatestRun } from '../core/useLatestRun';
 
 import { formatMoney } from '../core/money';
-import { daysUntil } from '../core/date';
+import { daysUntil, todayISO } from '../core/date';
 import * as financeApi from '../modules/finance/api';
-import { formatBalance, runningBalance } from '../modules/finance/analytics';
+import { formatBalance } from '../modules/finance/analytics';
 import * as fitnessApi from '../modules/fitness/api';
 import * as notesApi from '../modules/notes/api';
 import * as subscriptionsApi from '../modules/subscriptions/api';
-import { toMonthlyMinor } from '../modules/subscriptions/types';
+import { daysBetween, effectiveState, trialEndsOn } from '../modules/subscriptions/lifecycle';
+import { sections as subscriptionSections, summaryTotals } from '../modules/subscriptions/upcoming';
 import * as bucketApi from '../modules/bucket/api';
 import * as productsApi from '../modules/products/api';
 import * as todoApi from '../modules/todo/api';
+import { summarizeOpen, tileLine } from '../modules/todo/today';
 
 /** Keyed by the module key from the registry. */
 export type SummaryMap = Record<string, string>;
 
 async function todoSummary(): Promise<string> {
   // Across every frequency tab: the tile speaks for the whole module, and a
-  // count of just the Daily tab would read as the total and be wrong.
+  // count of just the Daily tab would read as the total and be wrong. The
+  // tile opens Today, so the line is in Today's terms: "2 overdue · 5 today".
   const open = await todoApi.listOpenTodos();
-  if (open.length === 0) return 'All clear';
-
-  const overdue = open.filter((t) => t.due_date && daysUntil(t.due_date) < 0).length;
-  // Overdue is the more urgent fact, so it wins the line when there is any.
-  if (overdue > 0) return `${overdue} overdue, ${open.length} open`;
-  return `${open.length} open`;
+  return tileLine(summarizeOpen(open, todayISO()));
 }
 
 async function notesSummary(): Promise<string> {
@@ -55,45 +53,48 @@ async function notesSummary(): Promise<string> {
 }
 
 async function financeSummary(): Promise<string> {
-  const now = new Date();
-  // Both figures in parallel: the balance spans everything, the spend is this
-  // month, and they answer different questions.
-  const [rows, ledger] = await Promise.all([
-    financeApi.listTransactions(now.getFullYear(), now.getMonth() + 1),
-    financeApi.listLedgerPoints(),
-  ]);
+  // The balance across accounts and this finance month's spending, transfers
+  // left out - the same figures the Finance screen shows (finance/overview.ts).
+  const { balanceMinor, spentMinor, overBudget } = await financeApi.loadOverview();
 
-  const balance = formatBalance(runningBalance(ledger));
-  if (rows.length === 0) return `${balance} balance`;
-
-  const spent = rows
-    .filter((t) => t.kind === 'expense')
-    .reduce((total, t) => total + t.amount_minor, 0);
+  const balance = formatBalance(balanceMinor);
+  // A budget already blown is something to act on, so it wins the line.
+  if (overBudget > 0) return `${balance} left, ${overBudget} over budget`;
+  if (spentMinor === 0) return `${balance} balance`;
   // Balance first: it is the figure you actually act on. The month's spend is
   // context for it.
-  return `${balance} left, ${formatMoney(spent, { compact: true })} out`;
+  return `${balance} left, ${formatMoney(spentMinor, { compact: true })} out`;
 }
 
 async function subscriptionsSummary(): Promise<string> {
   const rows = await subscriptionsApi.listSubscriptions();
-  const active = rows.filter((s) => s.is_active);
-  if (active.length === 0) return 'Nothing tracked';
+  const today = todayISO();
+  const { sections } = subscriptionSections(rows, today);
+  if (sections.length === 0) return 'Nothing tracked';
 
-  // A renewal you have to act on beats the monthly total for attention.
-  const dueSoon = active.filter((s) => {
-    const days = daysUntil(s.next_due_date);
-    return days >= 0 && days <= 7;
-  }).length;
-  const overdue = active.filter((s) => daysUntil(s.next_due_date) < 0).length;
+  // In order of what costs money if ignored: an overdue renewal, a trial
+  // about to convert on its own, then what leaves this week.
+  const overdue = sections.find((s) => s.bucket === 'overdue');
+  if (overdue) return `${overdue.count} overdue`;
 
-  if (overdue > 0) return `${overdue} overdue`;
-  if (dueSoon > 0) return `${dueSoon} due this week`;
+  const endingTrial = rows
+    .filter((s) => {
+      const state = effectiveState(s, today);
+      return state === 'trial_over' || (state === 'trial' && daysBetween(today, trialEndsOn(s)) <= 3);
+    })
+    .sort((a, b) => trialEndsOn(a).localeCompare(trialEndsOn(b)))[0];
+  if (endingTrial) {
+    const days = daysBetween(today, trialEndsOn(endingTrial));
+    return days < 0
+      ? `${endingTrial.name} trial over`
+      : `${endingTrial.name} trial ends ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`}`;
+  }
 
-  const monthly = active.reduce(
-    (total, s) => total + toMonthlyMinor(s.amount_minor, s.billing_cycle),
-    0,
-  );
-  return `${formatMoney(monthly, { compact: true })} a month`;
+  const week = sections.find((s) => s.bucket === 'week');
+  if (week) return `${week.count} due this week · ${formatMoney(week.totalMinor ?? 0, { compact: true })}`;
+
+  const totals = summaryTotals(rows, today);
+  return `${formatMoney(totals.perMonthMinor, { compact: true })} a month`;
 }
 
 async function fitnessSummary(): Promise<string> {
@@ -111,8 +112,11 @@ async function fitnessSummary(): Promise<string> {
 }
 
 async function bucketSummary(): Promise<string> {
-  const { total, done, freeLeft } = await bucketApi.overview();
+  const { total, done, freeLeft, nowCount } = await bucketApi.overview();
   if (total === 0) return 'Nothing yet';
+
+  // What you said you are doing next beats everything else on the line.
+  if (nowCount > 0) return `${nowCount} on Now · ${freeLeft} free`;
 
   // The free ones are the actionable fact: what could you do this weekend
   // without spending anything. The total is just context for it.
@@ -121,14 +125,15 @@ async function bucketSummary(): Promise<string> {
 }
 
 async function productsSummary(): Promise<string> {
-  const products = await productsApi.listProducts();
-  const open = products.filter((p) => !p.finished_on);
-  if (open.length === 0) return 'Nothing tracked';
+  // Open containers and their uses only, so the count of what to reorder
+  // comes from the same outlook the module shows - a spare on the shelf
+  // clears it here too.
+  const { inUse, toReorder } = await productsApi.overview();
+  if (inUse === 0) return 'Nothing tracked';
 
-  // The projection needs every product's usage history, which is more than a
-  // tile should fetch. A count is the honest thing to show here; the module
-  // itself works out what needs reordering.
-  return `${open.length} in use`;
+  // Something to order today beats a count of what is fine.
+  if (toReorder > 0) return `${toReorder} to reorder`;
+  return `${inUse} in use`;
 }
 
 const LOADERS: Record<string, () => Promise<string>> = {
