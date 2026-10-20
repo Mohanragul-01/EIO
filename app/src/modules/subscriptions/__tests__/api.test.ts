@@ -21,6 +21,8 @@ const mockInsert = jest.fn((_row: Record<string, unknown>) => undefined);
 const mockUpdate = jest.fn((_patch: unknown) =>
   Promise.resolve({ data: null as unknown, error: null as { message: string } | null }),
 );
+/** The rows a list read finds. */
+const mockList = jest.fn(() => Promise.resolve({ data: [] as unknown[], error: null }));
 
 jest.mock('../../../core/ledger', () => ({
   removeEntry: (id: string) => mockRemoveEntry(id),
@@ -40,7 +42,10 @@ jest.mock('../../../core/supabase', () => ({
         eq: () => ({ select: () => ({ single: () => mockUpdate(patch) }) }),
       }),
       select: () => ({
-        eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }),
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({ data: null, error: null }),
+          order: () => mockList(),
+        }),
       }),
       delete: () => ({ eq: () => Promise.resolve({ error: null }) }),
       insert: (row: Record<string, unknown>) => {
@@ -159,5 +164,48 @@ describe('a price change', () => {
       new_amount_minor: 69900,
       effective_on: todayISO(),
     });
+  });
+});
+
+describe('reading a row the v2 app switched off', () => {
+  // The v2 app writes only is_active; v3 writes it in step with the status
+  // on every status change. So is_active false beside a status that charges
+  // can only be the v2 toggle, and it must not keep reminding and counting.
+  it('reads an active or trial row with is_active false as cancelled', async () => {
+    mockList.mockImplementationOnce(() =>
+      Promise.resolve({
+        data: [
+          sub({ id: 'a', status: 'active', is_active: false }),
+          sub({ id: 't', status: 'trial', is_active: false, trial_ends_on: '2026-10-30' }),
+        ],
+        error: null,
+      }),
+    );
+
+    const rows = await api.listSubscriptions();
+
+    expect(rows.map((r) => [r.id, r.status])).toEqual([
+      ['a', 'cancelled'],
+      ['t', 'cancelled'],
+    ]);
+    // Only the status is reinterpreted.
+    expect(rows[1]).toMatchObject({ trial_ends_on: '2026-10-30', next_due_date: '2026-10-26' });
+  });
+
+  it('leaves the statuses v3 writes with is_active false as they are', async () => {
+    mockList.mockImplementationOnce(() =>
+      Promise.resolve({
+        data: [
+          sub({ id: 'p', status: 'paused', is_active: false }),
+          sub({ id: 'c', status: 'cancelled', is_active: false, ends_on: '2026-10-30' }),
+          sub({ id: 'on', status: 'active', is_active: true }),
+        ],
+        error: null,
+      }),
+    );
+
+    const rows = await api.listSubscriptions();
+
+    expect(rows.map((r) => r.status)).toEqual(['paused', 'cancelled', 'active']);
   });
 });
