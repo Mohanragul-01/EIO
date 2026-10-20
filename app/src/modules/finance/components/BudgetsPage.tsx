@@ -23,6 +23,7 @@ import type { Budget } from '../types';
 import type { FinanceData } from '../useFinance';
 import { BudgetBar } from './BudgetBar';
 import { PeriodHeader } from './PeriodHeader';
+import { PeriodLoading } from './PeriodLoading';
 
 type BudgetsPageProps = {
   data: FinanceData;
@@ -60,7 +61,11 @@ export function BudgetsPage({ data, onOpenCategory, onEdit, onNew }: BudgetsPage
         onCurrent={data.goToCurrent}
       />
 
-      {budgetRows.length > 0 ? (
+      {/* A budget's state is judged on the month on screen, so none is shown
+          until that month's spending has arrived. */}
+      {!data.periodReady ? (
+        <PeriodLoading period={data.period} failed={!!data.error} />
+      ) : budgetRows.length > 0 ? (
         <>
           <GlassCard style={styles.overview}>
             <Text style={styles.overviewLabel}>Budgeted spending</Text>

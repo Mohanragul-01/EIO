@@ -17,7 +17,8 @@
  * returns them. No answer is returned as null rather than a guess: a wrong
  * default is a mis-filed entry nobody notices.
  */
-import type { EntryKind, Transaction } from './types';
+import { activeAccounts } from './accounts';
+import type { Account, EntryKind, Transaction } from './types';
 
 type Recent = Pick<
   Transaction,
@@ -36,6 +37,28 @@ export function lastUsed(
     // or one Subscriptions wrote) while the one before it does.
     accountId: ofKind.find((row) => row.account_id)?.account_id ?? null,
   };
+}
+
+/**
+ * Where a quick-add pinned without an account logs: "your last-used account",
+ * as its sheet says - the account on your newest entry of its kind that is
+ * still in use, else your first account.
+ *
+ * From `recent`, newest ENTERED first, and never from the month on screen: that
+ * is ordered by date, is empty on the 1st, and is last month's while you look
+ * back. An archived account is passed over, since nothing new belongs in it.
+ */
+export function quickAddAccount(
+  kind: EntryKind,
+  recent: Recent[],
+  accounts: Account[],
+): string | null {
+  const active = activeAccounts(accounts);
+  const inUse = new Set(active.map((a) => a.id));
+  const last = recent.find(
+    (row) => row.kind === kind && row.account_id !== null && inUse.has(row.account_id),
+  );
+  return last?.account_id ?? active[0]?.id ?? null;
 }
 
 /** The accounts of the newest transfer, as the default for the next one. */

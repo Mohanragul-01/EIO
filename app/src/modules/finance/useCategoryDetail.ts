@@ -6,12 +6,13 @@
  * "is that normal" (the six-month history, against the limit if there is one).
  */
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { todayISO } from '../../core/date';
 import { useLatestRun } from '../../core/useLatestRun';
 import * as api from './api';
 import { budgetHistory, budgetStatus } from './budget';
+import { onLedgerChange } from './changes';
 import { normalizeStartDay, periodBounds, periodProgress, recentPeriods, type Period } from './period';
 import { groupByDay, summarize, toListItems } from './summary';
 import type { Account, Budget, LedgerPoint, Transaction } from './types';
@@ -60,6 +61,10 @@ export function useCategoryDetail(category: string, period: Period) {
       void load();
     }, [load]),
   );
+
+  // An Undo from the edit screen lands after this screen has already reloaded
+  // without the entry; without this its total would stay short (changes.ts).
+  useEffect(() => onLedgerChange(() => void load()), [load]);
 
   const range = periodBounds({ year, month }, startDay);
   const spentMinor = useMemo(() => summarize(rows).spentMinor, [rows]);

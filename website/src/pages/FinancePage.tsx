@@ -33,7 +33,6 @@ import { categoryDef } from '@app/core/categories';
 import { formatEventDate, fromISODate, todayISO } from '@app/core/date';
 import { formatMoney } from '@app/core/money';
 import {
-  activeAccounts,
   describeTransfer,
   summarizeAccounts,
   type AccountBalance,
@@ -41,9 +40,9 @@ import {
 import { exportFilename, formatBalance, monthlyTotals, toCsv } from '@app/modules/finance/analytics';
 import * as api from '@app/modules/finance/api';
 import { budgetHistory, budgetStatus } from '@app/modules/finance/budget';
-import { lastUsed } from '@app/modules/finance/defaults';
+import { quickAddAccount } from '@app/modules/finance/defaults';
 import {
-  longMonth,
+  comparisonFor,
   normalizeStartDay,
   periodBounds,
   periodOf,
@@ -53,7 +52,6 @@ import {
   rangeContains,
   recentPeriods,
   shiftPeriod,
-  shortMonth,
 } from '@app/modules/finance/period';
 import {
   compareToPrevious,
@@ -168,9 +166,11 @@ export function FinancePage() {
   const startDay = data?.startDay ?? 1;
   const today = data?.today ?? todayISO();
   const period = data?.period ?? shiftPeriod(periodOf(today, 1), offset);
-  const previous = shiftPeriod(period, -1);
-  const versus = shortMonth(previous);
-  const versusLong = longMonth(previous);
+  // Last month, or mid-month as many of its days as have gone in this one,
+  // as on the phone: "vs 1–20 Sep" rather than a part month against a whole.
+  const comparison = comparisonFor(period, startDay, today);
+  const { short: versus, long: versusLong } = comparison;
+  const { start: compareStart, end: compareEnd } = comparison.range;
 
   const accountsById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
   const accountsSummary = useMemo(() => summarizeAccounts(accounts, points), [accounts, points]);
@@ -182,9 +182,9 @@ export function FinancePage() {
   const periodMonth = period.month;
 
   const previousSummary = useMemo(() => {
-    const before = periodBounds(shiftPeriod({ year: periodYear, month: periodMonth }, -1), startDay);
+    const before = { start: compareStart, end: compareEnd };
     return summarize(points.filter((p) => rangeContains(before, p.date)));
-  }, [points, periodYear, periodMonth, startDay]);
+  }, [points, compareStart, compareEnd]);
 
   const deltas = useMemo(() => {
     const prevBy = new Map(previousSummary.categoryTotals.map((c) => [c.key, c.totalMinor]));
@@ -267,9 +267,10 @@ export function FinancePage() {
 
   const remove = (item: ListItem) =>
     attempt(async () => {
-      const gone = item.type === 'entry' ? [item.tx] : item.rows;
+      let gone = item.type === 'entry' ? [item.tx] : item.rows;
       if (item.type === 'entry') await api.deleteTransaction(item.tx.id);
-      else await api.deleteTransfer(item.groupId);
+      // Every half the server deleted, even one outside the month listed.
+      else gone = await api.deleteTransfer(item.groupId);
       refresh();
       toast.show({
         message: `Deleted ${describe(item)}`,
@@ -284,8 +285,8 @@ export function FinancePage() {
 
   const logQuickAdd = (quickAdd: QuickAdd) =>
     attempt(async () => {
-      const accountId =
-        quickAdd.account_id ?? lastUsed(recent, quickAdd.kind).accountId ?? activeAccounts(accounts)[0]?.id ?? null;
+      // The same rule as the phone's: the last-used account still in use.
+      const accountId = quickAdd.account_id ?? quickAddAccount(quickAdd.kind, recent, accounts);
       const created = await api.createTransaction({
         amount_minor: quickAdd.amount_minor,
         kind: quickAdd.kind,

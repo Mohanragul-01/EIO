@@ -29,6 +29,39 @@ export function todayISO(): string {
   return toISODate(new Date());
 }
 
+const TIMESTAMP =
+  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|[+-]\d{2}(?::?\d{2})?)?$/i;
+
+/**
+ * Milliseconds since the epoch for a database timestamp (a created_at), or
+ * NaN if it is not one.
+ *
+ * Not Date.parse. Postgres sends six fractional digits and a "+00:00" offset
+ * ('2026-10-19T10:00:00.123456+00:00'), and the format Date.parse must read
+ * has exactly three. V8, where the tests run, reads six; Hermes, where the app
+ * runs, is not V8, and a NaN here fails silently - every "within ten minutes"
+ * comparison is just false. So the parts are read by hand: the fraction cut
+ * to milliseconds, the offset applied, Z or "+00:00" or "+0530" alike.
+ */
+export function timestampMs(iso: string): number {
+  const match = TIMESTAMP.exec(iso.trim());
+  if (!match) return NaN;
+  const [, y, mo, d, h, mi, s = '0', fraction = '', zone] = match;
+  const [year, month, day, hour, minute, second] = [y, mo, d, h, mi, s].map(Number);
+  const ms = Number(fraction.slice(0, 3).padEnd(3, '0'));
+
+  // No zone at all reads as local time, as Date.parse would.
+  if (!zone) return new Date(year, month - 1, day, hour, minute, second, ms).getTime();
+  let offsetMinutes = 0;
+  if (zone.toUpperCase() !== 'Z') {
+    const digits = zone.slice(1).replace(':', '');
+    offsetMinutes = Number(digits.slice(0, 2)) * 60 + Number(digits.slice(2, 4) || '0');
+    if (zone[0] === '-') offsetMinutes = -offsetMinutes;
+  }
+  // '+05:30' is 5h30 ahead of UTC, so UTC is that much earlier.
+  return Date.UTC(year, month - 1, day, hour, minute, second, ms) - offsetMinutes * 60_000;
+}
+
 /** Today shifted by N days - used for the "Tomorrow" / "Next week" chips. */
 export function addDaysISO(days: number): string {
   const d = new Date();
