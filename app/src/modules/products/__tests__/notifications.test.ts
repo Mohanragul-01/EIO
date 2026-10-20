@@ -148,7 +148,9 @@ it('puts Ordered and In 3 days on reorder reminders, as buttons that act without
       { id: 'ordered', title: 'Ordered' },
       { id: 'later', title: 'In 3 days' },
     ],
-    opensApp: false,
+    // A press acted on in the background is lost if Android has already
+    // killed the app's process; opening the app hands it to the listener.
+    opensApp: true,
   });
   expect(mockSchedule).toHaveBeenCalledWith(
     expect.objectContaining({ id: 'product-a-reorder', category: REORDER_BUTTONS }),

@@ -39,8 +39,10 @@ export { ensurePermission, type PermissionState } from '../../core/notifications
 export const PRODUCTS_CHANNEL: Channel = { id: 'products', name: 'Reorder reminders' };
 
 /**
- * The buttons on a reorder reminder. Both act without opening the app: one
- * adds a spare, the other moves the reminder, and neither needs a screen.
+ * The buttons on a reorder reminder: one adds a spare, the other moves the
+ * reminder. Neither needs a screen, but both open the app: a press handled in
+ * the background is lost if Android has already killed the app's process,
+ * while one that opens it reaches the listener at launch (as Tasks' Done).
  */
 export const REORDER_BUTTONS: Category = {
   id: REORDER_CATEGORY,
@@ -48,7 +50,7 @@ export const REORDER_BUTTONS: Category = {
     { id: ACTION_ORDERED, title: 'Ordered' },
     { id: ACTION_LATER, title: `In ${LATER_DAYS} days` },
   ],
-  opensApp: false,
+  opensApp: true,
 };
 
 /**
