@@ -232,6 +232,10 @@ export function SubscriptionEditScreen() {
       try {
         const sub = await api.getSubscription(editingId);
         if (!active) return;
+        if (!sub) {
+          setLoadError('This subscription is gone.');
+          return;
+        }
         const loaded = formFromSubscription(sub);
         setOriginal(sub);
         setForm(loaded);

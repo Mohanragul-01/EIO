@@ -42,7 +42,13 @@ jest.mock('../../../core/supabase', () => ({
         eq: () => ({ select: () => ({ single: () => mockUpdate(patch) }) }),
       }),
       select: () => ({
+        // Nothing found, as PostgREST answers each: single() calls it an error.
         eq: () => ({
+          single: () =>
+            Promise.resolve({
+              data: null,
+              error: { message: 'JSON object requested, multiple (or no) rows returned' },
+            }),
           maybeSingle: () => Promise.resolve({ data: null, error: null }),
           order: () => mockList(),
         }),
@@ -164,6 +170,14 @@ describe('a price change', () => {
       new_amount_minor: 69900,
       effective_on: todayISO(),
     });
+  });
+});
+
+describe('getSubscription', () => {
+  // A reminder still in the tray for a subscription deleted on the website
+  // opens its detail screen. "Gone" is an answer, not a database error.
+  it('returns null for a subscription that no longer exists', async () => {
+    await expect(api.getSubscription('deleted-elsewhere')).resolves.toBeNull();
   });
 });
 

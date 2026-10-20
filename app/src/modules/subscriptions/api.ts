@@ -101,10 +101,16 @@ export async function listSubscriptions(): Promise<Subscription[]> {
   return (data ?? []).map(toSubscription);
 }
 
-export async function getSubscription(id: string): Promise<Subscription> {
-  const { data, error } = await supabase.from(TABLE).select('*').eq('id', id).single();
+/**
+ * One subscription, or null when it no longer exists - deleted on the
+ * website while a reminder for it was still in the tray. maybeSingle, not
+ * single: single() reports no rows as an error whose text is PostgREST's,
+ * which is no way to say "this is gone".
+ */
+export async function getSubscription(id: string): Promise<Subscription | null> {
+  const { data, error } = await supabase.from(TABLE).select('*').eq('id', id).maybeSingle();
   if (error) throw new Error(error.message);
-  return toSubscription(data);
+  return data ? toSubscription(data) : null;
 }
 
 export async function createSubscription(input: SubscriptionInput): Promise<Subscription> {
