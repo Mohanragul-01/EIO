@@ -504,7 +504,7 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   note: {
     ...typography.caption,
     color: colors.text,
-    minHeight: 40,
+    minHeight: 48,
     marginHorizontal: spacing.lg,
     paddingVertical: spacing.xs,
   },

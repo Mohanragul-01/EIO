@@ -75,15 +75,15 @@ export function LadderScreen() {
       headerRight: () => (
         <Pressable
           onPress={() => setMenu(true)}
-          hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel="Ladder options"
+          style={styles.headerButton}
         >
           <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
         </Pressable>
       ),
     });
-  }, [navigation, progression?.name, colors.textSecondary]);
+  }, [navigation, progression?.name, colors.textSecondary, styles.headerButton]);
 
   const sides = useMemo(
     () => (card ? neighbours(card.ladder.steps, progression?.current_step_id ?? null) : null),
@@ -452,6 +452,8 @@ export function LadderScreen() {
 
 const useStyles = makeStyles(({ colors, typography }) => ({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  // A 48dp box round the icon: hitSlop alone left it short of 48.
+  headerButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
   kicker: { ...typography.overline, marginBottom: spacing.sm },
   hint: { ...typography.body },

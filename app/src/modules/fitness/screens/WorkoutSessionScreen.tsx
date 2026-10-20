@@ -123,15 +123,15 @@ export function WorkoutSessionScreen() {
       headerRight: () => (
         <Pressable
           onPress={confirmDelete}
-          hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel="Delete this workout"
+          style={styles.headerButton}
         >
           <Ionicons name="trash-outline" size={19} color={colors.textMuted} />
         </Pressable>
       ),
     });
-  }, [navigation, w.session, confirmDelete, colors.textMuted]);
+  }, [navigation, w.session, confirmDelete, colors.textMuted, styles.headerButton]);
 
   // Back from the summary, which can reopen the session: take its end time
   // again, so the strip counts on and Finish works without leaving the screen.
@@ -748,6 +748,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 const useStyles = makeStyles(({ colors, typography }) => ({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  // A 48dp box round the 19px icon: hitSlop alone left it short of 48.
+  headerButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   strip: {
     flexDirection: 'row',

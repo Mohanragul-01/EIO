@@ -561,7 +561,7 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   gapTop: { marginTop: spacing.md },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
   chip: {
-    minHeight: 40,
+    minHeight: 48,
     paddingHorizontal: spacing.md,
     borderRadius: radius.pill,
     borderWidth: 1,

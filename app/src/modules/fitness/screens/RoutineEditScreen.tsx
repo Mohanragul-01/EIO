@@ -566,7 +566,7 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   pairRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
   pairChip: {
     minWidth: 48,
-    minHeight: 40,
+    minHeight: 48,
     paddingHorizontal: spacing.md,
     borderRadius: radius.pill,
     borderWidth: 1,
