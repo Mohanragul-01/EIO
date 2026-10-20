@@ -68,6 +68,7 @@ import {
   readChecklistItems,
   toggleItem,
   uncheckAll,
+  withDraftItem,
   type ChecklistItem,
   type NoteType,
 } from '../types';
@@ -105,6 +106,8 @@ export function NoteEditScreen() {
   const [body, setBody] = useState(prefill);
   const [tagsText, setTagsText] = useState('');
   const [items, setItems] = useState<ChecklistItem[]>([]);
+  /** "Add an item" as typed: Save keeps it, and leaving asks about it. */
+  const [itemDraft, setItemDraft] = useState('');
   // Journals default to today and can be backdated: writing up last night this
   // morning is the normal case, not the exception.
   const [entryDate, setEntryDate] = useState<string | null>(todayISO());
@@ -452,6 +455,7 @@ export function NoteEditScreen() {
         body !== original.current.body ||
         tagsText !== original.current.tagsText ||
         JSON.stringify(items) !== original.current.items ||
+        (noteType === 'checklist' && itemDraft.trim() !== '') ||
         noteType !== original.current.noteType ||
         entryDate !== original.current.entryDate;
 
@@ -471,7 +475,7 @@ export function NoteEditScreen() {
     return unsubscribe;
     // `mode` belongs here: without it the effect kept a stale copy and the
     // guard's registration lagged a render behind the switch into edit mode.
-  }, [navigation, title, body, tagsText, items, noteType, entryDate, mode]);
+  }, [navigation, title, body, tagsText, items, itemDraft, noteType, entryDate, mode]);
 
   /**
    * There is no required field, so "is this worth saving" replaces "is the
@@ -482,8 +486,8 @@ export function NoteEditScreen() {
   const hasContent = useMemo(() => {
     if (title.trim()) return true;
     if (body.trim() && body !== prefill) return true;
-    return noteType === 'checklist' && items.some((item) => item.text.trim());
-  }, [title, body, prefill, items, noteType]);
+    return noteType === 'checklist' && withDraftItem(items, itemDraft).some((item) => item.text.trim());
+  }, [title, body, prefill, items, itemDraft, noteType]);
 
   const handleSave = async () => {
     if (!hasContent) {
@@ -508,9 +512,12 @@ export function NoteEditScreen() {
         is_inbox: belongsInInbox({ title: trimmedTitle, tags, note_type: noteType }),
         entry_date: noteType === 'journal' ? (entryDate ?? todayISO()) : null,
         // Empty lines are dropped rather than stored: they are almost always a
-        // half-typed item that was abandoned.
+        // half-typed item that was abandoned. A line typed into "Add an item"
+        // and saved without pressing Add is the opposite, and is kept.
         checklist_items:
-          noteType === 'checklist' ? items.filter((item) => item.text.trim()) : null,
+          noteType === 'checklist'
+            ? withDraftItem(items, itemDraft).filter((item) => item.text.trim())
+            : null,
       };
 
       if (isEditing) {
@@ -731,6 +738,11 @@ export function NoteEditScreen() {
                   items={items}
                   onChange={(next) => {
                     setItems(next);
+                    if (contentError) setContentError(null);
+                  }}
+                  draft={itemDraft}
+                  onDraftChange={(text) => {
+                    setItemDraft(text);
                     if (contentError) setContentError(null);
                   }}
                 />

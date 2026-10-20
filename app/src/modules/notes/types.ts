@@ -181,3 +181,14 @@ export function uncheckAll(items: ChecklistItem[]): ChecklistItem[] {
 export function deleteTicked(items: ChecklistItem[]): ChecklistItem[] {
   return items.filter((item) => !item.done);
 }
+
+/**
+ * The list with what is typed in "Add an item" added to the end, if anything.
+ *
+ * Add and the keyboard's done both do this; so does Save, because a line typed
+ * and then saved without pressing Add was meant as an item, not thrown away.
+ */
+export function withDraftItem(items: ChecklistItem[], draft: string): ChecklistItem[] {
+  const text = draft.trim();
+  return text ? [...items, { text, done: false }] : items;
+}

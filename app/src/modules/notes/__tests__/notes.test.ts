@@ -15,6 +15,7 @@ import {
   readChecklistItems,
   toggleItem,
   uncheckAll,
+  withDraftItem,
   type ChecklistItem,
 } from '../types';
 
@@ -147,6 +148,15 @@ describe('checklist upgrades', () => {
     uncheckAll(items);
     deleteTicked(items);
     toggleItem(items, 0);
+    withDraftItem(items, 'Tea');
     expect(JSON.stringify(items)).toBe(before);
+  });
+
+  it('adds a typed line to the end, trimmed, and nothing for a blank one', () => {
+    expect(withDraftItem(items, '  Tea ').slice(-2)).toEqual([
+      { text: 'Rice', done: false },
+      { text: 'Tea', done: false },
+    ]);
+    expect(withDraftItem(items, '   ')).toBe(items);
   });
 });

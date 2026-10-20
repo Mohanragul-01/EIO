@@ -9,32 +9,36 @@
  * Items carry no id, which means React needs a key from somewhere. Index is
  * used deliberately here: the list is short, reordering is not supported, and
  * an item's identity genuinely is its position.
+ *
+ * "Add an item" is held by the parent too, so that its Save and its discard
+ * guard see a line that was typed but not added yet.
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import React from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { fonts, radius, spacing } from '../../../core/theme';
-import { checklistProgress, type ChecklistItem } from '../types';
+import { checklistProgress, withDraftItem, type ChecklistItem } from '../types';
 
 type ChecklistEditorProps = {
   items: ChecklistItem[];
   onChange: (items: ChecklistItem[]) => void;
+  /** What is typed in "Add an item". */
+  draft: string;
+  onDraftChange: (draft: string) => void;
 };
 
-export function ChecklistEditor({ items, onChange }: ChecklistEditorProps) {
+export function ChecklistEditor({ items, onChange, draft, onDraftChange }: ChecklistEditorProps) {
   const styles = useStyles();
   const { colors } = useTheme();
-  const [draft, setDraft] = useState('');
 
   const { done, total } = checklistProgress(items);
 
   const addItem = () => {
-    const text = draft.trim();
-    if (!text) return;
-    onChange([...items, { text, done: false }]);
-    setDraft(''); // cleared so the field is ready for the next line
+    if (!draft.trim()) return;
+    onChange(withDraftItem(items, draft));
+    onDraftChange(''); // cleared so the field is ready for the next line
   };
 
   const toggle = (index: number) =>
@@ -117,7 +121,7 @@ export function ChecklistEditor({ items, onChange }: ChecklistEditorProps) {
         <Ionicons name="add" size={17} color={colors.textMuted} />
         <TextInput
           value={draft}
-          onChangeText={setDraft}
+          onChangeText={onDraftChange}
           onSubmitEditing={addItem}
           // Keeps the keyboard up so several items can be typed in one go.
           blurOnSubmit={false}
