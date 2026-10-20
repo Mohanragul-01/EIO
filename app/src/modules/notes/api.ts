@@ -12,9 +12,10 @@
  * tile's counts, today's journal entry - asks for live notes, and the pure
  * filters in library.ts check again on the way to the screen.
  */
+import { collectPages } from '../../core/paging';
 import { supabase } from '../../core/supabase';
 import { getOwnerId } from '../../core/session';
-import { overviewCounts, purgeCutoff } from './library';
+import { purgeCutoff } from './library';
 import type { NoteColorKey } from './noteColors';
 import type { ChecklistItem, Note, NoteInput } from './types';
 
@@ -33,47 +34,56 @@ const TABLE = 'notes';
 export async function listLive(): Promise<Note[]> {
   const ownerId = await getOwnerId();
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select('*')
-    .eq('user_id', ownerId)
-    .is('deleted_at', null)
-    .is('archived_at', null)
-    .order('updated_at', { ascending: false });
-
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  return collectPages<Note>(async (from, to) => {
+    const { data, error, count } = await supabase
+      .from(TABLE)
+      .select('*', { count: 'exact' })
+      .eq('user_id', ownerId)
+      .is('deleted_at', null)
+      .is('archived_at', null)
+      .order('updated_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (error) throw new Error(error.message);
+    return { rows: data ?? [], total: count };
+  });
 }
 
 /** The Trash, most recently deleted first. */
 export async function listTrash(): Promise<Note[]> {
   const ownerId = await getOwnerId();
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select('*')
-    .eq('user_id', ownerId)
-    .not('deleted_at', 'is', null)
-    .order('deleted_at', { ascending: false });
-
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  return collectPages<Note>(async (from, to) => {
+    const { data, error, count } = await supabase
+      .from(TABLE)
+      .select('*', { count: 'exact' })
+      .eq('user_id', ownerId)
+      .not('deleted_at', 'is', null)
+      .order('deleted_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (error) throw new Error(error.message);
+    return { rows: data ?? [], total: count };
+  });
 }
 
 /** The Archive, most recently archived first. A trashed note is in the Trash, not here. */
 export async function listArchive(): Promise<Note[]> {
   const ownerId = await getOwnerId();
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select('*')
-    .eq('user_id', ownerId)
-    .not('archived_at', 'is', null)
-    .is('deleted_at', null)
-    .order('archived_at', { ascending: false });
-
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  return collectPages<Note>(async (from, to) => {
+    const { data, error, count } = await supabase
+      .from(TABLE)
+      .select('*', { count: 'exact' })
+      .eq('user_id', ownerId)
+      .not('archived_at', 'is', null)
+      .is('deleted_at', null)
+      .order('archived_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (error) throw new Error(error.message);
+    return { rows: data ?? [], total: count };
+  });
 }
 
 /** How many notes sit in the Trash and the Archive, for the buttons that open them. */
@@ -100,25 +110,30 @@ export async function shelfCounts(): Promise<{ trash: number; archive: number }>
 }
 
 /**
- * Counts for the home screen tile, in one round trip.
+ * Counts for the home screen tile, counted in Postgres.
  *
- * A few small columns and no bodies: the tile needs to know how many live
- * notes exist and how many wait to be filed, not what any of them say. A
- * trashed or archived note is in neither number - the filter is in the query,
- * and overviewCounts checks again.
+ * Head requests, as for the shelf counts: the tile needs to know how many
+ * live notes exist and how many wait to be filed, not what any of them say,
+ * so no rows come back at all. Counting fetched rows here instead stopped at
+ * the server's 1000-row cap, and the tile would have read "1000 notes" for
+ * ever after. A trashed or archived note is in neither number.
  */
 export async function notesOverview(): Promise<{ total: number; inbox: number }> {
   const ownerId = await getOwnerId();
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select('is_inbox, deleted_at, archived_at')
-    .eq('user_id', ownerId)
-    .is('deleted_at', null)
-    .is('archived_at', null);
+  const live = () =>
+    supabase
+      .from(TABLE)
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', ownerId)
+      .is('deleted_at', null)
+      .is('archived_at', null);
 
-  if (error) throw new Error(error.message);
-  return overviewCounts(data ?? []);
+  const [total, inbox] = await Promise.all([live(), live().eq('is_inbox', true)]);
+
+  if (total.error) throw new Error(total.error.message);
+  if (inbox.error) throw new Error(inbox.error.message);
+  return { total: total.count ?? 0, inbox: inbox.count ?? 0 };
 }
 
 /**

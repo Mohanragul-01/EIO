@@ -4,6 +4,7 @@
  * Same conventions as every other module: check `error`, throw on failure,
  * stamp the owner id here so no screen deals with identity.
  */
+import { collectPages } from '../../core/paging';
 import { getOwnerId } from '../../core/session';
 import { supabase } from '../../core/supabase';
 import type { BucketInput, BucketItem, BucketStep, Cost } from './types';
@@ -43,23 +44,27 @@ export type ItemPatch = Partial<
 /**
  * The whole list.
  *
- * All 818 rows in one request, deliberately. They are small, every view of
- * this module needs the totals, and paginating would mean the progress figures
- * were computed from a page rather than from the list - which is the one thing
- * they must never be.
+ * Every row, deliberately: they are small, every view of this module needs the
+ * totals, and the progress figures must be computed from the list rather than
+ * from part of it. That is also why it is read page by page - the server stops
+ * a response at 1000 rows without saying so, and at 818 rows one more batch of
+ * ideas would have silently cut the categories that sort last.
  */
 export async function listItems(): Promise<BucketItem[]> {
   const ownerId = await getOwnerId();
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select('*')
-    .eq('user_id', ownerId)
-    .order('category', { ascending: true })
-    .order('position', { ascending: true });
-
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  return collectPages<BucketItem>(async (from, to) => {
+    const { data, error, count } = await supabase
+      .from(TABLE)
+      .select('*', { count: 'exact' })
+      .eq('user_id', ownerId)
+      .order('category', { ascending: true })
+      .order('position', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (error) throw new Error(error.message);
+    return { rows: data ?? [], total: count };
+  });
 }
 
 /**
