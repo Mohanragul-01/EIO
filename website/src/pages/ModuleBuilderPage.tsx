@@ -731,6 +731,15 @@ function FieldEditor({
   onRetype: (type: FieldType) => void;
   onRemove: () => void;
 }) {
+  /**
+   * The choices box's own text while it has focus. Re-deriving the box from
+   * the parsed list on every keystroke trimmed away the space or comma just
+   * typed, so a second choice or a two-word one could not be typed at all.
+   * The list still updates as you type, so Save never misses the last edit;
+   * the box tidies to "a, b" when you leave it.
+   */
+  const [choicesText, setChoicesText] = useState<string | null>(null);
+
   // The fixed default is typed into the same widget the form uses.
   const valueField: CustomField = {
     id: draft.localId,
@@ -788,15 +797,17 @@ function FieldEditor({
         <input
           className="input"
           style={{ marginTop: 'var(--space-md)' }}
-          value={draft.options.join(', ')}
-          onChange={(e) =>
+          value={choicesText ?? draft.options.join(', ')}
+          onChange={(e) => {
+            setChoicesText(e.target.value);
             onChange({
               options: e.target.value
                 .split(',')
                 .map((o) => o.trim())
                 .filter(Boolean),
-            })
-          }
+            });
+          }}
+          onBlur={() => setChoicesText(null)}
           placeholder={draft.type === 'multiselect' ? 'Tags, comma separated' : 'Choices, comma separated'}
           aria-label="Choices, comma separated"
         />
