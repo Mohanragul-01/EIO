@@ -119,6 +119,8 @@ export function ItemSheet({
   const [want, setWant] = useState<Want>('someday');
   const [note, setNote] = useState('');
   const [plan, setPlan] = useState<PlanDraft>(emptyPlan(null));
+  /** "Add a step" as typed: Save adds it, rather than dropping it. */
+  const [newStep, setNewStep] = useState('');
   const [memory, setMemory] = useState<MemoryDraft | null>(null);
   /**
    * Whether "When" was touched. An item done with no date reads back as
@@ -152,6 +154,7 @@ export function ItemSheet({
     setWant(item ? wantOf(item) : 'someday');
     setNote(item?.note ?? '');
     setPlan(emptyPlan(item));
+    setNewStep('');
     setMemory(item?.is_done ? draftOf(item, today) : null);
     setWhenTouched(false);
     setTitleError(null);
@@ -222,6 +225,14 @@ export function ItemSheet({
         place: memory.place.trim(),
         again: memory.again,
       });
+    }
+
+    // A step typed but not added. Steps save as you go, so it is added as if
+    // its own Add had been pressed, beside the save rather than inside it.
+    const typedStep = newStep.trim();
+    if (item && typedStep) {
+      stepActions.add(item.id, typedStep);
+      setNewStep('');
     }
 
     setSaving(true);
@@ -389,6 +400,8 @@ export function ItemSheet({
               onRemoveStep={stepActions.remove}
               onRestoreStep={stepActions.restore}
               onMoveStep={stepActions.move}
+              newStep={newStep}
+              onNewStepChange={setNewStep}
               estError={estError}
               savedError={savedError}
             />
