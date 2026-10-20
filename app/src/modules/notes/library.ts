@@ -15,6 +15,7 @@
  *
  * Pure and React-free, so both clients run it.
  */
+import { timestampMs } from '../../core/date';
 import { readNoteColor, type NoteColorKey } from './noteColors';
 import { readChecklistItems, type Note } from './types';
 
@@ -173,7 +174,7 @@ export function purgeCutoff(now: Date): string {
 
 /** Whole days left before a trashed note is purged, rounded up; 0 once it is due. */
 export function daysUntilPurge(deletedAt: string, now: Date): number {
-  const purgeAt = new Date(deletedAt).getTime() + TRASH_DAYS * DAY_MS;
+  const purgeAt = timestampMs(deletedAt) + TRASH_DAYS * DAY_MS;
   return Math.max(0, Math.ceil((purgeAt - now.getTime()) / DAY_MS));
 }
 

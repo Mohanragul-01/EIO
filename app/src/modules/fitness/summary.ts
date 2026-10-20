@@ -5,7 +5,7 @@
  * was it better than last time, and did I stray from the plan (and should the
  * plan change to match)?
  */
-import { toISODate } from '../../core/date';
+import { timestampMs, toISODate } from '../../core/date';
 import { formatSetShort, isWorking, workingVolume, type SetFact } from './load';
 import type { RecordHit } from './records';
 import {
@@ -27,8 +27,9 @@ export function sessionSummary(input: {
   startedAt: string | null;
   endedAt: string | null;
 }) {
-  const start = input.startedAt ? Date.parse(input.startedAt) : NaN;
-  const end = input.endedAt ? Date.parse(input.endedAt) : NaN;
+  // timestampMs, not Date.parse: the server's microseconds (core/date.ts).
+  const start = input.startedAt ? timestampMs(input.startedAt) : NaN;
+  const end = input.endedAt ? timestampMs(input.endedAt) : NaN;
   return {
     durationMs: Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : null,
     volume: workingVolume(input.sets, input.exercisesById, input.bodyweightKg),

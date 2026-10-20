@@ -13,7 +13,7 @@
  * built from (year, month, day) rather than by adding 24 hours, which on a
  * daylight-saving change lands an hour off and can slip a whole day.
  */
-import { fromISODate, toISODate } from '../../core/date';
+import { fromISODate, timestampMs, toISODate } from '../../core/date';
 import { isISODay } from './format';
 import type { CustomField, CustomRecord, SummaryPeriod } from './types';
 
@@ -32,7 +32,7 @@ export function entryDateOf(record: CustomRecord, dateField: CustomField | null)
     const value = record.data[dateField.key];
     if (isISODay(value)) return value;
   }
-  return toISODate(new Date(record.created_at));
+  return toISODate(new Date(timestampMs(record.created_at)));
 }
 
 /** A day shifted by whole calendar days. */

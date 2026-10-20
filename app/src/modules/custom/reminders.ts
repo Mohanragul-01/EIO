@@ -20,7 +20,7 @@
  * Pure, with `now` passed in, so every rule is tested without a clock or a
  * phone. notifications.ts does the scheduling.
  */
-import { fromISODate, toISODate } from '../../core/date';
+import { fromISODate, timestampMs, toISODate } from '../../core/date';
 import { addDaysTo, dateFieldOf, entryDateOf } from './entryDate';
 import { formatFieldValue, isISODay } from './format';
 import { rowRoles } from './roles';
@@ -102,7 +102,7 @@ export function planReminders(
     // night's sleep this morning counts; so does ticking a habit dated today.
     const doneToday = records.some(
       (record) =>
-        toISODate(new Date(record.created_at)) === today ||
+        toISODate(new Date(timestampMs(record.created_at))) === today ||
         entryDateOf(record, dateField) === today,
     );
 

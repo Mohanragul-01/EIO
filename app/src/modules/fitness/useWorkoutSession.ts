@@ -17,7 +17,7 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
-import { todayISO } from '../../core/date';
+import { timestampMs, todayISO } from '../../core/date';
 import { useLatestRun } from '../../core/useLatestRun';
 
 import * as api from './api';
@@ -241,10 +241,11 @@ export function useWorkoutSession(sessionId: string) {
     return {
       volume: workingVolume(savedFacts, exercisesById, session?.bodyweight_kg ?? null),
       workingSets: savedFacts.filter((s) => s.set_type !== 'warmup').length,
-      startedAt: startedAt ? Date.parse(startedAt) : null,
-      endedAt: session?.ended_at ? Date.parse(session.ended_at) : null,
+      // timestampMs, not Date.parse: the server's microseconds (core/date.ts).
+      startedAt: startedAt ? timestampMs(startedAt) : null,
+      endedAt: session?.ended_at ? timestampMs(session.ended_at) : null,
       /** When the last set was saved: where an unfinished session's clock stops. */
-      lastSetAt: lastSet ? Date.parse(lastSet) : null,
+      lastSetAt: lastSet ? timestampMs(lastSet) : null,
     };
   }, [savedFacts, exercisesById, session]);
 
