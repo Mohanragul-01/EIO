@@ -429,22 +429,36 @@ function SetRow({
       <td className="fx-c-load">{loadCell}</td>
       <td className="fx-c-value">{valueCell}</td>
       <td className="fx-c-tick">
-        {row.kind === 'pending' ? (
-          <span className="fx-tick busy" role="status" aria-label={`Saving ${setName}`}>
-            <span className="spinner" />
-          </span>
-        ) : (
-          <button
-            type="button"
-            role="checkbox"
-            aria-checked={saved}
-            className={`fx-tick${saved ? ' on' : ''}`}
-            onClick={() => (saved ? onUntick(row.key) : void onTick(row.key, false))}
-            aria-label={saved ? `${setName} done. Untick to edit` : `Complete ${setName}`}
-          >
+        {/* One button in every state, so a keyboard user who ticks with Space
+            keeps focus on it while the set saves and after; while saving it is
+            busy rather than disabled, since disabling a focused button drops
+            focus to the page. */}
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={saved || row.kind === 'pending'}
+          aria-busy={row.kind === 'pending' || undefined}
+          aria-disabled={row.kind === 'pending' || undefined}
+          className={`fx-tick${saved ? ' on' : ''}${row.kind === 'pending' ? ' busy' : ''}`}
+          onClick={() => {
+            if (row.kind === 'pending') return;
+            if (saved) onUntick(row.key);
+            else void onTick(row.key, false);
+          }}
+          aria-label={
+            row.kind === 'pending'
+              ? `Saving ${setName}`
+              : saved
+                ? `${setName} done. Untick to edit`
+                : `Complete ${setName}`
+          }
+        >
+          {row.kind === 'pending' ? (
+            <span className="spinner" aria-hidden="true" />
+          ) : (
             <Icon name="check" size={14} strokeWidth={2.2} />
-          </button>
-        )}
+          )}
+        </button>
       </td>
     </tr>
   );

@@ -191,6 +191,7 @@ function AddExerciseCard({ mode, onAdded }: { mode: FitnessMode; onAdded: (e: Ex
   const [error, setError] = useState<string | null>(null);
 
   const add = async () => {
+    if (saving) return;
     const trimmed = name.trim();
     if (!trimmed) return setError('Give it a name');
     setSaving(true);

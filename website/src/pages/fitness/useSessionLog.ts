@@ -200,6 +200,8 @@ export function useSessionLog(sessionId: string) {
   const [slotsByExercise, setSlotsByExercise] = useState<Record<string, RoutineExercise>>({});
   const [state, dispatch] = useReducer(sessionReducer, { blocks: [] });
   const [actionError, setError] = useState<string | null>(null);
+  /** A reload's error that was dismissed; a different one shows again. */
+  const [dismissedLoadError, setDismissedLoadError] = useState<string | null>(null);
 
   // The fetch goes through the site's useAsync (its stale-response guard), and
   // each new answer is copied into the page's state DURING render, the moment
@@ -222,7 +224,7 @@ export function useSessionLog(sessionId: string) {
   const load = loaded.reload;
   const loading = applied === null && loaded.error === null;
   const missing = applied !== null && applied.session === null;
-  const error = actionError ?? loaded.error;
+  const error = actionError ?? (loaded.error !== dismissedLoadError ? loaded.error : null);
 
   // Nothing lands after the page has gone.
   const mounted = useRef(true);
@@ -801,7 +803,12 @@ export function useSessionLog(sessionId: string) {
     [sessionId, fail],
   );
 
-  const clearError = useCallback(() => setError(null), []);
+  // Dismiss hides what is showing: an action's error, or a failed reload's.
+  const loadError = loaded.error;
+  const clearError = useCallback(() => {
+    setError(null);
+    setDismissedLoadError(loadError);
+  }, [loadError]);
 
   return {
     session,

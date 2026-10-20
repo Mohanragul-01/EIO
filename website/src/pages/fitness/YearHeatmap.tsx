@@ -50,9 +50,11 @@ export function YearHeatmap({
   const weeks = grid[0]?.length ?? 0;
   const gridRef = useRef<HTMLDivElement>(null);
   const [focusIso, setFocusIso] = useState<string | null>(null);
-  const tabbable = focusIso ?? selected ?? today;
-
   const shown = useMemo(() => new Set(grid.flat()), [grid]);
+  // Exactly one square is in the tab order. A day picked on the calendar can be
+  // outside these 53 weeks, and then today keeps the grid reachable.
+  const preferred = focusIso ?? selected ?? today;
+  const tabbable = shown.has(preferred) ? preferred : today;
   const max = useMemo(
     () =>
       Math.max(

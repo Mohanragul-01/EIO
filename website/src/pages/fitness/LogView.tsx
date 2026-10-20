@@ -481,6 +481,7 @@ function SaveAsRoutineDialog({
   const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
+    if (saving) return;
     const trimmed = name.trim();
     if (!trimmed) return setError('Give the routine a name');
     setSaving(true);

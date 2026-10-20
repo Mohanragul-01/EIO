@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 
-import { formatEventDate } from '@app/core/date';
+import { formatEventDate, todayISO } from '@app/core/date';
 import * as api from '@app/modules/fitness/api';
 import { supersetLabels, supersetNext } from '@app/modules/fitness/blocks';
 import { MODE_LABEL, visibleInMode } from '@app/modules/fitness/mode';
@@ -214,8 +214,14 @@ export function SessionView({ sessionId, nav }: { sessionId: string; nav: Fitnes
             w.addRow(block.id, 'warmup', 0);
             return;
           }
+          // A one-sided lift gets a left and a right per warm-up, so each pair
+          // starts two rows on from the last.
+          const step = exercise?.is_unilateral ? 2 : 1;
           sets.forEach((set, i) =>
-            w.addRow(block.id, 'warmup', i, { weight: String(set.kg), reps: String(set.reps) }),
+            w.addRow(block.id, 'warmup', i * step, {
+              weight: String(set.kg),
+              reps: String(set.reps),
+            }),
           );
         },
       },
@@ -303,17 +309,11 @@ export function SessionView({ sessionId, nav }: { sessionId: string; nav: Fitnes
             {session.ended_at ? ' · Finished' : ''}
           </span>
         </div>
-        <label className="field fx-date">
-          <span className="label">Date</span>
-          <input
-            className="input"
-            type="date"
-            value={session.date}
-            onChange={(e) => {
-              if (e.target.value) void w.setDate(e.target.value);
-            }}
-          />
-        </label>
+        <SessionDate
+          key={session.date}
+          value={session.date}
+          onCommit={(date) => void w.setDate(date)}
+        />
         <LiveStats
           startedAt={w.stats.startedAt}
           endedAt={w.stats.endedAt}
@@ -498,6 +498,40 @@ export function SessionView({ sessionId, nav }: { sessionId: string; nav: Fitnes
 
       {dialog}
     </div>
+  );
+}
+
+/**
+ * The session's day. Saved when you leave the field or press Enter, not on
+ * every change: typing a year into a date field passes through 0002, 0020 and
+ * 0202 on the way to 2026, and each of those would otherwise be written (out of
+ * order, possibly) and could be the one left behind. A day before 2000 or after
+ * today is put back rather than saved.
+ */
+function SessionDate({ value, onCommit }: { value: string; onCommit: (date: string) => void }) {
+  const [text, setText] = useState(value);
+  const today = todayISO();
+  const commit = () => {
+    if (text === value) return;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text) && text >= '2000-01-01' && text <= today) onCommit(text);
+    else setText(value);
+  };
+  return (
+    <label className="field fx-date">
+      <span className="label">Date</span>
+      <input
+        className="input"
+        type="date"
+        value={text}
+        max={today}
+        min="2000-01-01"
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+        }}
+      />
+    </label>
   );
 }
 

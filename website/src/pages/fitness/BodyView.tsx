@@ -600,7 +600,7 @@ function Bands({
   const add = async () => {
     // Required: records compare assisted sets by their assistance, so a band
     // with no figure would count as no help at all and could outrank honest work.
-    if (approx === null) return;
+    if (approx === null || saving) return;
     setSaving(true);
     try {
       const band = await api.saveBand({

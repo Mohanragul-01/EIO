@@ -79,8 +79,11 @@ export function TrendChart({
           data={data}
           margin={{ top: 8, right: 12, left: -12, bottom: 0 }}
           onClick={(state) => {
-            const index = Number(state?.activeTooltipIndex);
-            if (onSelect && Number.isInteger(index) && index >= 0) onSelect(index);
+            // Null off the points; Number(null) would be 0, the first point.
+            const raw = state?.activeTooltipIndex;
+            if (!onSelect || raw === null || raw === undefined) return;
+            const index = Number(raw);
+            if (Number.isInteger(index) && index >= 0) onSelect(index);
           }}
           style={onSelect ? { cursor: 'pointer' } : undefined}
         >
