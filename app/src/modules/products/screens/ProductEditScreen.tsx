@@ -583,7 +583,9 @@ function Chip({
   return (
     <Pressable
       onPress={onPress}
-      hitSlop={{ top: 6, bottom: 6 }}
+      // At least 40 x 40 with 8 between: 4 more on every side makes 48, which
+      // a short chip like "3M" needs across as well as down.
+      hitSlop={4}
       style={({ pressed }) => [styles.chip, selected && styles.chipActive, pressed && styles.pressed]}
       accessibilityRole="button"
       accessibilityState={{ selected }}
@@ -612,7 +614,9 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   chipRow: { gap: spacing.sm, paddingTop: spacing.sm },
   wrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, paddingTop: spacing.sm },
   chip: {
-    minHeight: 36,
+    minHeight: 40,
+    minWidth: 40,
+    alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
     borderRadius: radius.pill,
