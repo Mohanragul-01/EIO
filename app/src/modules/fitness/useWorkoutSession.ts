@@ -21,7 +21,7 @@ import { todayISO } from '../../core/date';
 import { useLatestRun } from '../../core/useLatestRun';
 
 import * as api from './api';
-import { initialDrafts, newDraft, type DraftRow } from './blocks';
+import { initialDrafts, newDraft, newDrafts, type DraftRow } from './blocks';
 import { toSetFact, workingVolume, type SetFact } from './load';
 import { matchPrevious } from './previous';
 import { ladderSlotTarget } from './progression';
@@ -465,32 +465,39 @@ export function useWorkoutSession(sessionId: string) {
   );
 
   /**
-   * Add a row (with starting values, if given); a one-sided exercise gets a
-   * left and a right.
+   * Add rows at `index` (the end if not given), one per set of starting
+   * values, in order; a one-sided exercise gets a left and a right for each.
    */
+  const addRows = useCallback(
+    (
+      blockId: string,
+      setType: SetType = 'normal',
+      index: number | undefined = undefined,
+      values: Partial<Omit<DraftRow, 'key' | 'set_type' | 'side'>>[] = [{}],
+    ) => {
+      const block = stateRef.current.blocks.find((b) => b.id === blockId);
+      const unilateral = !!(block && exercisesById[block.exerciseId]?.is_unilateral);
+      newDrafts(blockId, setType, unilateral, values).forEach((draft, k) => {
+        dispatch({
+          type: 'addRow',
+          blockId,
+          row: { kind: 'draft', key: draft.key, draft },
+          index: index === undefined ? undefined : index + k,
+        });
+      });
+    },
+    [exercisesById],
+  );
+
+  /** Add one row (a left and a right on a one-sided exercise). */
   const addRow = useCallback(
     (
       blockId: string,
       setType: SetType = 'normal',
       index?: number,
       values: Partial<Omit<DraftRow, 'key' | 'set_type' | 'side'>> = {},
-    ) => {
-      const block = stateRef.current.blocks.find((b) => b.id === blockId);
-      const sides =
-        block && exercisesById[block.exerciseId]?.is_unilateral
-          ? (['left', 'right'] as const)
-          : [null];
-      sides.forEach((side, i) => {
-        const draft = { ...newDraft(blockId, setType), ...values, side };
-        dispatch({
-          type: 'addRow',
-          blockId,
-          row: { kind: 'draft', key: draft.key, draft },
-          index: index === undefined ? undefined : index + i,
-        });
-      });
-    },
-    [exercisesById],
+    ) => addRows(blockId, setType, index, [values]),
+    [addRows],
   );
 
   const updateDraft = useCallback(
@@ -841,6 +848,7 @@ export function useWorkoutSession(sessionId: string) {
     untick,
     removeRow,
     addRow,
+    addRows,
     updateDraft,
     updateRow,
     addExercise,

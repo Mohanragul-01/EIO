@@ -10,6 +10,7 @@
 import {
   assembleBlocks,
   initialDrafts,
+  newDrafts,
   supersetLabels,
   supersetNext,
   type DraftRow,
@@ -181,6 +182,36 @@ describe('matchPrevious', () => {
 
   it('counts drop and failure sets as working sets', () => {
     expect(matchPrevious(last, ['normal', 'normal', 'drop'], 2)?.reps).toBe(12);
+  });
+});
+
+describe('newDrafts', () => {
+  const warmups = [
+    { weight: '40', reps: '8' },
+    { weight: '60', reps: '5' },
+    { weight: '80', reps: '3' },
+  ];
+
+  it('one row per set on a two-sided exercise', () => {
+    const rows = newDrafts('b', 'warmup', false, warmups);
+    expect(rows.map((r) => [r.weight, r.side, r.set_type])).toEqual([
+      ['40', null, 'warmup'],
+      ['60', null, 'warmup'],
+      ['80', null, 'warmup'],
+    ]);
+  });
+
+  it('a one-sided exercise gets each set as a left and a right, kept together', () => {
+    const rows = newDrafts('b', 'warmup', true, warmups);
+    expect(rows.map((r) => `${r.weight}${r.side === 'left' ? 'L' : 'R'}`)).toEqual([
+      '40L',
+      '40R',
+      '60L',
+      '60R',
+      '80L',
+      '80R',
+    ]);
+    expect(new Set(rows.map((r) => r.key)).size).toBe(6);
   });
 });
 

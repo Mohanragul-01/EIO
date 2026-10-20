@@ -152,3 +152,23 @@ describe('reopening from the summary', () => {
     expect(row.kind === 'draft' && row.draft.reps).toBe('9');
   });
 });
+
+describe('adding rows', () => {
+  it('warm-ups on a one-sided exercise come out L1 R1 L2 R2 L3 R3, before the work', async () => {
+    api.listExercises.mockResolvedValue([{ ...pullUp, is_unilateral: true }]);
+    const { result } = await opened();
+
+    await act(async () =>
+      result.current.addRows('b1', 'warmup', 0, [{ reps: '8' }, { reps: '5' }, { reps: '3' }]),
+    );
+
+    const rows = result.current.blocks[0].rows.flatMap((r) =>
+      r.kind === 'draft'
+        ? [
+            `${r.draft.set_type === 'warmup' ? r.draft.reps : 'work'}${r.draft.side === 'left' ? 'L' : 'R'}`,
+          ]
+        : [],
+    );
+    expect(rows).toEqual(['8L', '8R', '5L', '5R', '3L', '3R', 'workL', 'workR']);
+  });
+});

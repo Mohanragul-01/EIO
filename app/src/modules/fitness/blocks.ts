@@ -95,6 +95,23 @@ export function newDraft(blockKey: string, set_type: SetType = 'normal'): DraftR
 }
 
 /**
+ * New rows in the order they go on screen: one per set of starting values,
+ * or on a one-sided exercise a left and a right for each, kept together
+ * (L1 R1 L2 R2). Placed as one run, so pairs never interleave.
+ */
+export function newDrafts(
+  blockKey: string,
+  setType: SetType,
+  unilateral: boolean,
+  values: Partial<Omit<DraftRow, 'key' | 'set_type' | 'side'>>[],
+): DraftRow[] {
+  const sides: (Side | null)[] = unilateral ? ['left', 'right'] : [null];
+  return values.flatMap((v) =>
+    sides.map((side) => ({ ...newDraft(blockKey, setType), ...v, side })),
+  );
+}
+
+/**
  * The rows still to fill in when a block opens.
  *
  * With a routine, its target number of working sets. Without one, last time's

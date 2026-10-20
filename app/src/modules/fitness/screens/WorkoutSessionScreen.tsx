@@ -603,12 +603,13 @@ export function WorkoutSessionScreen() {
                   w.addRow(menuForBlock.id, 'warmup', 0);
                   return;
                 }
-                // 40, 60 and 80 percent of the working weight, on plates you own.
-                sets.forEach((set, i) =>
-                  w.addRow(menuForBlock.id, 'warmup', i, {
-                    weight: String(set.kg),
-                    reps: String(set.reps),
-                  }),
+                // 40, 60 and 80 percent of the working weight, on plates you own,
+                // as one run at the top (on one side at a time: L1 R1 L2 R2).
+                w.addRows(
+                  menuForBlock.id,
+                  'warmup',
+                  0,
+                  sets.map((set) => ({ weight: String(set.kg), reps: String(set.reps) })),
                 );
               },
             },
