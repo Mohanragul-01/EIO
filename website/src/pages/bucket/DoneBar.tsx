@@ -61,6 +61,9 @@ function Bar({
       const target = event.target as HTMLElement | null;
       // Text fields keep their own undo.
       if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      // Nor while a dialog is open: the bar is behind it, so its Undo would
+      // run unseen.
+      if (document.querySelector('dialog[open]')) return;
       event.preventDefault();
       onUndo();
     };

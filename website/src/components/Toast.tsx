@@ -127,6 +127,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.key.toLowerCase() !== 'z') return;
       const target = event.target as HTMLElement | null;
       if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      // Nor while a dialog is open: the toast is behind it, so its Undo would
+      // run unseen.
+      if (document.querySelector('dialog[open]')) return;
       event.preventDefault();
       act(actionableId);
     };
