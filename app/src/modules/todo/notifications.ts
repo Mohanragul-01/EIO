@@ -68,7 +68,8 @@ export function offsetLabel(minutes: number): string {
   if (minutes === 0) return 'At time';
   if (minutes < 60) return `${minutes} min before`;
   if (minutes === 60) return '1 hour before';
-  if (minutes % 1440 === 0) return minutes === 1440 ? '1 day before' : `${minutes / 1440} days before`;
+  if (minutes % 1440 === 0)
+    return minutes === 1440 ? '1 day before' : `${minutes / 1440} days before`;
   if (minutes % 60 === 0) return `${minutes / 60} hours before`;
   return `${minutes} min before`;
 }
@@ -125,7 +126,8 @@ export async function loadDigestSettings(): Promise<DigestSettings> {
     return {
       enabled: parsed.enabled === true,
       hour: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_DIGEST.hour,
-      minute: Number.isInteger(minute) && minute >= 0 && minute <= 59 ? minute : DEFAULT_DIGEST.minute,
+      minute:
+        Number.isInteger(minute) && minute >= 0 && minute <= 59 ? minute : DEFAULT_DIGEST.minute,
     };
   } catch {
     return DEFAULT_DIGEST;
@@ -178,12 +180,26 @@ export function digestPlan(
 
 /* SCHEDULING ---------------------------------------------------------------- */
 
-/** The buttons on a task reminder. Registered before the first one is scheduled. */
+/**
+ * The buttons on a task reminder. Registered before the first one is scheduled.
+ *
+ * BOTH OPEN THE APP. A button that acts in the background needs JavaScript to
+ * act with, and once Android has killed the app's process there is none: the
+ * press was kept only in memory, at most the last one replayed at the next
+ * launch, stamped with that day, or lost outright. This app installs no
+ * background task to run it, so a press opens the app instead, which starts
+ * JavaScript, and the app root hands the press to notificationRoutes - once,
+ * since core remembers each response it has handled.
+ */
 function ensureCategory(): Promise<boolean> {
-  return registerCategory(REMINDER_CATEGORY, [
-    { id: ACTION_DONE, title: 'Done' },
-    { id: ACTION_SNOOZE, title: `Snooze ${SNOOZE_MINUTES} min` },
-  ]);
+  return registerCategory(
+    REMINDER_CATEGORY,
+    [
+      { id: ACTION_DONE, title: 'Done' },
+      { id: ACTION_SNOOZE, title: `Snooze ${SNOOZE_MINUTES} min` },
+    ],
+    { opensApp: true },
+  );
 }
 
 async function scheduleTask(todo: Todo, now: Date): Promise<void> {
@@ -292,7 +308,11 @@ export async function scheduleDigests(
  * Rebuild everything from the database's open tasks - the launch resync, run
  * only where reminders can fire (see core runResync).
  */
-export async function rebuildAll(open: readonly Todo[], today: string, now: Date = new Date()): Promise<void> {
+export async function rebuildAll(
+  open: readonly Todo[],
+  today: string,
+  now: Date = new Date(),
+): Promise<void> {
   await cancelPrefix(REMINDER_PREFIX);
   for (const row of open) await scheduleTask(row, now);
 

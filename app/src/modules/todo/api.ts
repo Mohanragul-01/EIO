@@ -23,11 +23,12 @@
  * twice writes first and deletes last: an interruption leaves a stale row you
  * can see, never a missing one you cannot get back.
  */
+import { collectPages } from '../../core/paging';
 import { supabase } from '../../core/supabase';
 import { getOwnerId } from '../../core/session';
 import { todayISO } from '../../core/date';
 import { registerResync } from '../../core/notifications';
-import { normalizeInput, resetChecklist, ruleColumnsFor } from './input';
+import { normalizeInput, resetChecklist, ruleColumnsFor, type Saved } from './input';
 import {
   cancelDigests,
   cancelReminders,
@@ -79,12 +80,36 @@ registerResync('tasks', async () => {
   await rebuildAll(await listAllOpen(), todayISO());
 });
 
+/**
+ * The open-or-closed write in flight on each task, by id.
+ *
+ * Undo puts a row back on screen at once, so it can be ticked again while
+ * reopenTask is still on the wire. Run side by side, the tick's close could
+ * reach the server before the reopen and be undone by it, behind a
+ * "Completed" toast; or its close and new successor landed between the
+ * reopen's writes, and the reopen's sweep for untouched occurrences deleted
+ * the new successor with the old one, ending the routine. So completing,
+ * reopening and abandoning a task wait their turn: each starts once the one
+ * before it on the same task has settled, whether it worked or not.
+ */
+const inFlight = new Map<string, Promise<void>>();
+
+function inTurn<T>(id: string, write: () => Promise<T>): Promise<T> {
+  const result = (inFlight.get(id) ?? Promise.resolve()).then(write);
+  const settled = result.then(
+    () => {},
+    () => {},
+  );
+  inFlight.set(id, settled);
+  void settled.then(() => {
+    if (inFlight.get(id) === settled) inFlight.delete(id);
+  });
+  return result;
+}
+
 /** The columns a series history needs - small, since a daily routine has hundreds. */
 const HISTORY_COLUMNS =
   'id, series_id, due_date, scheduled_for, completed_at, updated_at, outcome, is_done, frequency, repeat_every, repeat_weekdays, repeat_anchor_day, repeat_nth, repeat_from';
-
-/** Supabase returns at most this many rows per request (its default max_rows). */
-const PAGE = 1000;
 
 /**
  * Open tasks in one frequency tab.
@@ -123,10 +148,7 @@ export async function listTodosByFrequency(frequency: Frequency): Promise<Todo[]
  * typo fixed on an old task used to float it to the top of "recently done".
  * v2 rows closed before migration 0020 have completed_at backfilled.
  */
-export async function listCompletedByFrequency(
-  frequency: Frequency,
-  limit = 100,
-): Promise<Todo[]> {
+export async function listCompletedByFrequency(frequency: Frequency, limit = 100): Promise<Todo[]> {
   const ownerId = await getOwnerId();
 
   const { data, error } = await supabase
@@ -238,28 +260,30 @@ export async function listClosedBetween(start: string, end: string): Promise<Tod
  * The first occurrence of a series has no series_id - its key IS its id - so
  * the match is on either column.
  *
- * NEWEST FIRST, THEN REVERSED. Supabase caps a response at 1000 rows whatever
- * limit is asked for, and a list screen asks for every routine's history at
- * once - five daily routines pass 1000 in about 200 days. Asked oldest-first,
- * the cap dropped the most recent rows, which are exactly the ones a current
- * streak is made of.
+ * EVERY ROW, PAGE BY PAGE. Supabase caps a response at 1000 rows and does not
+ * say so, and a list screen asks for every routine's history at once: five
+ * daily routines pass 1000 in about 200 days. One capped request counted a
+ * 300-day streak from 200 of its days and gave the editor's History wrong
+ * totals, so this reads through core/paging, in a stable order (the id last).
  */
 export async function listSeriesHistory(keys: string[]): Promise<Todo[]> {
   if (keys.length === 0) return [];
   const ownerId = await getOwnerId();
   const list = [...new Set(keys)].join(',');
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select(HISTORY_COLUMNS)
-    .eq('user_id', ownerId)
-    .eq('is_done', true)
-    .or(`series_id.in.(${list}),id.in.(${list})`)
-    .order('due_date', { ascending: false })
-    .limit(PAGE);
-
-  if (error) throw new Error(error.message);
-  return ((data ?? []) as unknown as Todo[]).reverse();
+  return collectPages<Todo>(async (from, to) => {
+    const { data, error, count } = await supabase
+      .from(TABLE)
+      .select(HISTORY_COLUMNS, { count: 'exact' })
+      .eq('user_id', ownerId)
+      .eq('is_done', true)
+      .or(`series_id.in.(${list}),id.in.(${list})`)
+      .order('due_date', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (error) throw new Error(error.message);
+    return { rows: (data ?? []) as unknown as Todo[], total: count };
+  });
 }
 
 /**
@@ -343,18 +367,21 @@ export async function createTodo(input: TodoInput): Promise<Todo> {
  * frequency and repeat switch) has its rule settled like a new task's; a
  * partial one - a reschedule, a ticked check item, new notes - is written as
  * given.
+ *
+ * An editor passes the row as it loaded it (`saved`), so a save that changed
+ * neither the date nor the rule leaves the schedule where it was: see
+ * normalizeInput. Without it a full save puts the schedule at the due date.
  */
-export async function updateTodo(id: string, input: Partial<TodoInput>): Promise<Todo> {
+export async function updateTodo(
+  id: string,
+  input: Partial<TodoInput>,
+  saved: Saved | null = null,
+): Promise<Todo> {
   const isFull =
     input.title !== undefined && input.frequency !== undefined && input.is_repeat !== undefined;
-  const values = isFull ? normalizeInput(input as TodoInput, todayISO()) : input;
+  const values = isFull ? normalizeInput(input as TodoInput, todayISO(), saved) : input;
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .update(values)
-    .eq('id', id)
-    .select()
-    .single();
+  const { data, error } = await supabase.from(TABLE).update(values).eq('id', id).select().single();
 
   if (error) throw new Error(error.message);
   remind([data]);
@@ -382,11 +409,23 @@ export async function updateTodo(id: string, input: Partial<TodoInput>): Promise
  * second write fails the task is reopened and the error rethrown: leaving it
  * closed would end the recurrence SILENTLY, and the occurrence that never
  * arrives is not something you notice until you have missed it.
+ *
+ * FROM THE ROW AS CLOSED. `todo` is only which task: the copy a list was
+ * holding can be hours old, and an edit made since on the website (a new
+ * time, a checklist, repeat turned on) would otherwise be dropped from every
+ * occurrence after this one. The close returns the row it closed, in the
+ * same statement, so the successor is built from that at no extra cost.
+ *
+ * It waits for any reopen of the same task still in flight (see inTurn).
  */
-export async function completeTask(
+export function completeTask(
   todo: Todo,
   outcome: Exclude<Outcome, 'wont_do'> = 'done',
 ): Promise<Todo | null> {
+  return inTurn(todo.id, () => closeTask(todo, outcome));
+}
+
+async function closeTask(todo: Todo, outcome: Exclude<Outcome, 'wont_do'>): Promise<Todo | null> {
   // Only an OPEN row is closed. Done on a reminder and then a tick on the
   // stale row in the app would otherwise close it twice and create two
   // successors - one routine, open twice.
@@ -395,12 +434,13 @@ export async function completeTask(
     .update({ is_done: true, outcome, completed_at: new Date().toISOString() })
     .eq('id', todo.id)
     .eq('is_done', false)
-    .select('id');
+    .select();
   if (error) throw new Error(error.message);
   if (!closed || closed.length === 0) return null;
+  const row = closed[0] as Todo;
 
-  if (!todo.is_repeat) {
-    remind([], [todo.id]);
+  if (!row.is_repeat) {
+    remind([], [row.id]);
     return null;
   }
 
@@ -408,31 +448,31 @@ export async function completeTask(
   const today = todayISO();
   // Stepped from where the schedule put this occurrence, not from where it
   // was moved to (scheduleBase).
-  const next = nextDueDate(scheduleBase(todo), ruleOf(todo), { today, completedOn: today });
+  const next = nextDueDate(scheduleBase(row), ruleOf(row), { today, completedOn: today });
 
   const { data, error: insertError } = await supabase
     .from(TABLE)
     .insert({
       user_id: ownerId,
-      title: todo.title,
-      frequency: todo.frequency,
+      title: row.title,
+      frequency: row.frequency,
       is_repeat: true,
       due_date: next,
       scheduled_for: next,
-      due_time: todo.due_time,
-      reminder_offset_min: todo.reminder_offset_min,
-      repeat_every: todo.repeat_every,
-      repeat_weekdays: todo.repeat_weekdays,
-      repeat_anchor_day: todo.repeat_anchor_day,
-      repeat_nth: todo.repeat_nth,
-      repeat_from: todo.repeat_from,
-      series_id: seriesKey(todo),
-      notes: todo.notes,
-      checklist: resetChecklist(todo.checklist ?? []),
+      due_time: row.due_time,
+      reminder_offset_min: row.reminder_offset_min,
+      repeat_every: row.repeat_every,
+      repeat_weekdays: row.repeat_weekdays,
+      repeat_anchor_day: row.repeat_anchor_day,
+      repeat_nth: row.repeat_nth,
+      repeat_from: row.repeat_from,
+      series_id: seriesKey(row),
+      notes: row.notes,
+      checklist: resetChecklist(row.checklist ?? []),
       priority: 'normal',
       // Keeps the routine where you put it on the board, rather than jumping
       // to the top of its column every time it comes round.
-      position: todo.position,
+      position: row.position,
     })
     .select()
     .single();
@@ -461,14 +501,16 @@ export function skipTask(todo: Todo): Promise<Todo | null> {
  * Close a one-off task as abandoned. Kept, like everything closed, and
  * reopenable; it simply does not count as done.
  */
-export async function wontDoTask(todo: Todo): Promise<void> {
-  const { error } = await supabase
-    .from(TABLE)
-    .update({ is_done: true, outcome: 'wont_do', completed_at: new Date().toISOString() })
-    .eq('id', todo.id)
-    .eq('is_done', false);
-  if (error) throw new Error(error.message);
-  remind([], [todo.id]);
+export function wontDoTask(todo: Todo): Promise<void> {
+  return inTurn(todo.id, async () => {
+    const { error } = await supabase
+      .from(TABLE)
+      .update({ is_done: true, outcome: 'wont_do', completed_at: new Date().toISOString() })
+      .eq('id', todo.id)
+      .eq('is_done', false);
+    if (error) throw new Error(error.message);
+    remind([], [todo.id]);
+  });
 }
 
 /**
@@ -486,9 +528,14 @@ export async function wontDoTask(todo: Todo): Promise<void> {
  * duplicate, never a routine with nothing open.
  *
  * Returns the ids it removed, so a caller holding them in a list can drop
- * them without a refetch.
+ * them without a refetch. A tick of the same task sent meanwhile waits for it
+ * (see inTurn).
  */
-export async function reopenTask(id: string): Promise<{ reopened: Todo; removed: string[] }> {
+export function reopenTask(id: string): Promise<{ reopened: Todo; removed: string[] }> {
+  return inTurn(id, () => reopen(id));
+}
+
+async function reopen(id: string): Promise<{ reopened: Todo; removed: string[] }> {
   const { data: reopened, error } = await supabase
     .from(TABLE)
     .update({ is_done: false, outcome: null, completed_at: null })

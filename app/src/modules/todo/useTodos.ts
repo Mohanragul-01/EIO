@@ -13,6 +13,10 @@
  * Every write is optimistic and, if the server says no, puts back ONLY its own
  * row. Ticking happens in bursts; restoring a whole-list snapshot would also
  * undo whatever else was ticked while this write was in flight.
+ *
+ * `active` is whether the page is the one on show in the pager: it reloads
+ * then, when it is swiped to, when the app comes back to the foreground, and
+ * when a write made elsewhere lands (useFreshPage).
  */
 import { useCallback, useState } from 'react';
 
@@ -21,8 +25,10 @@ import { useLatestRun } from '../../core/useLatestRun';
 import { useStableCallback } from '../../core/useStableCallback';
 
 import * as api from './api';
+import { announceChange } from './changeSignal';
 import { groupBySeries, streakFor, type HistoryRow, type StreakStats } from './streaks';
 import { seriesKey, type Frequency, type Todo } from './types';
+import { useFreshPage } from './useFreshPage';
 import { repeatingKeys } from './useToday';
 
 /**
@@ -49,7 +55,7 @@ function restore(list: Todo[], row: Todo, index: number): Todo[] {
   return next;
 }
 
-export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
+export function useTodos(frequency: Frequency, status: TodoStatus = 'open', active = true) {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [history, setHistory] = useState<Map<string, HistoryRow[]>>(new Map());
   // Starts true so the very first render shows a spinner rather than a
@@ -63,12 +69,17 @@ export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
    * older request overwriting a newer one. See useLatestRun.
    */
   const { begin, isMounted } = useLatestRun();
+  // This page's token: what it writes it has already put on screen, so its
+  // announcements reload the other pages and not this one.
+  const [source] = useState(() => ({}));
 
   const load = useCallback(
     async (isRefresh = false) => {
       const isCurrent = begin();
+      // Only a pull shows a spinner. A silent reload - focus, a swipe, the
+      // app coming back - keeps the list on screen until the new one is in
+      // (loading starts true, for the very first fetch).
       if (isRefresh) setRefreshing(true);
-      else setLoading(true);
       setError(null);
 
       try {
@@ -124,6 +135,7 @@ export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
       const indexOf = takeOut(todo);
       try {
         const next = await api.completeTask(todo, outcome);
+        announceChange(source);
         if (next && isMounted() && status === 'open' && next.frequency === frequency) {
           setTodos((current) => [...current, next].sort(byPosition));
         }
@@ -136,7 +148,7 @@ export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
         return false;
       }
     },
-    [takeOut, isMounted, status, frequency],
+    [takeOut, isMounted, status, frequency, source],
   );
 
   const complete = useCallback((todo: Todo) => close(todo, 'done'), [close]);
@@ -147,6 +159,7 @@ export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
       const indexOf = takeOut(todo);
       try {
         await api.wontDoTask(todo);
+        announceChange(source);
         return true;
       } catch (e) {
         if (isMounted()) {
@@ -156,7 +169,7 @@ export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
         return false;
       }
     },
-    [takeOut, isMounted],
+    [takeOut, isMounted, source],
   );
 
   /**
@@ -174,6 +187,7 @@ export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
       else setTodos((current) => [...restore(current, reopened, current.length)].sort(byPosition));
       try {
         const { removed } = await api.reopenTask(todo.id);
+        announceChange(source);
         if (isMounted() && removed.length > 0) {
           setTodos((current) => current.filter((t) => !removed.includes(t.id)));
         }
@@ -190,7 +204,7 @@ export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
         return false;
       }
     },
-    [takeOut, isMounted, status],
+    [takeOut, isMounted, status, source],
   );
 
   const reschedule = useCallback(
@@ -199,6 +213,7 @@ export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
       setTodos((current) => current.map((t) => (ids.has(t.id) ? { ...t, due_date: dueDate } : t)));
       try {
         await api.rescheduleTasks([...ids], dueDate);
+        announceChange(source);
         return true;
       } catch (e) {
         if (isMounted()) {
@@ -209,7 +224,7 @@ export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
         return false;
       }
     },
-    [isMounted],
+    [isMounted, source],
   );
 
   const remove = useCallback(
@@ -217,6 +232,7 @@ export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
       const indexOf = takeOut(todo);
       try {
         await api.deleteTodo(todo.id);
+        announceChange(source);
         return true;
       } catch (e) {
         if (isMounted()) {
@@ -226,7 +242,7 @@ export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
         return false;
       }
     },
-    [takeOut, isMounted],
+    [takeOut, isMounted, source],
   );
 
   const streakOf = useCallback(
@@ -244,6 +260,7 @@ export function useTodos(frequency: Frequency, status: TodoStatus = 'open') {
    */
   const refresh = useStableCallback(() => load(true));
   const reload = useStableCallback(() => load(false));
+  useFreshPage(active, reload, source);
 
   return {
     todos,

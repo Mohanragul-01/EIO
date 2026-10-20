@@ -159,9 +159,13 @@ export function TodoEditScreen() {
     if (minutes === null) return;
     const permission = await ensurePermission();
     if (permission === 'denied') {
-      setReminderNote('Notifications are off for EIO, so this will not sound. Turn them on in Android Settings.');
+      setReminderNote(
+        'Notifications are off for EIO, so this will not sound. Turn them on in Android Settings.',
+      );
     } else if (permission === 'unsupported') {
-      setReminderNote('This build cannot show notifications (Expo Go cannot); the installed app will.');
+      setReminderNote(
+        'This build cannot show notifications (Expo Go cannot); the installed app will.',
+      );
     }
   };
 
@@ -207,7 +211,9 @@ export function TodoEditScreen() {
         checklist: checklist.filter((item) => item.text.trim()),
       };
       if (editingId) {
-        await api.updateTodo(editingId, input);
+        // The row as loaded, so a save that leaves the date and the rule as
+        // they were keeps a rescheduled occurrence on its schedule.
+        await api.updateTodo(editingId, input, loaded);
       } else {
         await api.createTodo(input);
       }
@@ -279,6 +285,11 @@ export function TodoEditScreen() {
   }
 
   const outcome = loaded ? outcomeOf(loaded) : null;
+  // A yearly rule has no day control: when the date is changed here, its day
+  // follows the date on save (input.ts), so the rule shown - and its next
+  // three dates - follow it too. The loaded day is kept underneath, for a
+  // date changed back.
+  const dayFollowsDate = frequency === 'yearly' && loaded !== null && dueDate !== loaded.due_date;
 
   return (
     <Screen padded={false}>
@@ -300,7 +311,9 @@ export function TodoEditScreen() {
                 />
                 <Text style={styles.closedText}>
                   {outcome === 'done' ? 'Done' : outcome === 'skipped' ? 'Skipped' : "Won't do"}
-                  {loaded.completed_at ? ` · ${formatEventDate(localDayOf(loaded.completed_at))}` : ''}
+                  {loaded.completed_at
+                    ? ` · ${formatEventDate(localDayOf(loaded.completed_at))}`
+                    : ''}
                 </Text>
                 <Pressable
                   onPress={() => void handleReopen()}
@@ -356,7 +369,9 @@ export function TodoEditScreen() {
                     icon="time-outline"
                     selected={dueTime !== null}
                     onPress={() => setPickingTime(true)}
-                    accessibilityLabel={dueTime ? `Time, ${formatTime(dueTime)}. Change it` : 'Add a time'}
+                    accessibilityLabel={
+                      dueTime ? `Time, ${formatTime(dueTime)}. Change it` : 'Add a time'
+                    }
                   />
                   {dueTime ? (
                     <Chip
@@ -376,7 +391,11 @@ export function TodoEditScreen() {
               <View style={styles.field}>
                 <Text style={styles.overline}>Reminder</Text>
                 <View style={styles.chipRow}>
-                  <Chip label="None" selected={reminder === null} onPress={() => void chooseReminder(null)} />
+                  <Chip
+                    label="None"
+                    selected={reminder === null}
+                    onPress={() => void chooseReminder(null)}
+                  />
                   {REMINDER_OFFSETS.map((minutes) => (
                     <Chip
                       key={minutes}
@@ -389,7 +408,9 @@ export function TodoEditScreen() {
                 {reminderNote ? <Text style={styles.note}>{reminderNote}</Text> : null}
               </View>
             ) : dueDate ? (
-              <Text style={styles.hint}>Add a time to be reminded. The daily digest covers the rest.</Text>
+              <Text style={styles.hint}>
+                Add a time to be reminded. The daily digest covers the rest.
+              </Text>
             ) : null}
           </GlassCard>
         </FadeInView>
@@ -440,10 +461,12 @@ export function TodoEditScreen() {
               <View style={styles.field}>
                 <RepeatEditor
                   frequency={frequency}
-                  draft={rule}
+                  draft={dayFollowsDate ? { ...rule, anchorDay: null } : rule}
                   dueDate={dueDate}
                   today={today}
-                  onChange={setRule}
+                  onChange={(next) =>
+                    setRule(dayFollowsDate ? { ...next, anchorDay: rule.anchorDay } : next)
+                  }
                 />
               </View>
             ) : null}

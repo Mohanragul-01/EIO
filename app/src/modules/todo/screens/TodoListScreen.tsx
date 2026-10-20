@@ -15,7 +15,10 @@
  * this screen, so it opens Today.
  *
  * Each page is its own component with its own hook, because a pager has every
- * page mounted - you cannot swipe to something that has not rendered.
+ * page mounted - you cannot swipe to something that has not rendered. So each
+ * is told whether it is the one on show (`active`): that page reloads when it
+ * is swiped to, when the app comes back to the foreground, and when another
+ * page or a reminder changes a task (see useFreshPage).
  */
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -86,7 +89,10 @@ export function TodoListScreen() {
     });
   }, [navigation, styles.headerButton, colors.text]);
 
-  const openTask = useCallback((id: string) => navigation.navigate('TodoEdit', { id }), [navigation]);
+  const openTask = useCallback(
+    (id: string) => navigation.navigate('TodoEdit', { id }),
+    [navigation],
+  );
   const frequency: Frequency = page === 'today' ? 'daily' : page;
 
   return (
@@ -101,6 +107,7 @@ export function TodoListScreen() {
         renderPage={(p) =>
           p === 'today' ? (
             <TodayPage
+              active={page === 'today'}
               version={version}
               onOpen={openTask}
               onAdd={() => setAdding(true)}
@@ -108,6 +115,7 @@ export function TodoListScreen() {
           ) : (
             <FrequencyPage
               frequency={p}
+              active={page === p}
               version={version}
               onOpen={openTask}
               onAdd={() => setAdding(true)}
@@ -116,10 +124,7 @@ export function TodoListScreen() {
         }
       />
 
-      <FadeInView
-        style={[styles.fabWrap, { bottom: insets.bottom + layout.fabInset }]}
-        delay={120}
-      >
+      <FadeInView style={[styles.fabWrap, { bottom: insets.bottom + layout.fabInset }]} delay={120}>
         <Pressable
           onPress={() => setAdding(true)}
           onLongPress={() => navigation.navigate('TodoEdit', { frequency })}
@@ -158,17 +163,19 @@ type TodayItem =
   | { kind: 'task'; key: string; todo: Todo; dateStyle: 'full' | 'time' };
 
 function TodayPage({
+  active,
   version,
   onOpen,
   onAdd,
 }: {
+  active: boolean;
   version: number;
   onOpen: (id: string) => void;
   onAdd: () => void;
 }) {
   const styles = useStyles();
   const { colors } = useTheme();
-  const data = useToday();
+  const data = useToday(active);
   const actions = useTaskActions(data, data.today, onOpen);
   const [showDone, setShowDone] = useState(false);
   const { reload } = data;
@@ -207,7 +214,9 @@ function TodayPage({
   if (doneCount > 0) {
     items.push({ kind: 'done-head', key: 'done-head', count: doneCount });
     if (showDone) {
-      completed.forEach((todo) => items.push({ kind: 'task', key: todo.id, todo, dateStyle: 'time' }));
+      completed.forEach((todo) =>
+        items.push({ kind: 'task', key: todo.id, todo, dateStyle: 'time' }),
+      );
     }
   }
 
@@ -281,7 +290,9 @@ function TodayPage({
                 <Text style={styles.nextTitle} numberOfLines={1}>
                   {next.title}
                 </Text>
-                <Text style={styles.nextDate}>{dueLabel(next.due_date, next.due_time, data.today)}</Text>
+                <Text style={styles.nextDate}>
+                  {dueLabel(next.due_date, next.due_time, data.today)}
+                </Text>
               </Pressable>
             ) : (
               <View style={styles.calmAction}>
@@ -356,6 +367,7 @@ function TodayPage({
 
 function FrequencyPage(props: {
   frequency: Frequency;
+  active: boolean;
   version: number;
   onOpen: (id: string) => void;
   onAdd: () => void;
@@ -368,6 +380,7 @@ function FrequencyPage(props: {
 
 function FrequencyList({
   frequency,
+  active,
   version,
   status,
   onStatus,
@@ -375,6 +388,7 @@ function FrequencyList({
   onAdd,
 }: {
   frequency: Frequency;
+  active: boolean;
   version: number;
   status: TodoStatus;
   onStatus: (status: TodoStatus) => void;
@@ -383,7 +397,7 @@ function FrequencyList({
 }) {
   const styles = useStyles();
   const { colors } = useTheme();
-  const data = useTodos(frequency, status);
+  const data = useTodos(frequency, status, active);
   const today = todayISO();
   const actions = useTaskActions(data, today, onOpen);
   const { reload } = data;
@@ -440,14 +454,18 @@ function FrequencyList({
                 onPress={() => onStatus(status === 'open' ? 'done' : 'open')}
                 style={styles.statusToggle}
                 accessibilityRole="button"
-                accessibilityLabel={status === 'open' ? `Show completed ${label} tasks` : `Show open ${label} tasks`}
+                accessibilityLabel={
+                  status === 'open' ? `Show completed ${label} tasks` : `Show open ${label} tasks`
+                }
               >
                 <Ionicons
                   name={status === 'open' ? 'checkmark-done-outline' : 'list-outline'}
                   size={15}
                   color={colors.primary}
                 />
-                <Text style={styles.statusToggleText}>{status === 'open' ? 'Completed' : 'Open'}</Text>
+                <Text style={styles.statusToggleText}>
+                  {status === 'open' ? 'Completed' : 'Open'}
+                </Text>
               </Pressable>
             </View>
             {data.error ? <ErrorCard message={data.error} /> : null}

@@ -81,6 +81,8 @@ export function createFakeSupabase() {
   /** Strictly increasing timestamps, so "later" is observable within one test. */
   const now = () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)).toISOString();
   const calls: { table: string; op: string }[] = [];
+  /** Requests that wait until released: a slow round trip, for races. */
+  const holds: { table: string; op: string; until: Promise<void> }[] = [];
 
   function query(table: string) {
     let op: 'select' | 'insert' | 'update' | 'delete' = 'select';
@@ -88,12 +90,18 @@ export function createFakeSupabase() {
     const filters: Filter[] = [];
     const orders: { column: string; ascending: boolean }[] = [];
     let limit: number | null = null;
+    let window: [number, number] | null = null;
+    let counted = false;
     let single: 'single' | 'maybe' | null = null;
     let failWith: string | null = null;
 
     const rows = () => (tables[table] ??= []);
 
-    const run = (): { data: unknown; error: { message: string } | null } => {
+    const run = (): {
+      data: unknown;
+      error: { message: string } | null;
+      count?: number | null;
+    } => {
       if (failWith) return { data: null, error: { message: failWith } };
       calls.push({ table, op });
       const matching = () => rows().filter((row) => filters.every((f) => f(row)));
@@ -129,22 +137,28 @@ export function createFakeSupabase() {
           (a, b) => compare(a[order.column], b[order.column]) * (order.ascending ? 1 : -1),
         );
       }
+      const total = result.length;
       if (limit !== null) result = result.slice(0, limit);
+      if (window) result = result.slice(window[0], window[1] + 1);
 
       const data = clone(result);
       if (single) {
         if (data.length === 0) {
           return single === 'maybe'
             ? { data: null, error: null }
-            : { data: null, error: { message: 'JSON object requested, multiple (or no) rows returned' } };
+            : {
+                data: null,
+                error: { message: 'JSON object requested, multiple (or no) rows returned' },
+              };
         }
         return { data: data[0], error: null };
       }
-      return { data, error: null };
+      return { data, error: null, count: counted ? total : null };
     };
 
     const builder = {
-      select(_columns?: string) {
+      select(_columns?: string, options?: { count?: string }) {
+        counted = options?.count === 'exact';
         return builder;
       },
       insert(values: Row | Row[]) {
@@ -212,6 +226,10 @@ export function createFakeSupabase() {
         limit = n;
         return builder;
       },
+      range(from: number, to: number) {
+        window = [from, to];
+        return builder;
+      },
       single() {
         single = 'single';
         return builder;
@@ -229,6 +247,11 @@ export function createFakeSupabase() {
         resolve: (value: { data: unknown; error: { message: string } | null }) => T,
         reject?: (reason: unknown) => T,
       ) {
+        const held = holds.findIndex((h) => h.table === table && h.op === op);
+        if (held >= 0) {
+          const [{ until }] = holds.splice(held, 1);
+          return until.then(run).then(resolve, reject);
+        }
         try {
           return Promise.resolve(run()).then(resolve, reject);
         } catch (error) {
@@ -282,6 +305,18 @@ export function createFakeSupabase() {
     /** The next `op` on `table` resolves with this error instead of running. */
     failNext(table: string, op: 'insert' | 'update' | 'delete', message = 'network down') {
       failures.push({ table, op, message });
+    },
+    /**
+     * The next `op` on `table` does not reach the table until the returned
+     * function is called - a request still on the wire while others land.
+     */
+    holdNext(table: string, op: 'select' | 'insert' | 'update' | 'delete'): () => void {
+      let release = () => {};
+      const until = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      holds.push({ table, op, until });
+      return () => release();
     },
   };
 }

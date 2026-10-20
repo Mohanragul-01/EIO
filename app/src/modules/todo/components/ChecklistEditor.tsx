@@ -49,6 +49,8 @@ export function ChecklistEditor({ items, onChange, onToggle }: ChecklistEditorPr
             onPress={() =>
               onToggle(items.map((i) => (i.id === item.id ? { ...i, done: !i.done } : i)))
             }
+            // 24dp box + 12 each side = 48dp, the same target as a task's own
+            // checkbox (it was a 22dp box, 46dp in all).
             hitSlop={12}
             accessibilityRole="checkbox"
             accessibilityState={{ checked: item.done }}
@@ -61,7 +63,9 @@ export function ChecklistEditor({ items, onChange, onToggle }: ChecklistEditorPr
 
           <TextInput
             value={item.text}
-            onChangeText={(text) => onChange(items.map((i) => (i.id === item.id ? { ...i, text } : i)))}
+            onChangeText={(text) =>
+              onChange(items.map((i) => (i.id === item.id ? { ...i, text } : i)))
+            }
             style={[styles.input, item.done && styles.inputDone]}
             placeholderTextColor={colors.textFaint}
             accessibilityLabel={`Step: ${item.text}`}
@@ -116,8 +120,8 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     gap: spacing.md,
   },
   box: {
-    width: 22,
-    height: 22,
+    width: 24,
+    height: 24,
     borderRadius: radius.sm,
     borderWidth: 1.5,
     borderColor: colors.glassBorderStrong,
@@ -125,7 +129,7 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     justifyContent: 'center',
   },
   boxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
-  addIcon: { width: 22, textAlign: 'center' },
+  addIcon: { width: 24, textAlign: 'center' },
   input: {
     ...typography.body,
     color: colors.text,

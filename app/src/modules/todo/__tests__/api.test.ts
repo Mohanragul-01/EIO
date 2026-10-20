@@ -77,7 +77,11 @@ describe('bug 3: reopening a completed repeat', () => {
 
     await api.reopenTask(task.id);
 
-    expect(openRows().map((row) => row.id).sort()).toEqual([next.id, task.id].sort());
+    expect(
+      openRows()
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual([next.id, task.id].sort());
   });
 
   it('reopening an old occurrence makes it the live one again', async () => {
@@ -107,7 +111,11 @@ describe('bug 3: reopening a completed repeat', () => {
     const { removed } = await api.reopenTask(once.id);
 
     expect(removed).toEqual([]);
-    expect(openRows().map((row) => row.id).sort()).toEqual([other.id, once.id].sort());
+    expect(
+      openRows()
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual([other.id, once.id].sort());
   });
 });
 
@@ -150,7 +158,7 @@ describe('completeTask', () => {
     expect(next.is_done).toBe(false);
   });
 
-  it('keeps every occurrence in the first one\'s series', async () => {
+  it("keeps every occurrence in the first one's series", async () => {
     const a = await repeatingTask();
     const b = (await api.completeTask(a)) as Todo;
     const c = (await api.completeTask(b)) as Todo;
@@ -176,7 +184,7 @@ describe('completeTask', () => {
   });
 });
 
-describe('skip and won\'t do', () => {
+describe("skip and won't do", () => {
   it('skipping records a skip and still brings the next one round', async () => {
     const task = await repeatingTask();
     const next = (await api.skipTask(task)) as Todo;
@@ -185,7 +193,7 @@ describe('skip and won\'t do', () => {
     expect(next.due_date).toBe('2026-10-20');
   });
 
-  it('won\'t do closes a one-off without a successor', async () => {
+  it("won't do closes a one-off without a successor", async () => {
     const task = await repeatingTask({ is_repeat: false });
     await api.wontDoTask(task);
 
@@ -234,11 +242,21 @@ describe('completeById', () => {
 
 describe('listToday', () => {
   it('returns open tasks due by today, what closed today, and the next task', async () => {
-    const overdue = await repeatingTask({ is_repeat: false, title: 'Late', due_date: '2026-10-10' });
+    const overdue = await repeatingTask({
+      is_repeat: false,
+      title: 'Late',
+      due_date: '2026-10-10',
+    });
     const today = await repeatingTask({ is_repeat: false, title: 'Now', due_date: '2026-10-19' });
     const later = await repeatingTask({ is_repeat: false, title: 'Later', due_date: '2026-10-25' });
     const done = await repeatingTask({ is_repeat: false, title: 'Done', due_date: '2026-10-19' });
-    await api.createTodo({ title: 'Undated', due_date: null, priority: 'normal', frequency: 'daily', is_repeat: false });
+    await api.createTodo({
+      title: 'Undated',
+      due_date: null,
+      priority: 'normal',
+      frequency: 'daily',
+      is_repeat: false,
+    });
     await api.completeTask(done);
 
     const result = await api.listToday('2026-10-19');
@@ -248,7 +266,6 @@ describe('listToday', () => {
     expect(result.next?.id).toBe(later.id);
   });
 });
-
 
 describe('reminders follow the writes', () => {
   it("completing a repeat cancels its reminder and schedules the successor's", async () => {
@@ -305,7 +322,11 @@ describe('found in review', () => {
 
   it('an occurrence moved to another day comes back to its schedule', async () => {
     // Every 2 months on the 15th; October's moved to 3 November.
-    const task = await repeatingTask({ frequency: 'monthly', repeat_every: 2, due_date: '2026-10-15' });
+    const task = await repeatingTask({
+      frequency: 'monthly',
+      repeat_every: 2,
+      due_date: '2026-10-15',
+    });
     expect(task.scheduled_for).toBe('2026-10-15');
     await api.rescheduleTasks([task.id], '2026-11-03');
 
@@ -324,6 +345,37 @@ describe('found in review', () => {
     expect(next.due_date).toBe('2026-12-01');
   });
 
+  it('an editor save that only adds a note keeps a pulled-back occurrence from coming straight back', async () => {
+    // Rent on the 1st; 1 November pulled back to 28 October, then opened in
+    // the editor to add "paid by UPI" and saved.
+    const task = await repeatingTask({ frequency: 'monthly', due_date: '2026-11-01' });
+    await api.rescheduleTasks([task.id], '2026-10-28');
+    const loaded = row(task.id);
+
+    await api.updateTodo(
+      task.id,
+      {
+        title: loaded.title,
+        notes: 'paid by UPI',
+        due_date: loaded.due_date,
+        priority: loaded.priority,
+        frequency: loaded.frequency,
+        is_repeat: loaded.is_repeat,
+        repeat_every: loaded.repeat_every,
+        repeat_weekdays: loaded.repeat_weekdays,
+        repeat_anchor_day: loaded.repeat_anchor_day,
+        repeat_nth: loaded.repeat_nth,
+        repeat_from: loaded.repeat_from,
+      },
+      loaded,
+    );
+    const next = (await api.completeTask(row(task.id))) as Todo;
+
+    expect(row(task.id).notes).toBe('paid by UPI');
+    expect(row(task.id).scheduled_for).toBe('2026-11-01');
+    expect(next.due_date).toBe('2026-12-01');
+  });
+
   it('a yearly occurrence moved into the next month stays a December routine', async () => {
     const task = await repeatingTask({ frequency: 'yearly', due_date: '2026-12-31' });
     await api.rescheduleTasks([task.id], '2027-01-02');
@@ -331,6 +383,33 @@ describe('found in review', () => {
     const next = (await api.completeTask(row(task.id))) as Todo;
 
     expect(next.due_date).toBe('2027-12-31');
+  });
+
+  it('builds the next occurrence from the row as closed, not the copy a list was holding', async () => {
+    // The phone sat on Tasks while the website moved "Gym" to 6 pm and gave
+    // it a checklist; the tick then comes from the phone's old copy.
+    const stale = await repeatingTask({ due_time: '19:00:00', reminder_offset_min: 0 });
+    await api.updateTodo(stale.id, {
+      due_time: '18:00:00',
+      notes: 'Legs',
+      checklist: [{ id: 'a', text: 'Squats', done: true }],
+    });
+
+    const next = (await api.completeTask(stale)) as Todo;
+
+    expect(next.due_time).toBe('18:00:00');
+    expect(next.notes).toBe('Legs');
+    expect(next.checklist).toEqual([{ id: 'a', text: 'Squats', done: false }]);
+  });
+
+  it('a repeat turned on elsewhere brings its next one round, though the copy ticked says one-off', async () => {
+    const stale = await repeatingTask({ is_repeat: false });
+    await api.updateTodo(stale.id, { is_repeat: true });
+
+    const next = await api.completeTask(stale);
+
+    expect(next).not.toBeNull();
+    expect(openRows()).toHaveLength(1);
   });
 
   it('reopening leaves a same-named routine of another frequency alone', async () => {
@@ -343,7 +422,11 @@ describe('found in review', () => {
     await api.completeTask(daily);
     await api.reopenTask(daily.id);
 
-    expect(openRows().map((r) => r.id).sort()).toEqual([daily.id, weekly.id].sort());
+    expect(
+      openRows()
+        .map((r) => r.id)
+        .sort(),
+    ).toEqual([daily.id, weekly.id].sort());
   });
 
   it('dragging to another frequency re-settles the rule for the new unit', async () => {
@@ -364,10 +447,12 @@ describe('found in review', () => {
     });
   });
 
-  it('returns the newest history, oldest first, when there is more than a page of it', async () => {
-    // Supabase caps a response at 1000 rows; asking oldest-first dropped the
-    // newest, which are the ones a streak is made of.
+  it("returns all of a series' closed occurrences, oldest first, and no one else's", async () => {
+    // More than a page of it: the read used to stop at 1000 rows. The cap
+    // itself is tested in history.test.ts; this checks the filter and order.
     const root = await repeatingTask();
+    const other = await repeatingTask({ title: 'Something else' });
+    await api.completeTask(other);
     let last = '';
     for (let i = 0; i < 1003; i++) {
       const day = new Date(2023, 0, 1 + i);
@@ -384,8 +469,46 @@ describe('found in review', () => {
 
     const history = await api.listSeriesHistory([root.id]);
 
-    expect(history).toHaveLength(1000);
+    expect(history).toHaveLength(1003);
+    expect(history.every((row) => row.series_id === root.id)).toBe(true);
     expect(history[history.length - 1].due_date).toBe(last);
     expect((history[0].due_date ?? '') < (history[1].due_date ?? '')).toBe(true);
+  });
+});
+
+describe('Undo and then a quick re-tick (found in review)', () => {
+  const row = (id: string) => mockDb.rows().find((r) => r.id === id) as unknown as Todo;
+
+  it('a re-tick sent while the Undo is in flight waits for it, and the routine stays open once', async () => {
+    // Undo puts the row back at once, so it can be ticked again before
+    // reopenTask has finished. Without waiting, the re-tick's close and its
+    // new successor landed between reopenTask's writes, and its sweep for
+    // untouched occurrences deleted the new successor along with the old.
+    const task = await repeatingTask();
+    const first = (await api.completeTask(task)) as Todo;
+
+    // The Undo's search for untouched occurrences is slow to come back...
+    const release = mockDb.holdNext('todos', 'select');
+    const undo = api.reopenTask(task.id);
+    const retick = api.completeTask(task);
+    // ...and everything else that is free to run, runs.
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+    release();
+    const [, second] = await Promise.all([undo, retick]);
+
+    expect(second).not.toBeNull();
+    expect(row(task.id).is_done).toBe(true);
+    expect(openRows().map((r) => r.id)).toEqual([(second as Todo).id]);
+    expect(openRows().map((r) => r.id)).not.toContain(first.id);
+  });
+
+  it('a write that fails does not hold up the next one on the same task', async () => {
+    const task = await repeatingTask({ is_repeat: false });
+    mockDb.failNext('todos', 'update');
+
+    await expect(api.completeTask(task)).rejects.toThrow('network down');
+    await expect(api.completeTask(task)).resolves.toBeNull();
+
+    expect(row(task.id).is_done).toBe(true);
   });
 });

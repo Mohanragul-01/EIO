@@ -6,6 +6,10 @@
  * cannot overwrite a newer one, and optimistic writes that put back ONLY their
  * own row if the server says no - ticking happens in bursts, and restoring a
  * whole-list snapshot would undo the other ticks made meanwhile.
+ *
+ * `active` is whether the page is the one on show in the pager: it reloads
+ * then, re-reading the date, when it is swiped to, when the app comes back
+ * to the foreground, and when a write made elsewhere lands (useFreshPage).
  */
 import { useCallback, useMemo, useState } from 'react';
 
@@ -14,9 +18,11 @@ import { useLatestRun } from '../../core/useLatestRun';
 import { useStableCallback } from '../../core/useStableCallback';
 
 import * as api from './api';
+import { announceChange } from './changeSignal';
 import { groupBySeries, streakFor, type HistoryRow, type StreakStats } from './streaks';
 import { buildToday } from './today';
 import { seriesKey, type Outcome, type Todo } from './types';
+import { useFreshPage } from './useFreshPage';
 
 type State = {
   today: string;
@@ -44,47 +50,49 @@ export function closedCopy(todo: Todo, outcome: Outcome): Todo {
   return { ...todo, is_done: true, outcome, completed_at: new Date().toISOString() };
 }
 
-export function useToday() {
+export function useToday(active = true) {
   const [state, setState] = useState<State>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { begin, isMounted } = useLatestRun();
+  // This page's token: what it writes it has already put on screen, so its
+  // announcements reload the other pages and not this one.
+  const [source] = useState(() => ({}));
 
   /**
    * Fetch. There is no mount effect calling this: the page calls reload() from
    * useFocusEffect, which also runs when it mounts inside a focused screen, so
    * a second trigger here would only fetch everything twice.
    */
-  const load = useCallback(
-    async () => {
-      const isCurrent = begin();
+  const load = useCallback(async () => {
+    const isCurrent = begin();
+    try {
+      const today = todayISO();
+      const { open, closedToday, next } = await api.listToday(today);
+      // History is decoration: without it the list still works, so its
+      // failure costs the streak chips rather than the screen.
+      let history = new Map<string, HistoryRow[]>();
       try {
-        const today = todayISO();
-        const { open, closedToday, next } = await api.listToday(today);
-        // History is decoration: without it the list still works, so its
-        // failure costs the streak chips rather than the screen.
-        let history = new Map<string, HistoryRow[]>();
-        try {
-          history = groupBySeries(await api.listSeriesHistory(repeatingKeys([...open, ...closedToday])));
-        } catch {
-          // Keep the empty map.
-        }
-        if (isCurrent()) {
-          setState({ today, open, closedToday, next, history });
-          setError(null);
-        }
-      } catch (e) {
-        if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
-      } finally {
-        if (isCurrent()) {
-          setLoading(false);
-          setRefreshing(false);
-        }
+        history = groupBySeries(
+          await api.listSeriesHistory(repeatingKeys([...open, ...closedToday])),
+        );
+      } catch {
+        // Keep the empty map.
       }
-    },
-    [begin],
-  );
+      if (isCurrent()) {
+        setState({ today, open, closedToday, next, history });
+        setError(null);
+      }
+    } catch (e) {
+      if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
+    } finally {
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
+  }, [begin]);
 
   const sections = useMemo(
     () => buildToday(state.open, state.closedToday, state.today),
@@ -105,7 +113,9 @@ export function useToday() {
         closedToday: [closedCopy(todo, outcome), ...s.closedToday.filter((t) => t.id !== todo.id)],
       }));
       try {
-        return await api.completeTask(todo, outcome);
+        const next = await api.completeTask(todo, outcome);
+        announceChange(source);
+        return next;
       } catch (e) {
         if (isMounted()) {
           setState((s) => ({
@@ -118,7 +128,7 @@ export function useToday() {
         return false;
       }
     },
-    [isMounted],
+    [isMounted, source],
   );
 
   const complete = useCallback((todo: Todo) => close(todo, 'done'), [close]);
@@ -130,16 +140,19 @@ export function useToday() {
       setState((s) => ({ ...s, open: s.open.filter((t) => t.id !== todo.id) }));
       try {
         await api.wontDoTask(todo);
+        announceChange(source);
         return true;
       } catch (e) {
         if (isMounted()) {
-          setState((s) => (s.open.some((t) => t.id === todo.id) ? s : { ...s, open: [...s.open, todo] }));
+          setState((s) =>
+            s.open.some((t) => t.id === todo.id) ? s : { ...s, open: [...s.open, todo] },
+          );
           setError(e instanceof Error ? e.message : 'Could not update the task');
         }
         return false;
       }
     },
-    [isMounted],
+    [isMounted, source],
   );
 
   /**
@@ -156,6 +169,7 @@ export function useToday() {
       }));
       try {
         const { removed } = await api.reopenTask(todo.id);
+        announceChange(source);
         if (isMounted() && removed.length > 0) {
           setState((s) => ({ ...s, open: s.open.filter((t) => !removed.includes(t.id)) }));
         }
@@ -176,7 +190,7 @@ export function useToday() {
         return false;
       }
     },
-    [isMounted],
+    [isMounted, source],
   );
 
   /**
@@ -198,19 +212,22 @@ export function useToday() {
       }));
       try {
         await api.rescheduleTasks([...ids], dueDate);
+        announceChange(source);
         return true;
       } catch (e) {
         if (isMounted()) {
           setState((s) => ({
             ...s,
-            open: [...s.open.filter((t) => !ids.has(t.id)), ...tasks].filter((t) => inView(t, s.today)),
+            open: [...s.open.filter((t) => !ids.has(t.id)), ...tasks].filter((t) =>
+              inView(t, s.today),
+            ),
           }));
           setError(e instanceof Error ? e.message : 'Could not move the tasks');
         }
         return false;
       }
     },
-    [isMounted],
+    [isMounted, source],
   );
 
   const remove = useCallback(
@@ -222,6 +239,7 @@ export function useToday() {
       }));
       try {
         await api.deleteTodo(todo.id);
+        announceChange(source);
         return true;
       } catch (e) {
         if (isMounted()) {
@@ -235,14 +253,18 @@ export function useToday() {
         return false;
       }
     },
-    [isMounted],
+    [isMounted, source],
   );
 
   /** A repeating task's streak, from its series' history. */
   const streakOf = useCallback(
     (todo: Todo): StreakStats | null =>
       todo.is_repeat
-        ? streakFor(state.history.get(seriesKey(todo)) ?? [], todo.is_done ? null : todo, state.today)
+        ? streakFor(
+            state.history.get(seriesKey(todo)) ?? [],
+            todo.is_done ? null : todo,
+            state.today,
+          )
         : null,
     [state.history, state.today],
   );
@@ -252,6 +274,7 @@ export function useToday() {
     return load();
   });
   const reload = useStableCallback(() => load());
+  useFreshPage(active, reload, source);
 
   return {
     today: state.today,
