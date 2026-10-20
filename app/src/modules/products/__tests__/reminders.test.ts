@@ -8,7 +8,15 @@
  * waiting on the shelf silences the "time to reorder" nudge.
  */
 import { buildOutlooks } from '../outlook';
-import { planReminders, REMINDER_HOUR, reminderIdsFor } from '../reminders';
+import {
+  laterDate,
+  laterReminder,
+  planLater,
+  planReminders,
+  REMINDER_HOUR,
+  REORDER_CATEGORY,
+  reminderIdsFor,
+} from '../reminders';
 import { addDays, type Product, type ProductUse } from '../types';
 
 const TODAY = '2026-10-19';
@@ -73,12 +81,18 @@ describe('planReminders', () => {
     expect(plan[0].title).toBe('Time to reorder Whey');
     expect(plan[0].body).toBe('About 7 days left at your pace, empty around 17 Jan.');
     expect(plan[1].title).toBe('Whey is about empty');
-    // A tap opens the product (the app-wide router reads route/params).
-    expect(plan[0].data).toEqual({
-      productId: 'a',
-      route: 'ProductDetail',
-      params: { productId: 'a' },
-    });
+  });
+
+  it('puts Ordered and In 3 days on both, which the Products handler acts on', () => {
+    const p = product({ id: 'a' });
+    const plan = planReminders(
+      buildOutlooks([p], threeDays('a', '2026-10-10', 100), TODAY),
+      MORNING,
+    );
+    expect(plan.map((r) => r.category)).toEqual([REORDER_CATEGORY, REORDER_CATEGORY]);
+    // No route: the app-wide router would open the product for a button
+    // press too. The handler opens it for a tap instead.
+    expect(plan[0].data).toEqual({ productId: 'a', name: 'Whey' });
   });
 
   it("uses the product's own lead time", () => {
@@ -126,6 +140,13 @@ describe('planReminders', () => {
     );
     expect(plan.map((r) => r.id)).toEqual(['product-a-empty']);
     expect(plan[0].body).toBe('Your next one is ready to open.');
+    // Nothing to order, so no buttons; a tap opens the product.
+    expect(plan[0].category).toBeNull();
+    expect(plan[0].data).toEqual({
+      productId: 'a',
+      route: 'ProductDetail',
+      params: { productId: 'a' },
+    });
   });
 
   it('plans nothing for finished containers, spares, or containers without a rate', () => {
@@ -156,5 +177,64 @@ describe('planReminders', () => {
 describe('reminderIdsFor', () => {
   it('prefixes every id with the module key, so a resync can clear them all', () => {
     expect(reminderIdsFor('x')).toEqual({ reorder: 'product-x-reorder', empty: 'product-x-empty' });
+  });
+});
+
+describe('In 3 days', () => {
+  it('comes back at 09:00 on the third day, across a daylight-saving change', () => {
+    // Pressed on the evening of 29 Oct; New York falls back on 1 Nov.
+    const at = laterDate(new Date(2026, 9, 29, 21, 30, 0));
+    expect([at.getDate(), at.getMonth(), at.getHours(), at.getMinutes()]).toEqual([1, 10, 9, 0]);
+  });
+
+  it('is the reorder reminder again, under its id, with the same buttons', () => {
+    const at = at9(2026, 10, 22);
+    expect(laterReminder({ id: 'a', name: 'Whey' }, at)).toEqual({
+      id: 'product-a-reorder',
+      date: at,
+      title: 'Time to reorder Whey',
+      body: 'You asked to be reminded today. Ordered it? Tap Ordered.',
+      category: REORDER_CATEGORY,
+      data: { productId: 'a', name: 'Whey' },
+    });
+  });
+});
+
+describe('planLater', () => {
+  // The crossing has passed (90 g a day, 100 g left), so the plan has no
+  // reorder reminder of its own: a snooze is all that brings it back.
+  const outlooksWith = (...extra: Product[]) =>
+    buildOutlooks([product({ id: 'a' }), ...extra], threeDays('a', '2026-10-10', 900), TODAY);
+  const ahead = at9(2026, 10, 22).getTime();
+
+  it('puts back a snooze still ahead for a container still to reorder', () => {
+    const outlooks = outlooksWith();
+    const plan = planReminders(outlooks, MORNING);
+    expect(planLater(outlooks, { a: ahead }, plan, MORNING)).toEqual([
+      laterReminder({ id: 'a', name: 'Whey' }, new Date(ahead)),
+    ]);
+  });
+
+  it('drops one that has passed, or whose product is gone, finished or has a spare', () => {
+    const passed = at9(2026, 10, 18).getTime();
+    expect(planLater(outlooksWith(), { a: passed }, [], MORNING)).toEqual([]);
+    expect(planLater(outlooksWith(), { gone: ahead }, [], MORNING)).toEqual([]);
+
+    const spare = product({ id: 's', opened_on: null });
+    expect(planLater(outlooksWith(spare), { a: ahead }, [], MORNING)).toEqual([]);
+
+    const done = buildOutlooks([product({ id: 'a', finished_on: TODAY })], [], TODAY);
+    expect(planLater(done, { a: ahead }, [], MORNING)).toEqual([]);
+  });
+
+  it("gives way to the plan's own reorder reminder", () => {
+    // A slower pace moved the crossing ahead again: that reminder stands.
+    const outlooks = buildOutlooks(
+      [product({ id: 'a' })],
+      threeDays('a', '2026-10-10', 100),
+      TODAY,
+    );
+    const plan = planReminders(outlooks, MORNING);
+    expect(planLater(outlooks, { a: ahead }, plan, MORNING)).toEqual([]);
   });
 });

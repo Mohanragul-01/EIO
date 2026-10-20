@@ -15,6 +15,7 @@ import {
   lifecycleOf,
   lifespanDays,
   nameKey,
+  orderedSpare,
   previousContainer,
   previousContainers,
   priorEstimate,
@@ -275,5 +276,30 @@ describe('restockDraft', () => {
 
   it('leaves a spare unopened', () => {
     expect(restockDraft(from, '2026-02-12', true).opened_on).toBeNull();
+  });
+});
+
+describe('orderedSpare', () => {
+  // "Ordered" on a reorder reminder puts the next one on the shelf, which is
+  // what silences the reminder and clears "to reorder" everywhere.
+  const open = product({ id: 'open' });
+
+  it('is a spare copied from the open container', () => {
+    expect(orderedSpare(open, [open], '2026-02-12')).toEqual(
+      restockDraft(open, '2026-02-12', true),
+    );
+  });
+
+  it('adds nothing when a spare already waits', () => {
+    const spare = product({ id: 'spare', opened_on: null });
+    expect(orderedSpare(open, [open, spare], '2026-02-12')).toBeNull();
+  });
+
+  it('adds nothing for a container that is finished, unopened or gone', () => {
+    const done = product({ id: 'done', finished_on: '2026-02-01' });
+    const waiting = product({ id: 'waiting', opened_on: null });
+    expect(orderedSpare(done, [done], '2026-02-12')).toBeNull();
+    expect(orderedSpare(waiting, [waiting], '2026-02-12')).toBeNull();
+    expect(orderedSpare(null, [], '2026-02-12')).toBeNull();
   });
 });

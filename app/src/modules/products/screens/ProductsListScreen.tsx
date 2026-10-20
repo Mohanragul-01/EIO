@@ -48,6 +48,10 @@ import {
   lifespanDays,
   type Lifecycle,
 } from '../containers';
+// Registers what a reorder reminder's Ordered / In 3 days / tap does. Imported
+// here because the navigator registers this screen at launch; see the file's
+// header.
+import '../notificationRoutes';
 import {
   chipsFor,
   loggedAllMessage,
