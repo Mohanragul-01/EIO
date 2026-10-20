@@ -35,7 +35,7 @@ import {
 import * as api from '@app/modules/subscriptions/api';
 import { cycleLabel, cycleOf, cycleSuffix } from '@app/modules/subscriptions/cycles';
 import { formatAmount } from '@app/modules/subscriptions/currency';
-import { priceParts, shortDate } from '@app/modules/subscriptions/format';
+import { priceParts, shortDate, stripDayLabel } from '@app/modules/subscriptions/format';
 import {
   PERIOD_LABEL,
   PERIODS,
@@ -428,11 +428,7 @@ export function SubscriptionsPage() {
                         className={`sub-day${index === 0 ? ' today' : ''}${selected ? ' selected' : ''}`}
                         onClick={() => setDay(selected ? null : d.iso)}
                         aria-pressed={selected}
-                        aria-label={`${index === 0 ? 'Today, ' : ''}${date.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}, ${
-                          d.charges.length === 0
-                            ? 'nothing due'
-                            : `${d.charges.length} ${d.charges.length === 1 ? 'renewal' : 'renewals'}${d.totalMinor > 0 ? `, ${formatMoney(d.totalMinor, { compact: true })}` : ''}`
-                        }`}
+                        aria-label={stripDayLabel(d, index === 0)}
                       >
                         <span className="sub-day-weekday">{date.toLocaleDateString(undefined, { weekday: 'short' })}</span>
                         <span className="sub-day-number">{date.getDate()}</span>

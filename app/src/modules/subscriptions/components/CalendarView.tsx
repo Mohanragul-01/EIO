@@ -17,7 +17,7 @@ import { GlassCard, MonthCalendar, type CalendarDay } from '../../../core/compon
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 import { monthBounds } from '../../../core/date';
 import { formatMoney } from '../../../core/money';
-import { radius, spacing } from '../../../core/theme';
+import { fonts, radius, spacing } from '../../../core/theme';
 import { shortDate } from '../format';
 import type { Subscription } from '../types';
 import { monthCharges, type Charge } from '../upcoming';
@@ -83,10 +83,12 @@ export function CalendarView({
             day.isSelected && styles.selected,
           ]}
         >
+          {/* Today is bold and underlined too: the ring alone is colour alone. */}
           <Text
             style={[
               styles.numberText,
               !day.inMonth && styles.outside,
+              day.isToday && styles.todayText,
               day.isSelected && styles.selectedText,
             ]}
           >
@@ -218,6 +220,10 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   },
   outside: {
     color: colors.textFaint,
+  },
+  todayText: {
+    fontFamily: fonts.bold,
+    textDecorationLine: 'underline',
   },
   selectedText: {
     color: colors.onPrimary,

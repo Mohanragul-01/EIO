@@ -14,8 +14,8 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { makeStyles } from '../../../core/ThemeContext';
 import { fromISODate } from '../../../core/date';
-import { formatMoney } from '../../../core/money';
 import { radius, spacing } from '../../../core/theme';
+import { stripDayLabel } from '../format';
 import type { StripDay } from '../upcoming';
 import { BrandTile } from './BrandTile';
 
@@ -48,14 +48,9 @@ export function UpcomingStrip({
     >
       {days.map((day, index) => {
         const date = fromISODate(day.iso);
+        const isToday = index === 0;
         const isSelected = selected === day.iso;
         const count = day.charges.length;
-        const spoken =
-          date.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }) +
-          (count === 0
-            ? ', nothing due'
-            : `, ${count} ${count === 1 ? 'renewal' : 'renewals'}` +
-              (day.totalMinor > 0 ? `, ${formatMoney(day.totalMinor, { compact: true })}` : ''));
 
         return (
           <Pressable
@@ -63,16 +58,24 @@ export function UpcomingStrip({
             onPress={() => onSelect(isSelected ? null : day.iso)}
             style={({ pressed }) => [
               styles.day,
-              index === 0 && styles.today,
+              isToday && styles.today,
               isSelected && styles.selected,
               pressed && styles.pressed,
             ]}
             accessibilityRole="button"
-            accessibilityLabel={(index === 0 ? 'Today, ' : '') + spoken}
+            accessibilityLabel={stripDayLabel(day, isToday)}
             accessibilityState={{ selected: isSelected }}
           >
-            <Text style={[styles.weekday, isSelected && styles.selectedText]}>
-              {date.toLocaleDateString(undefined, { weekday: 'narrow' })}
+            {/* Today says so in words: an outline alone is colour alone. */}
+            <Text
+              style={[
+                styles.weekday,
+                isToday && styles.todayWord,
+                isSelected && styles.selectedText,
+              ]}
+              numberOfLines={1}
+            >
+              {isToday ? 'Today' : date.toLocaleDateString(undefined, { weekday: 'narrow' })}
             </Text>
             <Text style={[styles.number, isSelected && styles.selectedText]}>
               {date.getDate()}
@@ -126,6 +129,11 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   weekday: {
     ...typography.overline,
     fontSize: 10,
+  },
+  todayWord: {
+    // "TODAY" in a 52dp column: a little less tracking than one letter needs.
+    letterSpacing: 0.4,
+    color: colors.text,
   },
   number: {
     ...typography.title,
