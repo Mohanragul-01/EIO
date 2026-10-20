@@ -12,7 +12,7 @@ import { categoriesFor, categoryDef } from '@app/core/categories';
 import { todayISO } from '@app/core/date';
 import { formatMoney, minorToAmountString, parseAmountToMinor } from '@app/core/money';
 import { activeAccounts } from '@app/modules/finance/accounts';
-import * as api from '@app/modules/finance/api';
+import { saveEntry } from '@app/modules/finance/saveEntry';
 import { categoryForNote, lastTransfer, lastUsed, noteSuggestions, orderByUse } from '@app/modules/finance/defaults';
 import type { ListItem } from '@app/modules/finance/summary';
 import type { Account, EntryKind, Transaction, TransactionKind } from '@app/modules/finance/types';
@@ -176,37 +176,38 @@ export function EntryDialog({
     setError(null);
     setSaving(true);
     try {
-      if (kind === 'transfer') {
-        const input = { amount_minor: minor, from_account_id: fromId, to_account_id: toId, note: note.trim(), date };
-        if (target.mode === 'edit' && target.item.type === 'transfer') {
-          await api.updateTransfer(target.item.groupId, input, target.item.rows);
-        } else {
-          await api.createTransfer(input);
-        }
-      } else {
-        const input = {
-          amount_minor: minor,
-          kind: entryKind,
-          category,
-          note: note.trim(),
-          date,
-          account_id: accountId || null,
-        };
-        if (target.mode === 'edit' && target.item.type === 'entry') await api.updateTransaction(target.item.tx.id, input);
-        else await api.createTransaction(input);
-        if (pin && !isEditing) {
-          await api.createQuickAdd({
-            note: note.trim() || categoryDef(category).label,
-            amount_minor: minor,
-            kind: entryKind,
-            category,
-            account_id: accountId || null,
-          });
-        }
-      }
+      // The phone's save, shared: it throws only when the entry itself did not
+      // save. A pin that fails after the entry saved comes back as pinError,
+      // so the dialog moves on rather than inviting a second, duplicate Save.
+      const { pinError } = await saveEntry(
+        kind === 'transfer'
+          ? {
+              type: 'transfer',
+              input: { amount_minor: minor, from_account_id: fromId, to_account_id: toId, note: note.trim(), date },
+              groupId: target.mode === 'edit' && target.item.type === 'transfer' ? target.item.groupId : undefined,
+              existing: target.mode === 'edit' && target.item.type === 'transfer' ? target.item.rows : null,
+            }
+          : {
+              type: 'entry',
+              input: { amount_minor: minor, kind: entryKind, category, note: note.trim(), date, account_id: accountId || null },
+              id: target.mode === 'edit' && target.item.type === 'entry' ? target.item.tx.id : undefined,
+              pin:
+                pin && !isEditing
+                  ? {
+                      note: note.trim() || categoryDef(category).label,
+                      amount_minor: minor,
+                      kind: entryKind,
+                      category,
+                      account_id: accountId || null,
+                    }
+                  : null,
+            },
+      );
 
       const label = kind === 'transfer' ? 'transfer' : categoryDef(category).label;
-      const message = `Saved ${formatMoney(minor, { compact: true })} · ${label}`;
+      const message =
+        `Saved ${formatMoney(minor, { compact: true })} · ${label}` +
+        (pinError ? ', but it could not be pinned' : '');
       onSaved(message, stayOpen);
       if (stayOpen) {
         setSaved(message);
