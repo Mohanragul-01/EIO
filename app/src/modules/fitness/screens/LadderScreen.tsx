@@ -23,8 +23,11 @@ import * as api from '../api';
 import { BlockMenu } from '../components/SessionSheets';
 import { ProgressRing } from '../components/ProgressRing';
 import type { SetFact } from '../load';
+import { LadderProgress } from '../components/LadderProgress';
+import { ladderPositions, stepSeries, type RungBest } from '../ladderHistory';
 import { goalLabel, goalProgress, neighbours, type Rung } from '../progression';
-import { useLadders } from '../useLadders';
+import { useLadders, useRungBests } from '../useLadders';
+import type { ProgressionStep } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Ladder'>;
 type Route = RouteProp<RootStackParamList, 'Ladder'>;
@@ -49,6 +52,15 @@ function bestAttempt(rung: Rung, sessions: SetFact[][]): string | null {
   return best.map((v) => (timed ? `${v}s` : String(v))).join(' · ');
 }
 
+/** A rung's best ever, in words: "Most reps 12 · 3 Oct", "Longest hold 45s · 3 Oct". */
+function bestEver(best: RungBest | null | undefined): string | null {
+  if (!best) return null;
+  const value = best.kind === 'hold' ? `Longest hold ${best.value}s` : `Most reps ${best.value}`;
+  return `${value} · ${formatEventDate(best.date)}`;
+}
+
+const NO_STEPS: ProgressionStep[] = [];
+
 export function LadderScreen() {
   const styles = useStyles();
   const { colors } = useTheme();
@@ -68,6 +80,14 @@ export function LadderScreen() {
 
   const card = cards.find((c) => c.ladder.progression.id === progressionId);
   const progression = card?.ladder.progression;
+  const { bests, reload: reloadBests } = useRungBests(card?.ladder.steps ?? NO_STEPS);
+
+  // Back from a session on this ladder: its bests may have moved.
+  useFocusEffect(
+    useCallback(() => {
+      reloadBests();
+    }, [reloadBests]),
+  );
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -95,6 +115,13 @@ export function LadderScreen() {
       [...(card?.ladder.moves ?? [])].sort(
         (a, b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at),
       ),
+    [card],
+  );
+
+  // Where you stood on the ladder each day you moved, run on to today.
+  const positions = useMemo(
+    () =>
+      card ? stepSeries(ladderPositions(card.ladder.steps, card.ladder.moves), todayISO()) : [],
     [card],
   );
 
@@ -225,6 +252,7 @@ export function LadderScreen() {
           const name = exerciseName(rung.step.exercise_id);
           const sessions = recent[rung.step.exercise_id] ?? [];
           const best = bestAttempt(rung, sessions);
+          const ever = bestEver(bests[rung.step.id]);
           const current = rung.state === 'current';
           const locked = rung.state === 'locked';
           return (
@@ -240,7 +268,7 @@ export function LadderScreen() {
                     : current
                       ? `Current. Goal ${goalLabel(rung.step)}${best ? `. Best ${best}` : ''}`
                       : 'Locked'
-                }`}
+                }${ever ? `. ${ever}` : ''}`}
                 style={[styles.rung, current && styles.rungCurrent, locked && styles.rungLocked]}
               >
                 <View style={[styles.number, rung.state === 'mastered' && styles.numberMastered]}>
@@ -259,6 +287,7 @@ export function LadderScreen() {
                         : 'Behind you'
                       : `Goal ${goalLabel(rung.step)}${current && best ? ` · Best ${best}` : ''}`}
                   </Text>
+                  {ever ? <Text style={styles.rungDetail}>{ever}</Text> : null}
                   {rung.step.cue ? <Text style={styles.cue}>{rung.step.cue}</Text> : null}
                   {current ? (
                     <>
@@ -301,6 +330,15 @@ export function LadderScreen() {
             </FadeInView>
           );
         })}
+
+        {positions.length > 1 ? (
+          <FadeInView delay={100}>
+            <GlassCard style={styles.history}>
+              <Text style={styles.kicker}>Progress</Text>
+              <LadderProgress points={positions} total={total} name={progression.name} />
+            </GlassCard>
+          </FadeInView>
+        ) : null}
 
         {moves.length > 0 ? (
           <FadeInView delay={120}>

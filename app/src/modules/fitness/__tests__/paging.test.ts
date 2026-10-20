@@ -65,6 +65,12 @@ it('returns the day of every session, for the streak and the session count', asy
   await expect(api.listSessionDays()).resolves.toHaveLength(N);
 });
 
+it("returns every set of a ladder's rungs, for each rung's best ever", async () => {
+  const sets = await api.listRungSets(['e1', 'e2']);
+  expect(sets).toHaveLength(N);
+  expect(sets[0].date).toBe('2026-10-01');
+});
+
 it('numbers a workout past the thousandth', async () => {
   await expect(api.sessionOrdinal('w-2000')).resolves.toBe(2001);
 });

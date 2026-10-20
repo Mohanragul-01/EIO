@@ -8,7 +8,7 @@
  * moves; nothing here is stored.
  */
 import { goalProgress } from './progression';
-import type { SetFact } from './load';
+import { isWorking, netLoad, type SetFact } from './load';
 import type { Progression, ProgressionMove, ProgressionStep } from './types';
 
 const byPosition = (a: ProgressionStep, b: ProgressionStep) => a.position - b.position;
@@ -33,6 +33,48 @@ export function ladderPositions(
     const last = out[out.length - 1];
     if (last?.date === move.date) last.number = number;
     else out.push({ date: move.date, number });
+  }
+  return out;
+}
+
+/**
+ * The step chart's points: the positions, carried on to today so the line
+ * shows how long you have been on the rung you are on now.
+ */
+export function stepSeries(
+  positions: { date: string; number: number }[],
+  today: string,
+): { date: string; number: number }[] {
+  const last = positions[positions.length - 1];
+  return last && last.date < today
+    ? [...positions, { date: today, number: last.number }]
+    : positions;
+}
+
+export type RungBest = { kind: 'reps' | 'hold'; value: number; date: string };
+
+/**
+ * Each rung's best ever, with the day it was set: the most reps, or for a
+ * held rung the longest hold. Only working sets without assistance count -
+ * a band-assisted set is not the rung itself - though added weight does.
+ * Null for a rung never trained.
+ */
+export function rungBests(
+  steps: ProgressionStep[],
+  sets: (SetFact & { date: string })[],
+): Record<string, RungBest | null> {
+  const out: Record<string, RungBest | null> = {};
+  for (const step of steps) {
+    const hold = step.goal_seconds !== null;
+    let best: RungBest | null = null;
+    for (const set of sets) {
+      if (set.exercise_id !== step.exercise_id || !isWorking(set) || netLoad(set) < 0) continue;
+      const value = (hold ? set.duration_seconds : set.reps) ?? 0;
+      if (value > 0 && (!best || value > best.value)) {
+        best = { kind: hold ? 'hold' : 'reps', value, date: set.date };
+      }
+    }
+    out[step.id] = best;
   }
   return out;
 }

@@ -1287,6 +1287,36 @@ export async function recentSessionSets(
   return out;
 }
 
+/**
+ * Every set of the given exercises (a ladder's rungs) with its session's day,
+ * page by page: each rung's best ever is read from all of them, and a ladder
+ * trained for a year passes the server's row cap.
+ */
+export async function listRungSets(exerciseIds: string[]): Promise<(SetFact & { date: string })[]> {
+  if (exerciseIds.length === 0) return [];
+  const ownerId = await getOwnerId();
+  const data = await collectPages(async (from, to) => {
+    const page = await supabase
+      .from('session_sets')
+      .select(FACT_COLUMNS + ', workout_sessions!inner(date)', { count: 'exact' })
+      .eq('user_id', ownerId)
+      .in('exercise_id', exerciseIds)
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (page.error) throw new Error(page.error.message);
+    return { rows: page.data ?? [], total: page.count };
+  });
+
+  type SessionRef = { date: string };
+  type Row = Parameters<typeof toSetFact>[0] & { workout_sessions: SessionRef | SessionRef[] };
+  return ((data ?? []) as unknown as Row[]).flatMap((row) => {
+    const session = Array.isArray(row.workout_sessions)
+      ? row.workout_sessions[0]
+      : row.workout_sessions;
+    return session?.date ? [{ ...toSetFact(row), date: session.date }] : [];
+  });
+}
+
 /** Sessions with a date in [start, end], for the month calendar. */
 export async function listSessionsBetween(start: string, end: string): Promise<WorkoutSession[]> {
   const ownerId = await getOwnerId();
