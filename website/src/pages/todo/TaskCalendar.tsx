@@ -16,9 +16,9 @@ import { monthBounds } from '@app/core/date';
 import * as api from '@app/modules/todo/api';
 import { projectedDates, ruleOf, WEEKDAY_SHORT, weekdayOf } from '@app/modules/todo/recurrence';
 import { compareForDay, formatTime } from '@app/modules/todo/today';
-import { PRIORITY_LABEL, type Todo } from '@app/modules/todo/types';
+import { outcomeOf, PRIORITY_LABEL, type Outcome, type Todo } from '@app/modules/todo/types';
 
-import { Icon } from '../../components/Icon';
+import { Icon, type IconName } from '../../components/Icon';
 import { MonthCalendar, type CalendarDay } from '../../components/MonthCalendar';
 import { ErrorBanner } from '../../components/ui';
 import { useAsync } from '../../lib/useAsync';
@@ -30,6 +30,14 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 /** How many lines a day cell shows before "+N more". */
 const SHOWN = 3;
+
+/** How a closed occurrence reads, as on the board: a skip is not a completion. */
+const CLOSED_AS: Record<Outcome, { icon: IconName; label: string }> = {
+  done: { icon: 'check', label: 'Done' },
+  skipped: { icon: 'skip', label: 'Skipped' },
+  wont_do: { icon: 'close', label: "Won't do" },
+};
+const closedAs = (todo: Todo) => CLOSED_AS[outcomeOf(todo) ?? 'done'];
 
 export function TaskCalendar({
   open,
@@ -99,7 +107,7 @@ export function TaskCalendar({
         {entries.slice(0, SHOWN).map((entry, i) => (
           <span key={`${entry.todo.id}-${entry.kind}-${i}`} className={`task-cal-entry ${entry.kind}`}>
             {entry.kind === 'closed' ? (
-              <Icon name="check" size={10} />
+              <Icon name={closedAs(entry.todo).icon} size={10} />
             ) : entry.kind === 'projected' ? (
               <Icon name="repeat" size={10} />
             ) : (
@@ -119,11 +127,17 @@ export function TaskCalendar({
     const entries = byDay.get(day.iso) ?? [];
     if (entries.length === 0) return null;
     const due = entries.filter((e) => e.kind === 'open').length;
-    const done = entries.filter((e) => e.kind === 'closed').length;
+    const closedAsCount = (outcome: Outcome) =>
+      entries.filter((e) => e.kind === 'closed' && outcomeOf(e.todo) === outcome).length;
+    const done = closedAsCount('done');
+    const skipped = closedAsCount('skipped');
+    const wontDo = closedAsCount('wont_do');
     const repeats = entries.filter((e) => e.kind === 'projected').length;
     return [
       due ? `${due} due` : null,
       done ? `${done} done` : null,
+      skipped ? `${skipped} skipped` : null,
+      wontDo ? `${wontDo} won't do` : null,
       repeats ? `${repeats} repeating` : null,
     ]
       .filter(Boolean)
@@ -175,7 +189,9 @@ export function TaskCalendar({
                       entry.kind === 'closed' ? `Reopen ${entry.todo.title}` : `Complete ${entry.todo.title}`
                     }
                   >
-                    {entry.kind === 'closed' ? <Icon name="check" size={11} strokeWidth={2.5} /> : null}
+                    {entry.kind === 'closed' ? (
+                      <Icon name={closedAs(entry.todo).icon} size={11} strokeWidth={2.5} />
+                    ) : null}
                   </button>
                 )}
                 <button
@@ -191,7 +207,9 @@ export function TaskCalendar({
                     {[
                       entry.todo.due_time ? formatTime(entry.todo.due_time) : null,
                       entry.kind === 'projected' ? 'Repeats here' : null,
-                      entry.kind === 'closed' ? 'Done' : `${PRIORITY_LABEL[entry.todo.priority]} priority`,
+                      entry.kind === 'closed'
+                        ? closedAs(entry.todo).label
+                        : `${PRIORITY_LABEL[entry.todo.priority]} priority`,
                     ]
                       .filter(Boolean)
                       .join(' · ')}
