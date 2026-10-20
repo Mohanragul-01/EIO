@@ -10,6 +10,7 @@ import { collectPages } from '../../core/paging';
 import { getOwnerId } from '../../core/session';
 import { supabase } from '../../core/supabase';
 import { toSetFact, type SetFact } from './load';
+import { routineSlotsFromSession } from './summary';
 import {
   DEFAULT_EXERCISES,
   type Band,
@@ -1437,30 +1438,8 @@ export async function saveSessionAsRoutine(sessionId: string, name: string): Pro
     listSessionExercises(sessionId),
     listSessionSets(sessionId),
   ]);
-  const order = [...blocks].sort((a, b) => a.position - b.position);
-  const ids = order.map((b) => b.exercise_id);
-  for (const s of [...sets].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
-    if (!ids.includes(s.exercise_id)) ids.push(s.exercise_id);
-  }
-
-  const slots: RoutineSlotInput[] = ids.map((exerciseId) => {
-    const block = order.find((b) => b.exercise_id === exerciseId);
-    const work = sets.filter(
-      (s) => s.exercise_id === exerciseId && (s.set_type ?? 'normal') !== 'warmup',
-    );
-    const reps = work.flatMap((s) => (s.reps && s.reps > 0 ? [s.reps] : []));
-    const seconds = work.flatMap((s) => (s.duration_seconds ? [s.duration_seconds] : []));
-    return {
-      exercise_id: exerciseId,
-      target_sets: work.length > 0 ? work.length : null,
-      target_reps_min: reps.length ? Math.min(...reps) : null,
-      target_reps: reps.length ? Math.max(...reps) : null,
-      target_seconds_min: seconds.length ? Math.min(...seconds) : null,
-      target_seconds_max: seconds.length ? Math.max(...seconds) : null,
-      rest_seconds: block?.rest_seconds ?? null,
-      pair_group: block?.superset_group ?? null,
-    };
-  });
+  // One-sided sets count in pairs, as the routine's target_sets means.
+  const slots: RoutineSlotInput[] = routineSlotsFromSession(blocks, sets);
   return saveRoutine({ name, mode: source.mode }, slots);
 }
 
@@ -1527,7 +1506,7 @@ export async function listSetDaysBetween(
   };
 
   const out: { session_id: string; date: string; set_type: SetType | null }[] = [];
-  for (let from = 0; ; ) {
+  for (let from = 0; ;) {
     const { data, error } = await supabase
       .from('session_sets')
       .select('id, session_id, set_type, workout_sessions!inner(date)')

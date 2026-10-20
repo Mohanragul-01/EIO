@@ -8,7 +8,14 @@
 import { toISODate } from '../../core/date';
 import { formatSetShort, isWorking, workingVolume, type SetFact } from './load';
 import type { RecordHit } from './records';
-import { estimatedOneRepMax, type Exercise } from './types';
+import {
+  estimatedOneRepMax,
+  type Exercise,
+  type SessionExercise,
+  type SessionSet,
+  type SetType,
+  type Side,
+} from './types';
 
 type ExerciseShape = Pick<Exercise, 'load_mode' | 'tracking_type' | 'bodyweight_factor' | 'name'>;
 
@@ -239,6 +246,88 @@ export function routineDeviation(
         : [];
     }),
   };
+}
+
+/**
+ * How many working sets were done, counting a one-sided pair - a left and a
+ * right - as ONE set, which is what a routine's target_sets means for a
+ * one-sided exercise. Counting sides instead read three pairs as "6 sets
+ * instead of 3", and Update or Save as a routine then doubled the target.
+ */
+export function workingSetCount(sets: { set_type?: SetType | null; side?: Side | null }[]): number {
+  const work = sets.filter((s) => (s.set_type ?? 'normal') !== 'warmup');
+  const left = work.filter((s) => s.side === 'left').length;
+  const right = work.filter((s) => s.side === 'right').length;
+  return work.length - left - right + Math.max(left, right);
+}
+
+/**
+ * The finish screen's "Update routine?": how the session strayed from its
+ * routine, with ladder slots resolved to the rung trained and one-sided sets
+ * counted in pairs. Null while the routine's slots are unknown - not loaded
+ * yet, or the read failed - because comparing with no slots calls every
+ * exercise "added", and Update would then duplicate the whole routine.
+ */
+export function sessionDeviation(
+  slots: Slot[] | null,
+  ladders: LadderShape[],
+  blocks: { exerciseId: string; sets: { set_type?: SetType | null; side?: Side | null }[] }[],
+): Deviation | null {
+  if (slots === null) return null;
+  const done = blocks.map((b) => ({
+    exerciseId: b.exerciseId,
+    workingSets: workingSetCount(b.sets),
+  }));
+  const trained = done.filter((b) => b.workingSets > 0).map((b) => b.exerciseId);
+  return routineDeviation(resolveRoutineSlots(slots, ladders, trained), done);
+}
+
+/**
+ * A routine's slots made from a session: its exercises in block order (then
+ * any v2 logged without a block, in logged order), each with the working sets
+ * done - one-sided pairs counted once - the range of reps or seconds reached,
+ * its rest and its superset letter.
+ */
+export function routineSlotsFromSession(
+  blocks: Pick<SessionExercise, 'exercise_id' | 'position' | 'rest_seconds' | 'superset_group'>[],
+  sets: (Pick<SessionSet, 'exercise_id' | 'reps' | 'duration_seconds' | 'created_at'> & {
+    set_type?: SetType | null;
+    side?: Side | null;
+  })[],
+): {
+  exercise_id: string;
+  target_sets: number | null;
+  target_reps_min: number | null;
+  target_reps: number | null;
+  target_seconds_min: number | null;
+  target_seconds_max: number | null;
+  rest_seconds: number | null;
+  pair_group: string | null;
+}[] {
+  const order = [...blocks].sort((a, b) => a.position - b.position);
+  const ids = order.map((b) => b.exercise_id);
+  for (const set of [...sets].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
+    if (!ids.includes(set.exercise_id)) ids.push(set.exercise_id);
+  }
+  return ids.map((exerciseId) => {
+    const block = order.find((b) => b.exercise_id === exerciseId);
+    const work = sets.filter(
+      (s) => s.exercise_id === exerciseId && (s.set_type ?? 'normal') !== 'warmup',
+    );
+    const reps = work.flatMap((s) => (s.reps && s.reps > 0 ? [s.reps] : []));
+    const seconds = work.flatMap((s) => (s.duration_seconds ? [s.duration_seconds] : []));
+    const count = workingSetCount(work);
+    return {
+      exercise_id: exerciseId,
+      target_sets: count > 0 ? count : null,
+      target_reps_min: reps.length ? Math.min(...reps) : null,
+      target_reps: reps.length ? Math.max(...reps) : null,
+      target_seconds_min: seconds.length ? Math.min(...seconds) : null,
+      target_seconds_max: seconds.length ? Math.max(...seconds) : null,
+      rest_seconds: block?.rest_seconds ?? null,
+      pair_group: block?.superset_group ?? null,
+    };
+  });
 }
 
 /** The deviation in plain sentences, additions first. Empty when nothing changed. */

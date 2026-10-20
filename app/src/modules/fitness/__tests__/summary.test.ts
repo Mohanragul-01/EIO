@@ -8,8 +8,11 @@ import {
   describeDeviation,
   resolveRoutineSlots,
   routineDeviation,
+  routineSlotsFromSession,
   sessionClockEnd,
+  sessionDeviation,
   sessionSummary,
+  workingSetCount,
 } from '../summary';
 
 const bench = {
@@ -267,6 +270,54 @@ describe('sessionClockEnd', () => {
         endedAt: null,
         now: at(12),
       }),
+    ).toBeNull();
+  });
+});
+
+// A one-sided set is a pair: three lefts and three rights are three sets,
+// in the summary, in "Update routine" and in "Save as a routine".
+describe('counting one-sided sets in pairs', () => {
+  const sided = (side: 'left' | 'right' | null, type: 'normal' | 'warmup' = 'normal') => ({
+    set_type: type,
+    side,
+  });
+
+  it('counts working sets, a left and a right as one', () => {
+    expect(workingSetCount([sided('left'), sided('right'), sided('left'), sided('right')])).toBe(2);
+    expect(workingSetCount([sided('left'), sided('right'), sided('left')])).toBe(2);
+    expect(workingSetCount([sided(null), sided(null), sided(null, 'warmup')])).toBe(2);
+  });
+
+  it('three pairs against a routine of 3 is no change', () => {
+    const pairs = [1, 2, 3].flatMap(() => [sided('left'), sided('right')]);
+    const dev = sessionDeviation(
+      [{ exercise_id: 'bss', progression_id: null, target_sets: 3 }],
+      [],
+      [{ exerciseId: 'bss', sets: pairs }],
+    );
+    expect(dev).toEqual({ added: [], skipped: [], setCounts: [] });
+  });
+
+  it('a routine made from a session sets one-sided targets in pairs', () => {
+    const sets = [1, 2, 3].flatMap((n) => [
+      { ...s('bss', { reps: 8 + n }), side: 'left' as const },
+      { ...s('bss', { reps: 8 + n }), side: 'right' as const },
+    ]);
+    const [slot] = routineSlotsFromSession([], sets);
+    expect(slot).toMatchObject({ exercise_id: 'bss', target_sets: 3, target_reps_min: 9 });
+  });
+});
+
+// I4: until the routine's slots have loaded (or if that read failed) there is
+// nothing to compare with, so nothing to offer - not every exercise as "added".
+describe('sessionDeviation before the routine has loaded', () => {
+  it('is null, so no update is offered', () => {
+    expect(
+      sessionDeviation(
+        null,
+        [],
+        [{ exerciseId: 'bench', sets: [{ set_type: 'normal', side: null }] }],
+      ),
     ).toBeNull();
   });
 });
