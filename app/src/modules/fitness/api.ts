@@ -340,6 +340,27 @@ export async function listSessions(limit = 60): Promise<WorkoutSession[]> {
   return data ?? [];
 }
 
+/**
+ * The day and mode of EVERY session, page by page, for what counts them all:
+ * the weekly streak, rest days and "N sessions". listSessions above is the
+ * recent page the history shows, and a streak counted from it could never
+ * pass the weeks those 60 sessions cover.
+ */
+export async function listSessionDays(): Promise<Pick<WorkoutSession, 'id' | 'date' | 'mode'>[]> {
+  const ownerId = await getOwnerId();
+  return collectPages(async (from, to) => {
+    const page = await supabase
+      .from('workout_sessions')
+      .select('id, date, mode', { count: 'exact' })
+      .eq('user_id', ownerId)
+      .order('date', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (page.error) throw new Error(page.error.message);
+    return { rows: page.data ?? [], total: page.count };
+  });
+}
+
 export async function createSession(input: {
   date: string;
   routine_id: string | null;
