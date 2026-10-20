@@ -126,7 +126,9 @@ export function FilterSheet({
         {query ? (
           <Pressable
             onPress={() => setQuery('')}
-            hitSlop={10}
+            // 48 wide and the field's 40 tall, plus 4 above and below: 48dp.
+            hitSlop={{ top: 4, bottom: 4 }}
+            style={styles.searchClear}
             accessibilityRole="button"
             accessibilityLabel="Clear the category search"
           >
@@ -232,6 +234,14 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     marginTop: spacing.sm,
   },
   searchInput: { flex: 1, ...typography.body, fontSize: 14, color: colors.text, padding: 0 },
+  // Pulled into the field's padding so the icon sits at its edge.
+  searchClear: {
+    width: 48,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: -spacing.md,
+  },
 
   // Shorter since Want joined the sheet, so the whole sheet still fits a small
   // phone without the controls above scrolling away.

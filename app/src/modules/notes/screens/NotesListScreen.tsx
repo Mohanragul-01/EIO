@@ -762,7 +762,7 @@ function SearchBar({ value, onChange }: { value: string; onChange: (v: string) =
       {value.length > 0 ? (
         <Pressable
           onPress={() => onChange('')}
-          hitSlop={14}
+          style={styles.searchClear}
           accessibilityRole="button"
           accessibilityLabel="Clear the search"
         >
@@ -817,6 +817,9 @@ function FilterRow({
           <Pressable
             key={key}
             onPress={() => onColor(selected ? null : key)}
+            // 40dp plus 4 all round: a 48dp target, and with the row's 8dp
+            // gap neighbouring targets meet without overlapping.
+            hitSlop={4}
             style={({ pressed }) => [
               styles.colorChip,
               selected && styles.chipActive,
@@ -839,6 +842,7 @@ function FilterRow({
             key={tag}
             // Tapping the active tag clears it, so no separate "all" chip.
             onPress={() => onTag(selected ? null : tag)}
+            hitSlop={4}
             style={({ pressed }) => [styles.tagChip, selected && styles.chipActive, pressed && styles.chipPressed]}
             accessibilityRole="button"
             accessibilityState={{ selected }}
@@ -917,6 +921,9 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     borderWidth: 1,
     borderColor: colors.glassBorder,
     paddingHorizontal: spacing.lg,
+    // Tall enough for the clear button's 48dp box, so the bar does not grow
+    // the moment you start typing.
+    minHeight: 48,
   },
   searchInput: {
     flex: 1,
@@ -925,15 +932,26 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     color: colors.text,
     paddingVertical: 12,
   },
+  // 48dp to press; pulled into the bar's padding so the icon sits at its edge.
+  searchClear: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: -spacing.lg,
+  },
 
   tagScrollOuter: {
     // Negative margin lets the chips bleed to the screen edge while the list
     // keeps its gutter, so the row reads as scrollable rather than clipped.
     marginHorizontal: -spacing.xl,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   tagScroll: {
     paddingHorizontal: spacing.xl,
+    // Room for the chips' 4dp hitSlop inside the scroll view, which clips
+    // touches as well as drawing; the outer margin gave up the same 4dp.
+    paddingVertical: spacing.xs,
     gap: spacing.sm,
     alignItems: 'center',
   },

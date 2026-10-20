@@ -62,7 +62,12 @@ export function ChecklistEditor({ items, onChange }: ChecklistEditorProps) {
               {done} of {total}
             </Text>
             {done > 0 ? (
-              <Pressable onPress={uncheckAll} hitSlop={8}>
+              <Pressable
+                onPress={uncheckAll}
+                hitSlop={4}
+                style={styles.uncheckButton}
+                accessibilityRole="button"
+              >
                 <Text style={styles.uncheck}>Uncheck all</Text>
               </Pressable>
             ) : null}
@@ -75,7 +80,7 @@ export function ChecklistEditor({ items, onChange }: ChecklistEditorProps) {
         <View key={index} style={styles.row}>
           <Pressable
             onPress={() => toggle(index)}
-            hitSlop={10}
+            style={styles.tick}
             accessibilityRole="checkbox"
             accessibilityState={{ checked: item.done }}
             accessibilityLabel={item.text || 'Empty line'}
@@ -99,7 +104,7 @@ export function ChecklistEditor({ items, onChange }: ChecklistEditorProps) {
 
           <Pressable
             onPress={() => removeItem(index)}
-            hitSlop={10}
+            style={styles.remove}
             accessibilityRole="button"
             accessibilityLabel={`Remove ${item.text || 'this line'}`}
           >
@@ -123,7 +128,7 @@ export function ChecklistEditor({ items, onChange }: ChecklistEditorProps) {
           style={styles.addInput}
         />
         {draft.trim() ? (
-          <Pressable onPress={addItem} hitSlop={8}>
+          <Pressable onPress={addItem} style={styles.addButton} accessibilityRole="button">
             <Text style={styles.addAction}>Add</Text>
           </Pressable>
         ) : null}
@@ -137,7 +142,10 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    // As tall as Uncheck all from the start, so the list does not jump down
+    // the moment the first item is ticked.
+    minHeight: 40,
+    marginBottom: spacing.xs,
   },
   headerRight: {
     flexDirection: 'row',
@@ -151,6 +159,14 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     ...typography.caption,
     fontSize: 11.5,
   },
+  // 40dp plus a 4dp hitSlop: a 48dp target. The negative margin keeps the
+  // words where they were, against the card's edge.
+  uncheckButton: {
+    minHeight: 40,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+    marginRight: -spacing.sm,
+  },
   uncheck: {
     ...typography.caption,
     fontSize: 11.5,
@@ -160,7 +176,16 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.md,
-    paddingVertical: 6,
+    minHeight: 48,
+  },
+  // 48dp to press around the 21dp box. The negative margins keep the box at
+  // the card's edge and the text where it was.
+  tick: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: -13,
   },
   box: {
     width: 21,
@@ -170,7 +195,6 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     borderColor: colors.glassBorderStrong,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 3,
   },
   boxDone: {
     backgroundColor: colors.primary,
@@ -182,20 +206,37 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     fontSize: 15,
     color: colors.text,
     padding: 0,
-    paddingTop: 2,
+    // Centres a first line on the 48dp row, level with its box.
+    paddingVertical: 13,
   },
   itemInputDone: {
     color: colors.textMuted,
     textDecorationLine: 'line-through',
   },
+  // 48dp to press; pulled into the gap before it and the card's padding after
+  // it, so the cross sits where it did.
+  remove: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: -spacing.md,
+    marginRight: -spacing.lg,
+  },
   addRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
+    minHeight: 48,
     marginTop: spacing.md,
-    paddingTop: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.glassBorder,
+  },
+  addButton: {
+    height: 48,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    marginRight: -spacing.lg,
   },
   addInput: {
     flex: 1,
