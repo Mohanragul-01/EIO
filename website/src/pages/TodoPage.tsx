@@ -808,17 +808,29 @@ function actionsFor(todo: Todo, actions: CardActions) {
 /* CARD --------------------------------------------------------------------- */
 
 function SortableTask({ todo, ...actions }: { todo: Todo } & CardActions) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: todo.id,
-  });
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({
+      id: todo.id,
+    });
+
+  // The card is also the activator: the keyboard sensor then ignores Enter
+  // and Space aimed at the buttons inside it, which would otherwise pick the
+  // card up instead of pressing them.
+  const setCardRef = useCallback(
+    (node: HTMLElement | null) => {
+      setNodeRef(node);
+      setActivatorNodeRef(node);
+    },
+    [setNodeRef, setActivatorNodeRef],
+  );
 
   return (
     <TaskCard
       todo={todo}
       {...actionsFor(todo, actions)}
-      setNodeRef={setNodeRef}
-      // The whole card is the handle, minus the controls, which stop
-      // propagation themselves.
+      setNodeRef={setCardRef}
+      // The whole card is the handle, minus the controls: they stop the
+      // pointer themselves, and the keyboard through setCardRef.
       handleProps={{ ...attributes, ...listeners }}
       style={{
         transform: CSS.Translate.toString(transform),
