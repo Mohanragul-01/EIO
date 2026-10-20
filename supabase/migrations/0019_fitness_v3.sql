@@ -102,15 +102,18 @@ where bodyweight_factor = 1.00
   and load_mode = 'bodyweight'
   and name ~* '\mpike push[- ]?ups?\M';
 
+-- The implement named in the name wins over the lift it is used for:
+-- "Dumbbell bench press" and "Kettlebell deadlift" are not barbell lifts, so
+-- dumbbell and kettlebell are checked before the barbell lift names.
 update public.exercises
 set equipment = case
   when name ~* '\m(pull|chin)[- ]?ups?\M' or name ~* '\mhang\M' then 'pull_up_bar'
   when name ~* '\mdips?\M' then 'dip_bars'
+  when name ~* '\m(dumbbell|db)\M' then 'dumbbell'
+  when name ~* '\mkettlebell\M' then 'kettlebell'
   when name ~* '\mbarbell\M'
     or name ~* '\m(bench press|deadlift|back squat|front squat|overhead press)\M'
     or name ~* '^\s*squats?\s*$' then 'barbell'
-  when name ~* '\m(dumbbell|db)\M' then 'dumbbell'
-  when name ~* '\mkettlebell\M' then 'kettlebell'
   when name ~* '\m(cable|pushdown|face pull)\M' then 'cable'
   when name ~* '\mmachine\M' or name ~* '\mleg (press|extension|curl)\M' then 'machine'
   when load_mode = 'bodyweight' then 'none'
