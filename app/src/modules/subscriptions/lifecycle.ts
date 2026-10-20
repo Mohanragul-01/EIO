@@ -214,3 +214,33 @@ export function notificationActionApplies(
   }
   return sub.status === 'trial';
 }
+
+/**
+ * What to say when a notification's button no longer applies: what is true
+ * of the subscription now. "Already paid" only when it is charging and the
+ * cycle has moved on; a pause-until reminder's Mark paid, tapped before the
+ * resume date, is a pause - nothing was paid.
+ */
+export function staleActionMessage(
+  action: 'pay' | 'keep' | 'cancelled',
+  sub: Lifecycle,
+  today: string,
+): string {
+  if (action !== 'pay') return 'Already decided';
+  switch (effectiveState(sub, today)) {
+    case 'paused':
+      return sub.resume_on
+        ? `Paused · resumes ${relative(daysBetween(today, sub.resume_on))}, nothing to pay yet`
+        : 'Paused · nothing to pay';
+    case 'ending':
+    case 'ended':
+      return 'Cancelled · nothing more to pay';
+    case 'archived':
+      return 'Archived · nothing to pay';
+    case 'trial':
+    case 'trial_over':
+      return 'Still a trial · nothing to pay yet';
+    case 'active':
+      return 'Already paid for this cycle';
+  }
+}

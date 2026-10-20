@@ -6,13 +6,13 @@
  * subscription has loaded. Only for the subscription the reminder was about,
  * and only while its button still makes sense (see notificationActionApplies):
  * an old reminder must not pay the next cycle or undo a decision already
- * made. When it no longer applies, a toast says so instead.
+ * made. When it no longer applies, a toast says why instead.
  */
 import { useEffect, useState } from 'react';
 
 import { useToast } from '../../../core/components';
 import { useStableCallback } from '../../../core/useStableCallback';
-import { notificationActionApplies } from '../lifecycle';
+import { notificationActionApplies, staleActionMessage } from '../lifecycle';
 import type { Subscription } from '../types';
 
 export type NotificationAction = 'pay' | 'keep' | 'cancelled';
@@ -50,7 +50,7 @@ export function useNotificationAction(
     if (notificationActionApplies(action, sub, today)) {
       run(action === 'pay' ? 'pay' : 'keep', sub);
     } else {
-      setNotice({ message: action === 'pay' ? 'Already paid for this cycle' : 'Already decided' });
+      setNotice({ message: staleActionMessage(action, sub, today) });
     }
   }
 

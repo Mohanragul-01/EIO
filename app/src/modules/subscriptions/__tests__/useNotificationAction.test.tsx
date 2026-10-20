@@ -119,4 +119,14 @@ describe('useNotificationAction', () => {
     expect(mockShow).toHaveBeenCalledWith({ message: 'Already paid for this cycle' });
     expect(renderWarnings()).toEqual([]);
   });
+
+  it('says it is paused, not paid, for a "resumes in 3 days" reminder', async () => {
+    // Pause-until reminders carry Mark paid; before the resume date it does not apply.
+    const paused = sub({ status: 'paused', resume_on: '2026-10-22', next_due_date: '2026-10-22' });
+    await arrive({ id: 'abc', action: 'pay', at: '1', key: 'k' }, paused);
+
+    expect(mockShow).toHaveBeenCalledWith({
+      message: 'Paused · resumes in 3 days, nothing to pay yet',
+    });
+  });
 });
