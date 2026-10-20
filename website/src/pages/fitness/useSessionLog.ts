@@ -30,6 +30,7 @@ import { matchPrevious } from '@app/modules/fitness/previous';
 import { ladderSlotTarget } from '@app/modules/fitness/progression';
 import { sessionRecords, type RecordHit } from '@app/modules/fitness/records';
 import {
+  applyTarget,
   commitDraft,
   ghostValues,
   NO_GHOST,
@@ -61,7 +62,7 @@ export type TickResult =
 
 type Previous = Record<string, { date: string; sets: SetFact[] }>;
 
-const NO_TARGET: Target = { weight: null, reps: null, seconds: null, reason: null };
+const NO_TARGET: Target = { weight: null, assist: null, reps: null, seconds: null, reason: null };
 
 export const rowType = (row: Row): SetType =>
   row.kind === 'saved' ? row.set.set_type : row.draft.set_type;
@@ -328,17 +329,8 @@ export function useSessionLog(sessionId: string) {
         slot: slotsByExercise[block.exerciseId] ?? null,
         rowType: type,
       });
-      // A progression target applies to working sets, never warm-ups or drops.
-      const target = targetFor(block);
-      if (target.reason && (type === 'normal' || type === 'failure')) {
-        return {
-          reps: target.reps ?? ghost.reps,
-          seconds: target.seconds ?? ghost.seconds,
-          weight: target.weight ?? ghost.weight,
-          assist: ghost.assist,
-        };
-      }
-      return ghost;
+      // A progression target applies to working sets, with its own load.
+      return applyTarget(ghost, targetFor(block), type);
     },
     [exercisesById, previousFor, slotsByExercise, targetFor],
   );

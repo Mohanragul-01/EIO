@@ -19,7 +19,7 @@ import { groupItems } from '@app/modules/fitness/pickerItems';
 import { setLabels } from '@app/modules/fitness/load';
 import { DEFAULT_INVENTORY, warmupSets } from '@app/modules/fitness/plates';
 import { primaryRecord } from '@app/modules/fitness/records';
-import type { BlockState } from '@app/modules/fitness/sessionState';
+import { settleLoad, type BlockState } from '@app/modules/fitness/sessionState';
 import { formatDuration, normaliseMuscle } from '@app/modules/fitness/types';
 
 import { Icon } from '../../components/Icon';
@@ -374,7 +374,16 @@ export function SessionView({ sessionId, nav }: { sessionId: string; nav: Fitnes
               onTick={(key, viaKeyboard) => onTick(block.id, key, viaKeyboard)}
               onUntick={(key) => void w.untick(block.id, key)}
               onSetMenu={(key) => setSetMenu({ blockId: block.id, key })}
-              onLoad={(key) => setLoadFor({ blockId: block.id, key })}
+              onLoad={(key) => {
+                // The dialog edits the load the row shows: write last time's
+                // into the fields first, so clearing one there means none.
+                const index = block.rows.findIndex((r) => r.key === key);
+                const row = block.rows[index];
+                if (row?.kind === 'draft' && !row.draft.loadTyped) {
+                  w.updateDraft(block.id, key, settleLoad(row.draft, w.ghostFor(block, index)));
+                }
+                setLoadFor({ blockId: block.id, key });
+              }}
               onChangeDraft={(key, patch) => w.updateDraft(block.id, key, patch)}
               onAddSet={() => w.addRow(block.id)}
               onNoteBlur={(note) => void w.setBlockNote(block.id, note)}
