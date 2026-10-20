@@ -121,7 +121,8 @@ export function TrendCard({ module, field, fields, records, accent }: TrendCardP
                   setRange(option);
                   setSelected(null);
                 }}
-                hitSlop={{ top: 10, bottom: 10, left: 2, right: 2 }}
+                // 40 x 40 with 8 between: 4 more on every side makes 48.
+                hitSlop={4}
                 accessibilityRole="radio"
                 accessibilityState={{ selected: on }}
                 accessibilityLabel={option === 'all' ? 'All time' : `Last ${CHART_RANGE_LABEL[option]}`}
@@ -231,11 +232,17 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   },
   headRow: {
     flexDirection: 'row',
+    // The range chips drop below the title on a narrow phone rather than
+    // squeezing it to nothing.
+    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: spacing.md,
+    columnGap: spacing.md,
+    rowGap: spacing.sm,
   },
   headText: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 120,
   },
   title: {
     ...typography.title,
@@ -248,14 +255,15 @@ const useStyles = makeStyles(({ colors, typography }) => ({
   },
   ranges: {
     flexDirection: 'row',
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
   range: {
-    minWidth: 34,
+    minWidth: 40,
+    minHeight: 40,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 5,
     borderRadius: radius.pill,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'transparent',
   },

@@ -598,7 +598,7 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    minHeight: 44,
+    minHeight: 48,
     marginTop: spacing.sm,
     marginBottom: spacing.xs,
   },

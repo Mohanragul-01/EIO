@@ -120,7 +120,16 @@ export type Projection = {
    * to the day it was finished. At least 1 once opened; 0 for a spare.
    */
   daysOpen: number;
+  /** The days the rate is measured over; 0 while there is no rate. */
+  measuredDays: number;
 };
+
+/**
+ * Days with a use logged before an open container's pace counts. Reminders
+ * are planned from it, so one scoop is not a pace: three days of use is the
+ * least that tells a daily habit from a twice-a-week one.
+ */
+export const MIN_USE_DAYS = 3;
 
 /** Whole days between two calendar dates, ignoring time and timezone. */
 export function daysBetween(fromISO: string, toISO: string): number {
@@ -148,16 +157,25 @@ export function addDays(iso: string, days: number): string {
  * total / per_use and call that the number of uses left, but that answers a
  * different question - how many uses remain if you never miss a day - and days
  * get missed. Dividing what you have ACTUALLY used by the days it has been
- * open gives a rate that already accounts for the days you skipped, so the
+ * in use gives a rate that already accounts for the days you skipped, so the
  * projection degrades gracefully rather than being permanently optimistic.
  *
  * `per_use` is therefore not needed for the projection at all. It exists to
  * pre-fill the amount when you log a use, so logging is one tap.
  *
- * Nothing is projected from a single day. One use on the first day implies a
+ * Nothing is projected from thin evidence. One use on the first day implies a
  * rate of one-per-day, which for a product you use twice a week would predict
  * an empty bottle three times too soon - and a confident wrong number is worse
- * than "not enough data yet".
+ * than "not enough data yet". So an open container needs uses on
+ * MIN_USE_DAYS different days, and until then the previous container's
+ * lifespan (outlook.ts) stands in.
+ *
+ * AN OPEN CONTAINER IS MEASURED FROM ITS FIRST LOGGED USE. Days before it
+ * are not days of nothing used, they are days not logged: a tub added with
+ * its true opened date weeks back and a first log today spread one scoop
+ * over all those weeks and projected 2004 days. Days since the LAST use do
+ * count, since by then logging had begun. A finished container is history,
+ * not a forecast, and keeps its whole life: opened to finished.
  */
 export function project(
   product: Product,
@@ -182,6 +200,7 @@ export function project(
       emptyOn: null,
       costPerDay: null,
       daysOpen: 0,
+      measuredDays: 0,
     };
   }
 
@@ -193,9 +212,20 @@ export function project(
   // At least 1, so a product opened today never divides by zero.
   const daysOpen = Math.max(1, daysBetween(product.opened_on, end) + 1);
 
-  // Two days of history before predicting anything, and something actually
-  // used - a rate of zero would project an infinite lifespan.
-  const dailyRate = daysOpen >= 2 && used > 0 ? used / daysOpen : null;
+  // Something actually used, always - a rate of zero would project an
+  // infinite lifespan.
+  let measuredDays = 0;
+  if (product.finished_on) {
+    if (daysOpen >= 2 && used > 0) measuredDays = daysOpen;
+  } else {
+    const useDays = [...new Set(uses.map((use) => use.used_on))].sort();
+    if (useDays.length >= MIN_USE_DAYS && used > 0) {
+      // A use dated before the opening (a typing slip) does not stretch it.
+      const from = useDays[0] > product.opened_on ? useDays[0] : product.opened_on;
+      measuredDays = Math.max(1, daysBetween(from, end) + 1);
+    }
+  }
+  const dailyRate = measuredDays > 0 ? used / measuredDays : null;
 
   // Days left only for something still in use with something left in it. A
   // finished container keeps its rate - it is what it actually used a day -
@@ -211,7 +241,17 @@ export function project(
       ? null
       : Math.round((product.price_minor / product.total_quantity) * dailyRate);
 
-  return { used, remaining, percentUsed, dailyRate, daysLeft, emptyOn, costPerDay, daysOpen };
+  return {
+    used,
+    remaining,
+    percentUsed,
+    dailyRate,
+    daysLeft,
+    emptyOn,
+    costPerDay,
+    daysOpen,
+    measuredDays,
+  };
 }
 
 /**

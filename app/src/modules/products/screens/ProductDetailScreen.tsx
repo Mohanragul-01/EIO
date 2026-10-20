@@ -449,7 +449,7 @@ export function ProductDetailScreen() {
                 {projection.dailyRate !== null
                   ? `${formatQuantity(Math.round(projection.dailyRate * 10) / 10, product.unit)} a day` +
                     (projection.costPerDay !== null ? ` · ${formatMoney(projection.costPerDay)} a day` : '')
-                  : 'Log a couple of days of use to measure the rate'}
+                  : 'Log uses on a few days to measure the rate'}
               </Text>
             ) : null}
 
@@ -835,7 +835,7 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    minHeight: 44,
+    minHeight: 48,
   },
   historyAmount: { ...typography.caption, ...typography.numeric, color: colors.textSecondary, minWidth: 64 },
   historyNote: { ...typography.caption, color: colors.textFaint, flex: 1 },
@@ -845,7 +845,7 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    minHeight: 44,
+    minHeight: 48,
     borderTopWidth: 1,
     borderTopColor: colors.glassBorder,
     marginTop: spacing.xs,

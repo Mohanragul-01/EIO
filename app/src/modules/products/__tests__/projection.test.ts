@@ -85,7 +85,7 @@ describe('project', () => {
   });
 
   it('projects an empty date from today, not from when it was opened', () => {
-    const uses = [use('2026-01-01', 500)];
+    const uses = [use('2026-01-01', 300), use('2026-01-02', 100), use('2026-01-03', 100)];
     const p = project(product(), uses, '2026-01-11');
     // 500 used over 11 days ≈ 45.45/day, 500 left ≈ 11 days.
     expect(p.daysLeft).toBe(11);
@@ -94,15 +94,16 @@ describe('project', () => {
 
   it('works out cost per day from the price of what is consumed', () => {
     // 3000 rupees for 1000g is 300 paise per gram; 50g a day is 15000 paise.
-    const uses = [use('2026-01-01', 50), use('2026-01-02', 50)];
-    const p = project(product(), uses, '2026-01-02');
+    const uses = [use('2026-01-01', 50), use('2026-01-02', 50), use('2026-01-03', 50)];
+    const p = project(product(), uses, '2026-01-03');
     expect(p.dailyRate).toBe(50);
     expect(p.costPerDay).toBe(15000);
   });
 
   it('has no cost per day without a price', () => {
-    const uses = [use('2026-01-01', 50), use('2026-01-02', 50)];
-    const p = project(product({ price_minor: null }), uses, '2026-01-02');
+    const uses = [use('2026-01-01', 50), use('2026-01-02', 50), use('2026-01-03', 50)];
+    const p = project(product({ price_minor: null }), uses, '2026-01-03');
+    expect(p.dailyRate).toBe(50);
     expect(p.costPerDay).toBeNull();
   });
 
@@ -134,6 +135,56 @@ describe('project', () => {
     const p = project(product({ finished_on: '2026-01-02' }), uses, '2026-01-02');
     expect(p.daysLeft).toBeNull();
     expect(p.emptyOn).toBeNull();
+  });
+});
+
+/*
+ * Reminders are planned from these numbers, so a pace must rest on enough
+ * evidence. Two cases v2 got confidently wrong: one scoop the morning after
+ * opening a new tub replaced "~32 days (last one lasted 33)" with "about 2
+ * months", and a tub added with its true opened date weeks ago and a first
+ * log today projected 2004 days.
+ */
+describe('project, before there is enough evidence', () => {
+  it('measures nothing from uses on one day', () => {
+    const p = project(product({ opened_on: '2026-01-01' }), [use('2026-01-01')], '2026-01-02');
+    expect(p.dailyRate).toBeNull();
+    expect(p.daysLeft).toBeNull();
+  });
+
+  it('counts several uses on one day as one day of evidence', () => {
+    const uses = [use('2026-01-01'), use('2026-01-01'), use('2026-01-02'), use('2026-01-02')];
+    expect(project(product(), uses, '2026-01-05').dailyRate).toBeNull();
+  });
+
+  it('measures once uses are logged on three different days', () => {
+    const uses = [use('2026-01-01'), use('2026-01-02'), use('2026-01-03')];
+    const p = project(product(), uses, '2026-01-03');
+    expect(p.dailyRate).toBe(30);
+    expect(p.measuredDays).toBe(3);
+    expect(p.daysLeft).toBe(30);
+  });
+
+  it('never counts an opened date with nothing logged after it as days of use', () => {
+    // Opened in November, first logged in January: the weeks before the
+    // first log are not weeks of nothing used, they are weeks not logged.
+    const opened = product({ opened_on: '2025-11-01' });
+    expect(project(opened, [use('2026-01-01')], '2026-01-01').daysLeft).toBeNull();
+
+    const uses = [use('2026-01-01'), use('2026-01-02'), use('2026-01-03')];
+    const p = project(opened, uses, '2026-01-03');
+    expect(p.dailyRate).toBe(30);
+    expect(p.measuredDays).toBe(3);
+    expect(p.daysLeft).toBe(30);
+    // The age of the container is still its age.
+    expect(p.daysOpen).toBe(64);
+  });
+
+  it('counts the days since the last use, which are days nothing was used', () => {
+    const uses = [use('2026-01-01'), use('2026-01-02'), use('2026-01-03')];
+    const p = project(product(), uses, '2026-01-09');
+    expect(p.measuredDays).toBe(9);
+    expect(p.dailyRate).toBe(10);
   });
 });
 

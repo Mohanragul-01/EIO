@@ -6,6 +6,7 @@ import { registerResync } from '../../core/notifications';
 import { collectPages } from '../../core/paging';
 import { getOwnerId } from '../../core/session';
 import { supabase } from '../../core/supabase';
+import { orderedSpare } from './containers';
 import { replaceReminders } from './notifications';
 import { buildOutlooks, reorderSummary } from './outlook';
 import type { Product, ProductInput, ProductUse } from './types';
@@ -315,6 +316,18 @@ export async function overview(): Promise<{ inUse: number; toReorder: number; ru
 
   const summary = reorderSummary(buildOutlooks(unfinished, uses, todayISO()));
   return { inUse: summary.inUse, toReorder: summary.toReorder, runningLow: summary.runningLow };
+}
+
+/**
+ * "Ordered", pressed on a reorder reminder: the next container goes on the
+ * shelf as a spare, copied from this one (see orderedSpare). Read fresh,
+ * because the press can come days after the reminder was planned. Resolves
+ * the spare, or null when there was nothing to add.
+ */
+export async function addSpareFromReminder(productId: string): Promise<Product | null> {
+  const [product, all] = await Promise.all([getProduct(productId), listProducts()]);
+  const draft = orderedSpare(product, all, todayISO());
+  return draft ? createProduct(draft) : null;
 }
 
 /**

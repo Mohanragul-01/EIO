@@ -26,7 +26,7 @@ import type { DateFieldMode } from '../../../core/components/DateField';
 import { tap } from '../../../core/haptics';
 import { minorToAmountString, parseAmountToMinor } from '../../../core/money';
 import { fonts, radius, spacing } from '../../../core/theme';
-import { joinMinutes, numericValue, splitMinutes } from '../format';
+import { isISODay, joinMinutes, numericValue, splitMinutes, textBoxValue } from '../format';
 import type { CustomField } from '../types';
 import { makeStyles, useTheme } from '../../../core/ThemeContext';
 
@@ -65,7 +65,7 @@ function FieldBody({ field, value, onChange, error, accent, dateMode = 'event' }
       return (
         <TextField
           label={label}
-          value={typeof value === 'string' ? value : ''}
+          value={textBoxValue(value)}
           onChangeText={onChange}
           placeholder="..."
           error={error}
@@ -104,12 +104,17 @@ function FieldBody({ field, value, onChange, error, accent, dateMode = 'event' }
         <View>
           <DateField
             label={label}
-            value={typeof value === 'string' ? value : null}
+            // Only a real day: text kept from a Text field ("next week")
+            // would reach the calendar as an Invalid Date. It shows as no
+            // date, as in the row, and is saved back untouched.
+            value={isISODay(value) ? value : null}
             onChange={onChange}
-            // 'event' for most fields: custom modules mostly log things that
-            // happened. A date that points forward - a reminder date like
-            // "Water next on" - gets 'due', which allows the future.
+            // 'event' wording for most fields: custom modules mostly log
+            // things that happened. A reminder date like "Water next on"
+            // gets 'due'. Either way the future is allowed, because only the
+            // person knows which way a field like "Due back" points.
             mode={dateMode}
+            allowFuture
             allowClear={!field.required}
           />
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -215,7 +220,7 @@ function FieldBody({ field, value, onChange, error, accent, dateMode = 'event' }
       return (
         <TextField
           label={label}
-          value={typeof value === 'string' ? value : ''}
+          value={textBoxValue(value)}
           onChangeText={onChange}
           placeholder="..."
           error={error}

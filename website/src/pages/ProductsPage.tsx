@@ -846,12 +846,12 @@ function ProductRow({
       {lifecycle === 'in_use' ? (
         <div className="faint numeric" style={{ fontSize: 11.5, marginTop: 6 }}>
           {projection.dailyRate !== null
-            ? `${formatQuantity(Math.round(projection.dailyRate * 10) / 10, product.unit)} a day, measured over ${projection.daysOpen} days${
+            ? `${formatQuantity(Math.round(projection.dailyRate * 10) / 10, product.unit)} a day, measured over ${projection.measuredDays} days${
                 projection.costPerDay !== null ? ` · ${formatMoney(projection.costPerDay)} a day` : ''
               }`
             : outlook.estimate
               ? estimateLabel(outlook.estimate, product.unit)
-              : 'Log a couple of days of use to measure the rate'}
+              : 'Log uses on a few days to measure the rate'}
         </div>
       ) : null}
 

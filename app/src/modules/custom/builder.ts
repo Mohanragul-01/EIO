@@ -247,6 +247,15 @@ export type BuilderErrors = { name?: string; fields?: string; reminders?: string
 export function validateBuilder(state: BuilderState): BuilderErrors | null {
   if (!state.name.trim()) return { name: 'Give the module a name' };
 
+  // A saved field with its name cleared would be left out of the save, and
+  // so deleted, with none of the toast and Undo that removing it gives.
+  const unnamed = state.drafts.findIndex((d) => d.id && !d.label.trim());
+  if (unnamed >= 0) {
+    return {
+      fields: `Field ${unnamed + 1} has no name. Name it, or remove it if you meant to take it off.`,
+    };
+  }
+
   const usable = usableDrafts(state.drafts);
   if (usable.length === 0) {
     return { fields: 'Add at least one field. A module with no fields can store nothing.' };

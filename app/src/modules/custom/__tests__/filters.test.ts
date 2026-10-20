@@ -144,6 +144,13 @@ describe('groupStatLine', () => {
     expect(groupStatLine(makeModule({ summary_field_key: 'pages', summary_agg: 'sum' }), pages, [makeRecord({})])).toBe('1');
   });
 
+  it('averages only the ratings that show, like the rows under it', () => {
+    const score = makeField({ key: 'score', type: 'rating' });
+    const module = makeModule({ summary_field_key: 'score', summary_agg: 'average' });
+    const scored = [makeRecord({ score: 9 }), makeRecord({ score: 8 }), makeRecord({ score: 4 })];
+    expect(groupStatLine(module, score, scored)).toBe('3 · avg 4/5');
+  });
+
   it('ignores the tile period: the group is already the list in front of you', () => {
     const module = makeModule({ summary_field_key: 'pages', summary_agg: 'sum', summary_period: 'week' });
     expect(groupStatLine(module, pages, group)).toBe('3 · 412 pages');

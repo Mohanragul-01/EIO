@@ -266,3 +266,22 @@ export function restockDraft(from: Product, today: string, asSpare: boolean): Pr
     previous_id: from.id,
   };
 }
+
+/**
+ * What "Ordered", pressed on a reorder reminder, adds: the next container, as
+ * a spare. A spare on the shelf is already what "nothing to order" means here
+ * - it silences the reorder reminder, turns the empty day into "your next one
+ * is ready" and clears "to reorder" on both clients - so ordering needs no
+ * state of its own. It can be edited, or deleted, like any spare.
+ *
+ * Null when there is nothing to add: the container is gone, finished or not
+ * open, or a spare already waits (a second press, or one added meanwhile).
+ */
+export function orderedSpare(
+  product: Product | null,
+  all: Product[],
+  today: string,
+): ProductInput | null {
+  if (!product || lifecycleOf(product) !== 'in_use' || spareFor(product, all)) return null;
+  return restockDraft(product, today, true);
+}
