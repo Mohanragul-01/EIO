@@ -764,9 +764,13 @@ export async function updateSet(
   return data;
 }
 
-/** The columns the training maths reads, and nothing else. */
+/**
+ * The columns the training maths reads, and nothing else. The band names the
+ * assistance in PREVIOUS ("22s · red band"), and the side lets a one-sided
+ * exercise be counted in pairs.
+ */
 const FACT_COLUMNS =
-  'id, exercise_id, session_id, set_type, reps, duration_seconds, weight_kg, assist_kg, clean, created_at';
+  'id, exercise_id, session_id, set_type, reps, duration_seconds, weight_kg, assist_kg, band_id, side, clean, created_at';
 
 /**
  * Each exercise's sets from OTHER sessions, for record checks. Fetched once
@@ -1313,7 +1317,7 @@ export async function listExerciseSets(exerciseId: string): Promise<
   const data = await collectPages(async (from, to) => {
     const page = await supabase
       .from('session_sets')
-      .select(FACT_COLUMNS + ', band_id, side, rpe, workout_sessions!inner(date, bodyweight_kg)', {
+      .select(FACT_COLUMNS + ', rpe, workout_sessions!inner(date, bodyweight_kg)', {
         count: 'exact',
       })
       .eq('user_id', ownerId)

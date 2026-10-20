@@ -13,7 +13,7 @@
  *                 exercise's factor, plus net. Needs a weigh-in; used for
  *                 volume and estimated maxes only.
  */
-import { formatDuration, type Exercise, type SessionSet, type SetType } from './types';
+import { formatDuration, type Exercise, type SessionSet, type SetType, type Side } from './types';
 
 /**
  * The facts about a set that the training maths reads: records, ladders,
@@ -31,6 +31,10 @@ export type SetFact = {
   assist_kg: number | null;
   clean: boolean;
   created_at: string;
+  /** Which band gave the assistance, when the read asked for it. */
+  band_id?: string | null;
+  /** The side of a one-sided set, when the read asked for it. */
+  side?: Side | null;
 };
 
 type LoadShape = Pick<Exercise, 'load_mode' | 'bodyweight_factor'>;
@@ -47,11 +51,16 @@ function num(value: unknown): number | null {
  * no set_type, assistance or clean flag: they were all ordinary sets.
  */
 export function toSetFact(
-  row: Pick<SessionSet, 'id' | 'exercise_id' | 'session_id' | 'reps' | 'duration_seconds' | 'created_at'> & {
+  row: Pick<
+    SessionSet,
+    'id' | 'exercise_id' | 'session_id' | 'reps' | 'duration_seconds' | 'created_at'
+  > & {
     weight_kg: number | string;
     set_type?: SetType | null;
     assist_kg?: number | string | null;
     clean?: boolean | null;
+    band_id?: string | null;
+    side?: Side | null;
   },
 ): SetFact {
   return {
@@ -65,6 +74,8 @@ export function toSetFact(
     assist_kg: num(row.assist_kg),
     clean: row.clean ?? true,
     created_at: row.created_at,
+    ...(row.band_id !== undefined ? { band_id: row.band_id } : {}),
+    ...(row.side !== undefined ? { side: row.side } : {}),
   };
 }
 

@@ -24,7 +24,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 
 import { todayISO } from '@app/core/date';
 import * as api from '@app/modules/fitness/api';
-import { initialDrafts, newDraft, type DraftRow } from '@app/modules/fitness/blocks';
+import { buildBlock, newDraft, type DraftRow } from '@app/modules/fitness/blocks';
 import { toSetFact, workingVolume, type SetFact } from '@app/modules/fitness/load';
 import { matchPrevious } from '@app/modules/fitness/previous';
 import { ladderSlotTarget } from '@app/modules/fitness/progression';
@@ -74,27 +74,15 @@ function blockFor(
   previous: Previous,
   unilateral = false,
 ): BlockState {
-  const saved = sets
-    .filter((s) => s.exercise_id === row.exercise_id)
-    .sort((a, b) => a.set_number - b.set_number);
-  const drafts = initialDrafts({
-    blockKey: row.id,
-    savedSets: saved,
+  // Shared with the other client (blocks.ts): one-sided exercises count in
+  // pairs, and saved warm-ups do not use up the routine's sets.
+  return buildBlock({
+    row,
+    sets,
     routineTargetSets: slot?.target_sets ?? null,
     previousSets: previous[row.exercise_id]?.sets ?? [],
+    unilateral,
   });
-  // A one-sided exercise logs each set as a left and a right.
-  const sided = unilateral
-    ? drafts.flatMap((d) => [
-        { ...d, side: 'left' as const },
-        { ...newDraft(row.id, d.set_type), side: 'right' as const },
-      ])
-    : drafts;
-  const rows: Row[] = [
-    ...saved.map((set): Row => ({ kind: 'saved', key: set.id, set })),
-    ...sided.map((draft): Row => ({ kind: 'draft', key: draft.key, draft })),
-  ];
-  return { id: row.id, exerciseId: row.exercise_id, sessionExercise: row, rows };
 }
 
 /** Everything a session page needs, fetched together. */

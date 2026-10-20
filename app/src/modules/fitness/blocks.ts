@@ -14,6 +14,7 @@
  * losing them costs nothing: ticking is what saves.
  */
 import type { SetFact } from './load';
+import type { BlockState, Row } from './sessionState';
 import type { SessionExercise, SessionSet, SetType, Side } from './types';
 
 export type Block = {
@@ -116,25 +117,83 @@ export function newDrafts(
  *
  * With a routine, its target number of working sets. Without one, last time's
  * structure, warm-ups and all, since that is the best guess at today's. A new
- * exercise gets one row. Rows already saved are taken off the front, and a
- * block that is complete gets none (there is an "Add set" for more).
+ * exercise gets one row. Rows already saved are matched off kind by kind -
+ * a warm-up against a warm-up, a working set against a working set - so
+ * ticking warm-ups never uses up the routine's sets; and once any working set
+ * is saved the warm-up phase is over, so warm-ups not done are not offered
+ * again. A block that is complete gets none (there is an "Add set" for more).
+ *
+ * ONE-SIDED EXERCISES COUNT IN PAIRS. A set is a left and a right: a routine's
+ * target_sets is pairs, last time's structure is its pairs (its right-hand
+ * sets are the other halves), and saved sets are matched side by side, so a
+ * half-done pair leaves its other side to do first.
  */
 export function initialDrafts(input: {
   blockKey: string;
-  savedSets: Pick<SessionSet, 'set_type'>[];
+  savedSets: (Pick<SessionSet, 'set_type'> & { side?: Side | null })[];
   routineTargetSets: number | null;
-  previousSets: Pick<SetFact, 'set_type'>[];
+  previousSets: (Pick<SetFact, 'set_type'> & { side?: Side | null })[];
+  unilateral?: boolean;
 }): DraftRow[] {
+  const lastTime = input.unilateral
+    ? input.previousSets.filter((s) => s.side !== 'right')
+    : input.previousSets;
   const structure: SetType[] =
     input.routineTargetSets !== null && input.routineTargetSets > 0
       ? Array.from({ length: input.routineTargetSets }, () => 'normal' as const)
-      : input.previousSets.length > 0
-        ? input.previousSets.map((s) => s.set_type)
+      : lastTime.length > 0
+        ? lastTime.map((s) => s.set_type)
         : ['normal'];
 
-  const remaining =
-    input.savedSets.length === 0 ? structure : structure.slice(input.savedSets.length);
-  return remaining.map((type) => newDraft(input.blockKey, type));
+  const sides: (Side | null)[] = input.unilateral ? ['left', 'right'] : [null];
+  let slots = structure.flatMap((type) => sides.map((side) => ({ type, side })));
+
+  const warm = (type: SetType) => type === 'warmup';
+  for (const set of input.savedSets) {
+    // A set with no side on a one-sided exercise (logged before it was one)
+    // counts as a left.
+    const side = input.unilateral ? (set.side ?? 'left') : null;
+    const match = slots.findIndex(
+      (slot) => warm(slot.type) === warm(set.set_type) && slot.side === side,
+    );
+    if (match >= 0) slots = slots.filter((_, i) => i !== match);
+  }
+  if (input.savedSets.some((s) => !warm(s.set_type))) {
+    slots = slots.filter((slot) => !warm(slot.type));
+  }
+
+  return slots.map(({ type, side }) => ({ ...newDraft(input.blockKey, type), side }));
+}
+
+/**
+ * A block as the logging screen opens it: its saved sets in set order, then
+ * the drafts still to do (initialDrafts). One function for both clients, so
+ * the phone and the website lay out a reopened session the same way.
+ */
+export function buildBlock(input: {
+  row: SessionExercise;
+  /** The session's sets; only this block's exercise is taken. */
+  sets: SessionSet[];
+  routineTargetSets: number | null;
+  previousSets: (Pick<SetFact, 'set_type'> & { side?: Side | null })[];
+  unilateral: boolean;
+}): BlockState {
+  const { row } = input;
+  const saved = input.sets
+    .filter((s) => s.exercise_id === row.exercise_id)
+    .sort((a, b) => a.set_number - b.set_number);
+  const drafts = initialDrafts({
+    blockKey: row.id,
+    savedSets: saved,
+    routineTargetSets: input.routineTargetSets,
+    previousSets: input.previousSets,
+    unilateral: input.unilateral,
+  });
+  const rows: Row[] = [
+    ...saved.map((set): Row => ({ kind: 'saved', key: set.id, set })),
+    ...drafts.map((draft): Row => ({ kind: 'draft', key: draft.key, draft })),
+  ];
+  return { id: row.id, exerciseId: row.exercise_id, sessionExercise: row, rows };
 }
 
 type SupersetBlock = { id: string; supersetGroup: string | null; rows: { done: boolean }[] };

@@ -252,3 +252,42 @@ describe('changing the date', () => {
     expect(result.current.error).toBe('offline');
   });
 });
+
+describe('reopening a routine session', () => {
+  it('keeps the working sets still to do after warm-ups were ticked', async () => {
+    api.getSession.mockResolvedValue({ ...session, routine_id: 'r1' });
+    api.listRoutineExercises.mockResolvedValue([
+      {
+        id: 'slot',
+        routine_id: 'r1',
+        exercise_id: 'pull',
+        progression_id: null,
+        user_id: 'u',
+        position: 0,
+        target_sets: 3,
+        target_reps: 8,
+        target_reps_min: null,
+        target_seconds_min: null,
+        target_seconds_max: null,
+        rest_seconds: null,
+        pair_group: null,
+        increment_kg: null,
+      },
+    ]);
+    api.listSessionSets.mockResolvedValue([
+      set('w1', { set_number: 1, set_type: 'warmup' }),
+      set('w2', { set_number: 2, set_type: 'warmup' }),
+      set('w3', { set_number: 3, set_type: 'warmup' }),
+      set('n1', { set_number: 4 }),
+    ]);
+    const { result } = await opened();
+    expect(result.current.blocks[0].rows.map((r) => r.kind)).toEqual([
+      'saved',
+      'saved',
+      'saved',
+      'saved',
+      'draft',
+      'draft',
+    ]);
+  });
+});
