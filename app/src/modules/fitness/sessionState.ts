@@ -15,6 +15,7 @@
  */
 import { newDraft, type DraftRow } from './blocks';
 import type { SetFact } from './load';
+import type { Target } from './targets';
 import type {
   Exercise,
   RoutineExercise,
@@ -56,7 +57,11 @@ export type SessionAction =
   | { type: 'reorderBlocks'; ids: string[] }
   | { type: 'replaceBlock'; blockId: string; block: BlockState };
 
-/** A saved set as an editable draft, keeping the row's key. */
+/**
+ * A saved set as an editable draft, keeping the row's key. Its load is the
+ * set's own, so an empty cell here means none - not last time's, which would
+ * quietly bring back the assistance you had just done without.
+ */
 export function draftFromSet(set: SessionSet, key: string): DraftRow {
   const text = (n: number | null) => (n === null || n === 0 ? '' : String(n));
   return {
@@ -70,6 +75,7 @@ export function draftFromSet(set: SessionSet, key: string): DraftRow {
     side: set.side,
     rpe: set.rpe,
     clean: set.clean,
+    loadTyped: true,
   };
 }
 
@@ -246,6 +252,30 @@ export function ghostValues(input: {
   };
 }
 
+/**
+ * A row's ghost once the progression target is applied (targets.ts). The
+ * target replaces the ghost only when it has a reason, and only on working
+ * rows - never a warm-up or a drop - and it brings its whole load: a
+ * bodyweight target set at last time's unassisted load must not keep the
+ * assistance of whichever set the row happens to match.
+ */
+export function applyTarget(
+  ghost: Ghost,
+  target: Pick<Target, 'weight' | 'assist' | 'reps' | 'seconds' | 'reason'>,
+  rowType: SetType,
+): Ghost {
+  if (!target.reason || (rowType !== 'normal' && rowType !== 'failure')) return ghost;
+  const load =
+    target.weight !== null
+      ? { weight: target.weight, assist: target.assist }
+      : { weight: ghost.weight, assist: ghost.assist };
+  return {
+    reps: target.reps ?? ghost.reps,
+    seconds: target.seconds ?? ghost.seconds,
+    ...load,
+  };
+}
+
 /** What a committed draft saves. */
 export type SetValues = Required<Omit<SetInput, 'exercise_id' | 'set_number'>>;
 
@@ -256,6 +286,78 @@ function parse(text: string): number | null {
   const trimmed = text.trim().replace(',', '.');
   if (trimmed === '') return null;
   return Number(trimmed);
+}
+
+export type DraftLoad = {
+  weight: number;
+  assist: number | null;
+  band_id: string | null;
+  /** The load is last time's, not typed: the row draws it faint. */
+  ghosted: boolean;
+};
+
+/**
+ * The load a draft row will save, and so the load its LOAD cell must show:
+ * what was typed, and for a cell left empty, last time's - until the load has
+ * been set by hand, after which empty means none. commitDraft saves exactly
+ * this, so a row can never save a load it did not show.
+ */
+export function draftLoad(draft: DraftRow, ghost: Ghost): DraftLoad {
+  const weight = parse(draft.weight);
+  const assist = parse(draft.assist);
+  const fromGhost = !draft.loadTyped;
+  const shownAssist = assist ?? (fromGhost ? ghost.assist : null);
+  return {
+    weight: weight ?? (fromGhost ? ghost.weight : null) ?? 0,
+    assist: shownAssist !== null && shownAssist > 0 ? shownAssist : null,
+    band_id: draft.band_id,
+    ghosted:
+      fromGhost &&
+      weight === null &&
+      assist === null &&
+      ((ghost.weight ?? 0) > 0 || (ghost.assist ?? 0) > 0),
+  };
+}
+
+/** A load in a cell: '' for none, so the field shows its "0" placeholder. */
+const loadText = (n: number | null) =>
+  n === null || n === 0 ? '' : String(Math.round(n * 100) / 100);
+
+/**
+ * The patch that copies last time's set into a row (tapping PREVIOUS): its
+ * reps or seconds, and its whole load - weight, assistance and the band that
+ * gave it - set exactly, so an empty cell then means none.
+ */
+export function copyPrevious(
+  previous: Pick<SetFact, 'reps' | 'duration_seconds' | 'weight_kg' | 'assist_kg' | 'band_id'>,
+  timed: boolean,
+): Partial<Omit<DraftRow, 'key'>> {
+  return {
+    weight: loadText(previous.weight_kg),
+    assist: loadText(previous.assist_kg),
+    band_id: previous.band_id ?? null,
+    loadTyped: true,
+    ...(timed
+      ? { seconds: previous.duration_seconds ? String(previous.duration_seconds) : '' }
+      : { reps: previous.reps !== null ? String(previous.reps) : '' }),
+  };
+}
+
+/**
+ * The patch that writes a row's shown load into its cells, for opening the
+ * load sheet: the sheet then holds real values, and clearing one means none.
+ * What was already typed is kept as typed.
+ */
+export function settleLoad(
+  draft: DraftRow,
+  ghost: Ghost,
+): Pick<DraftRow, 'weight' | 'assist' | 'loadTyped'> {
+  const load = draftLoad(draft, ghost);
+  return {
+    weight: draft.weight.trim() !== '' ? draft.weight : loadText(load.weight),
+    assist: draft.assist.trim() !== '' ? draft.assist : loadText(load.assist),
+    loadTyped: true,
+  };
 }
 
 /**
@@ -269,6 +371,7 @@ export function commitDraft(
   exercise: Pick<Exercise, 'tracking_type' | 'load_mode'>,
 ): CommitResult {
   const timed = exercise.tracking_type === 'time';
+  const load = draftLoad(draft, ghost);
 
   const typedWeight = parse(draft.weight);
   if (
@@ -277,7 +380,7 @@ export function commitDraft(
   ) {
     return { ok: false, reason: 'Weight must be 0 or more' };
   }
-  const weight = typedWeight ?? ghost.weight ?? 0;
+  const weight = load.weight;
 
   let reps: number | null = null;
   let seconds: number | null = null;
@@ -306,8 +409,7 @@ export function commitDraft(
     if (typed !== null && !(Number.isFinite(typed) && typed >= 0 && typed < 1000)) {
       return { ok: false, reason: 'Assistance must be 0 or more' };
     }
-    const value = typed ?? ghost.assist;
-    assist = value && value > 0 ? value : null;
+    assist = load.assist;
   }
 
   return {

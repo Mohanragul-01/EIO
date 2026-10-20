@@ -11,9 +11,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLatestRun } from '../../core/useLatestRun';
 import { useStableCallback } from '../../core/useStableCallback';
 import * as api from './api';
+import { rungBests, type RungBest } from './ladderHistory';
 import type { SetFact } from './load';
 import { goalProgress, readyToMoveUp, rungStates, type Rung } from './progression';
-import type { Exercise, ProgressionFamily } from './types';
+import type { Exercise, ProgressionFamily, ProgressionStep } from './types';
 
 export const FAMILY_LABEL: Record<ProgressionFamily, string> = {
   push: 'Push',
@@ -116,4 +117,40 @@ export function useLadders() {
   );
 
   return { cards, exercises, recent, exerciseName, loading, error, reload };
+}
+
+/**
+ * Each rung's best ever - most reps, or longest hold - for one ladder's page
+ * (ladderHistory.ts rungBests). Its own hook because it reads every set of
+ * every rung, which the Skills tab has no need for.
+ */
+export function useRungBests(steps: ProgressionStep[]) {
+  const [sets, setSets] = useState<(SetFact & { date: string })[]>([]);
+  const { begin } = useLatestRun();
+  // The rungs' exercises as a value, so a reload that returns the same
+  // ladder does not fetch again.
+  const key = [...new Set(steps.map((s) => s.exercise_id))].sort().join(',');
+
+  const load = useCallback(async () => {
+    const isCurrent = begin();
+    try {
+      const rows = await api.listRungSets(key ? key.split(',') : []);
+      if (isCurrent()) setSets(rows);
+    } catch {
+      // The bests are extra: without them each rung still shows its goal.
+    }
+  }, [begin, key]);
+
+  useEffect(() => {
+    // Starts a fetch rather than computing derived state - see useTodos.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
+  }, [load]);
+
+  const bests = useMemo<Record<string, RungBest | null>>(
+    () => rungBests(steps, sets),
+    [steps, sets],
+  );
+  const reload = useStableCallback(() => load());
+  return { bests, reload };
 }

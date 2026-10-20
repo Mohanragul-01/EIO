@@ -3,7 +3,13 @@
  * attempt at a rung, and the latest moves up across every ladder.
  */
 import type { SetFact } from '../load';
-import { bestAttempt, ladderPositions, moveTimeline } from '../ladderHistory';
+import {
+  bestAttempt,
+  ladderPositions,
+  moveTimeline,
+  rungBests,
+  stepSeries,
+} from '../ladderHistory';
 import type { Progression, ProgressionMove, ProgressionStep } from '../types';
 
 function step(id: string, position: number, goal: Partial<ProgressionStep> = {}): ProgressionStep {
@@ -218,5 +224,72 @@ describe('moveTimeline', () => {
   it('names a removed rung as null rather than guessing', () => {
     const removed = [{ ...ladders[0], moves: [move('up', 'gone', 'b', '2026-09-01')] }];
     expect(moveTimeline(removed)[0]).toMatchObject({ fromExerciseId: null, toExerciseId: 'ex-b' });
+  });
+});
+
+// I10 (spec 4.7): "max reps / max hold per rung" - every rung's best ever,
+// not only the current rung's last three sessions.
+describe('rungBests', () => {
+  const steps = [
+    step('neg', 0),
+    step('pull', 1),
+    step('hang', 2, { goal_reps: null, goal_seconds: 30 }),
+  ];
+  const dated = (exercise_id: string, date: string, partial: Partial<SetFact>) => ({
+    ...set(exercise_id, partial),
+    date,
+  });
+
+  it('finds the most reps on a rung and the day, over all its sets', () => {
+    const bests = rungBests(steps, [
+      dated('ex-pull', '2026-08-01', { reps: 6 }),
+      dated('ex-pull', '2026-09-01', { reps: 9 }),
+      dated('ex-pull', '2026-10-01', { reps: 8, weight_kg: 10 }),
+    ]);
+    expect(bests.pull).toEqual({ kind: 'reps', value: 9, date: '2026-09-01' });
+  });
+
+  it('finds the longest hold on a held rung', () => {
+    const bests = rungBests(steps, [
+      dated('ex-hang', '2026-08-01', { duration_seconds: 40 }),
+      dated('ex-hang', '2026-09-01', { duration_seconds: 25 }),
+    ]);
+    expect(bests.hang).toEqual({ kind: 'hold', value: 40, date: '2026-08-01' });
+  });
+
+  it('leaves out warm-ups and assisted sets, which are not the rung itself', () => {
+    const bests = rungBests(steps, [
+      dated('ex-neg', '2026-08-01', { reps: 12, set_type: 'warmup' }),
+      dated('ex-neg', '2026-08-02', { reps: 15, assist_kg: 20 }),
+      dated('ex-neg', '2026-08-03', { reps: 5 }),
+    ]);
+    expect(bests.neg).toEqual({ kind: 'reps', value: 5, date: '2026-08-03' });
+  });
+
+  it('is null for a rung never trained', () => {
+    expect(rungBests(steps, []).pull).toBeNull();
+  });
+});
+
+describe('stepSeries', () => {
+  it('carries the last position on to today, for the step chart', () => {
+    expect(
+      stepSeries(
+        [
+          { date: '2026-08-01', number: 1 },
+          { date: '2026-09-01', number: 2 },
+        ],
+        '2026-10-19',
+      ),
+    ).toEqual([
+      { date: '2026-08-01', number: 1 },
+      { date: '2026-09-01', number: 2 },
+      { date: '2026-10-19', number: 2 },
+    ]);
+  });
+
+  it('adds nothing when the last move was today, or there are none', () => {
+    expect(stepSeries([{ date: '2026-10-19', number: 3 }], '2026-10-19')).toHaveLength(1);
+    expect(stepSeries([], '2026-10-19')).toEqual([]);
   });
 });

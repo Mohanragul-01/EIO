@@ -3,6 +3,7 @@
  * pin what the lens shows and what a new exercise starts as in each.
  */
 import { defaultsForMode, parseMode, visibleInMode } from '../mode';
+import { DEFAULT_EXERCISES } from '../types';
 
 describe('visibleInMode', () => {
   it('shows an exercise in its own mode only', () => {
@@ -40,5 +41,23 @@ describe('parseMode', () => {
     expect(parseMode('gym')).toBe('gym');
     expect(parseMode(null)).toBe('gym');
     expect(parseMode('yoga')).toBe('gym');
+  });
+});
+
+describe('the starter library', () => {
+  const seeded = (name: string) => DEFAULT_EXERCISES.find((e) => e.name === name)!;
+
+  it('seeds Pull-up and Plank as bodyweight work that Calisthenics lists', () => {
+    for (const name of ['Pull-up', 'Plank']) {
+      const exercise = seeded(name);
+      expect(exercise.load_mode).toBe('bodyweight');
+      expect(visibleInMode(exercise, 'calisthenics')).toBe(true);
+      // A pull-up still belongs on a gym day too.
+      expect(visibleInMode(exercise, 'gym')).toBe(true);
+    }
+  });
+
+  it('leaves the barbell lifts as gym lifts', () => {
+    expect(seeded('Bench Press')).toMatchObject({ discipline: 'gym', load_mode: 'external' });
   });
 });

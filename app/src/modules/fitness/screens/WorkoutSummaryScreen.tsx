@@ -28,7 +28,8 @@ import type { RecordHit } from '../records';
 import {
   compareToLast,
   describeDeviation,
-  routineDeviation,
+  sessionDeviation,
+  workingSetCount,
   sessionSummary,
   type Comparison,
 } from '../summary';
@@ -70,7 +71,8 @@ export function WorkoutSummaryScreen() {
 
   const [ordinal, setOrdinal] = useState<number | null>(null);
   const [lastSets, setLastSets] = useState<SetFact[] | null>(null);
-  const [slots, setSlots] = useState<RoutineExercise[]>([]);
+  /** The routine's slots; null until they have loaded (and for good if that failed). */
+  const [slots, setSlots] = useState<RoutineExercise[] | null>(null);
   const [routineName, setRoutineName] = useState<string | null>(null);
   const [routineDecided, setRoutineDecided] = useState(false);
   const [ladders, setLadders] = useState<api.Ladder[]>([]);
@@ -99,8 +101,8 @@ export function WorkoutSummaryScreen() {
           session.routine_id ? api.listRoutines() : Promise.resolve([]),
         ]);
         // Ladders whose current rung might have been trained today.
-        const ladderRows = await api.listLadders().catch(() => [] as api.Ladder[]);
-        const rungExercises = ladderRows.flatMap((l) => {
+        const ladderRows = await api.listLadders().catch(() => null);
+        const rungExercises = (ladderRows ?? []).flatMap((l) => {
           const rung = l.steps.find((st) => st.id === l.progression.current_step_id);
           return rung ? [rung.exercise_id] : [];
         });
@@ -112,11 +114,17 @@ export function WorkoutSummaryScreen() {
           ]),
         );
         if (!active) return;
-        setLadders(ladderRows);
+        setLadders(ladderRows ?? []);
         setLadderHistory(earlier);
         setOrdinal(n);
         setLastSets(last);
-        setSlots(routineSlots);
+        // A ladder slot cannot be matched without its ladder: no comparison
+        // then, rather than its rung listed as an exercise you added.
+        setSlots(
+          ladderRows === null && routineSlots.some((slot) => slot.progression_id)
+            ? null
+            : routineSlots,
+        );
         setRoutineName(routines.find((r) => r.id === session.routine_id)?.name ?? null);
       } catch {
         // The summary still shows what this session itself holds.
@@ -157,17 +165,20 @@ export function WorkoutSummaryScreen() {
     [sets, lastSets, w.exercisesById, session],
   );
 
-  const deviation = useMemo(
+  // Each block's saved sets, for counting what was done (one-sided pairs once).
+  const done = useMemo(
     () =>
-      routineDeviation(
-        slots,
-        w.blocks.map((b) => ({
-          exerciseId: b.exerciseId,
-          workingSets: b.rows.filter((r) => r.kind === 'saved' && r.set.set_type !== 'warmup')
-            .length,
-        })),
-      ),
-    [slots, w.blocks],
+      w.blocks.map((b) => ({
+        exerciseId: b.exerciseId,
+        sets: b.rows.flatMap((r) => (r.kind === 'saved' ? [r.set] : [])),
+      })),
+    [w.blocks],
+  );
+  // Null until the routine's slots have loaded: nothing is offered before then
+  // (summary.ts). A ladder slot counts as the rung it was trained on.
+  const deviation = useMemo(
+    () => (session?.routine_id ? sessionDeviation(slots, ladders, done) : null),
+    [session, slots, ladders, done],
   );
   const names = useMemo(
     () => Object.fromEntries(Object.values(w.exercisesById).map((e) => [e.id, e.name])),
@@ -181,8 +192,8 @@ export function WorkoutSummaryScreen() {
     [ladders, sets, ladderHistory, answered],
   );
 
-  const deviationLines = session?.routine_id ? describeDeviation(deviation, names) : [];
-  const canUpdate = deviation.added.length > 0 || deviation.setCounts.length > 0;
+  const deviationLines = deviation ? describeDeviation(deviation, names) : [];
+  const canUpdate = !!deviation && (deviation.added.length > 0 || deviation.setCounts.length > 0);
 
   if (w.loading || !session) {
     return (
@@ -195,18 +206,17 @@ export function WorkoutSummaryScreen() {
   }
 
   const updateRoutine = async () => {
-    if (!session.routine_id) return;
+    if (!session.routine_id || !deviation) return;
     setUpdating(true);
     try {
       const counts = (id: string) =>
-        w.blocks
-          .find((b) => b.exerciseId === id)
-          ?.rows.filter((r) => r.kind === 'saved' && r.set.set_type !== 'warmup').length ?? 1;
+        workingSetCount(done.find((b) => b.exerciseId === id)?.sets ?? []) || 1;
       await api.updateRoutineFromSession(session.routine_id, {
-        setCounts: deviation.setCounts.map((c) => ({
-          exercise_id: c.exerciseId,
-          target_sets: c.to,
-        })),
+        setCounts: deviation.setCounts.map((c) =>
+          c.progressionId
+            ? { progression_id: c.progressionId, target_sets: c.to }
+            : { exercise_id: c.exerciseId, target_sets: c.to },
+        ),
         added: deviation.added.map((id) => ({ exercise_id: id, target_sets: counts(id) })),
       });
       setRoutineDecided(true);
@@ -288,6 +298,9 @@ export function WorkoutSummaryScreen() {
                         toStepId: candidate.to.id,
                         kind: 'up',
                         sessionId: session.id,
+                        // Mastered on the day it was shown, which for a
+                        // back-dated session is not today.
+                        date: session.date,
                       });
                       success();
                       setAnswered((a) => [...a, candidate.progressionId]);
@@ -341,7 +354,7 @@ export function WorkoutSummaryScreen() {
                   • {line}
                 </Text>
               ))}
-              {deviation.skipped.length > 0 ? (
+              {deviation && deviation.skipped.length > 0 ? (
                 <Text style={styles.hint}>Skipped exercises stay in the routine.</Text>
               ) : null}
               <View style={styles.actions}>

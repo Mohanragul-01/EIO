@@ -31,6 +31,19 @@ export function holdPhase(
 export type HoldCue = { atSeconds: number; kind: 'tick' | 'target' };
 
 /**
+ * How each moment of a hold feels, as haptic pulses played in order a beat
+ * apart. The lead-in counts and the ticks are light taps and "Go" is one
+ * firm pulse; the target is two firm pulses, the "two-tone" cue, so with the
+ * voice off it is never mistaken for the start.
+ */
+export const CUE_PULSES: Record<'count' | 'go' | 'tick' | 'target', ('tap' | 'success')[]> = {
+  count: ['tap'],
+  go: ['success'],
+  tick: ['tap'],
+  target: ['success', 'success'],
+};
+
+/**
  * The cues crossed as the hold moved from `prevMs` to `nextMs` (exclusive of
  * prev, inclusive of next): a tick every `tickEverySeconds` (null: no ticks)
  * and the target, which replaces a tick that lands on it.

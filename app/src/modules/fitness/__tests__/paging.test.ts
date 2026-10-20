@@ -51,7 +51,7 @@ it("returns an exercise's whole history for record checks", async () => {
   await expect(api.listExerciseHistory('e1')).resolves.toHaveLength(N);
 });
 
-it('returns every set of a routine\'s exercises for the baseline', async () => {
+it("returns every set of a routine's exercises for the baseline", async () => {
   const baseline = await api.listBaseline(['e1', 'e2'], 'current');
   expect(Object.values(baseline).flat()).toHaveLength(N);
 });
@@ -59,6 +59,16 @@ it('returns every set of a routine\'s exercises for the baseline', async () => {
 it("returns every set for an exercise's page and chart", async () => {
   await expect(api.listExerciseSets('e1')).resolves.toHaveLength(N);
   await expect(api.listExerciseProgress('e1')).resolves.toHaveLength(N);
+});
+
+it('returns the day of every session, for the streak and the session count', async () => {
+  await expect(api.listSessionDays()).resolves.toHaveLength(N);
+});
+
+it("returns every set of a ladder's rungs, for each rung's best ever", async () => {
+  const sets = await api.listRungSets(['e1', 'e2']);
+  expect(sets).toHaveLength(N);
+  expect(sets[0].date).toBe('2026-10-01');
 });
 
 it('numbers a workout past the thousandth', async () => {

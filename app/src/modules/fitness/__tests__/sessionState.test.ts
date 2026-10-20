@@ -9,9 +9,13 @@
  */
 import { newDraft, type DraftRow } from '../blocks';
 import {
+  applyTarget,
   commitDraft,
+  copyPrevious,
+  draftLoad,
   ghostValues,
   sessionReducer,
+  settleLoad,
   type BlockState,
   type SessionUiState,
 } from '../sessionState';
@@ -250,6 +254,98 @@ describe('commitDraft', () => {
       values: { reps: null, duration_seconds: 45 },
     });
   });
+
+  // C1: assisted (-20) -> bodyweight -> weighted is the progression v3 is
+  // built around, and the first unassisted set must not save last time's help.
+  const assistedGhost = { reps: 8, seconds: null, weight: null, assist: 20 };
+
+  it('a load set by hand to nothing saves no assistance, whatever last time had', () => {
+    expect(commitDraft(draft({ reps: '8', loadTyped: true }), assistedGhost, pullUp)).toMatchObject(
+      { ok: true, values: { weight_kg: 0, assist_kg: null } },
+    );
+  });
+
+  it('a load set by hand to nothing saves no added weight either', () => {
+    const weightedGhost = { reps: 8, seconds: null, weight: 10, assist: null };
+    expect(commitDraft(draft({ reps: '8', loadTyped: true }), weightedGhost, pullUp)).toMatchObject(
+      { ok: true, values: { weight_kg: 0, assist_kg: null } },
+    );
+  });
+
+  it('unticking an unassisted set and ticking it again saves it unassisted', () => {
+    let s = state([
+      { kind: 'saved', key: 'k1', set: savedSet('s1', { reps: 8, weight_kg: 0, assist_kg: null }) },
+    ]);
+    s = sessionReducer(s, { type: 'untick', blockId: 'b1', key: 'k1' });
+    const row = rowsOf(s)[0];
+    if (row.kind !== 'draft') throw new Error('expected a draft');
+    expect(commitDraft(row.draft, assistedGhost, pullUp)).toMatchObject({
+      ok: true,
+      values: { weight_kg: 0, assist_kg: null },
+    });
+  });
+});
+
+describe('draftLoad: the load a row shows is the load it saves', () => {
+  const pullUp = { tracking_type: 'reps' as const, load_mode: 'bodyweight' as const };
+  const ghosts = [
+    { reps: 8, seconds: null, weight: null, assist: 20 },
+    { reps: 8, seconds: null, weight: 10, assist: null },
+    { reps: 8, seconds: null, weight: null, assist: null },
+  ];
+  const drafts = [
+    draft({ reps: '8' }),
+    draft({ reps: '8', assist: '15' }),
+    draft({ reps: '8', weight: '5' }),
+    draft({ reps: '8', loadTyped: true }),
+    draft({ reps: '8', assist: '10', loadTyped: true }),
+  ];
+
+  it("shows last time's load, marked as such, until one is set", () => {
+    expect(draftLoad(draft({ reps: '8' }), ghosts[0])).toEqual({
+      weight: 0,
+      assist: 20,
+      band_id: null,
+      ghosted: true,
+    });
+    expect(draftLoad(draft({ reps: '8', loadTyped: true }), ghosts[0])).toEqual({
+      weight: 0,
+      assist: null,
+      band_id: null,
+      ghosted: false,
+    });
+  });
+
+  it('matches what commitDraft saves, for every mix of typed and ghost', () => {
+    for (const ghost of ghosts) {
+      for (const d of drafts) {
+        const shown = draftLoad(d, ghost);
+        const committed = commitDraft(d, ghost, pullUp);
+        if (!committed.ok) throw new Error(committed.reason);
+        expect([committed.values.weight_kg, committed.values.assist_kg]).toEqual([
+          shown.weight,
+          shown.assist,
+        ]);
+      }
+    }
+  });
+
+  it('settling a load writes what was shown into the row, so clearing a field means none', () => {
+    const d = draft({ reps: '8' });
+    const settled = { ...d, ...settleLoad(d, ghosts[0]) };
+    expect(settled).toMatchObject({ weight: '', assist: '20', loadTyped: true });
+    expect(draftLoad(settled, ghosts[0])).toMatchObject({ weight: 0, assist: 20, ghosted: false });
+    const cleared = { ...settled, assist: '' };
+    expect(commitDraft(cleared, ghosts[0], pullUp)).toMatchObject({
+      ok: true,
+      values: { assist_kg: null },
+    });
+  });
+
+  it('settling keeps what was already typed', () => {
+    const d = draft({ reps: '8', weight: '7.5' });
+    expect(settleLoad(d, ghosts[0])).toEqual({ weight: '7.5', assist: '20', loadTyped: true });
+  });
 });
 
 describe('ghostValues', () => {
@@ -308,6 +404,20 @@ describe('ghostValues', () => {
     ).toEqual({ reps: null, seconds: null, weight: null, assist: null });
   });
 
+  it("a progression target brings its own load, not the matched set's", () => {
+    const ghost = { reps: 8, seconds: null, weight: null, assist: 20 };
+    const target = { weight: 0, assist: null, reps: 6, seconds: null, reason: '+1 rep' };
+    expect(applyTarget(ghost, target, 'normal')).toEqual({
+      reps: 6,
+      seconds: null,
+      weight: 0,
+      assist: null,
+    });
+    // Warm-ups and drops keep last time's.
+    expect(applyTarget(ghost, target, 'warmup')).toBe(ghost);
+    expect(applyTarget(ghost, { ...target, reason: null }, 'normal')).toBe(ghost);
+  });
+
   it('nothing to go on gives nothing', () => {
     expect(
       ghostValues({ exercise: pullUp, previous: null, slot: null, rowType: 'normal' }),
@@ -345,5 +455,37 @@ describe('block order and replacement', () => {
       block: { id: 'a', exerciseId: 'z', sessionExercise: null, rows: [] },
     });
     expect(s.blocks.map((b) => b.exerciseId)).toEqual(['z', 'b']);
+  });
+});
+
+describe('copyPrevious: tapping PREVIOUS copies the whole set', () => {
+  const last = {
+    id: 'p',
+    exercise_id: 'x',
+    session_id: 'last',
+    set_type: 'normal' as const,
+    reps: 8,
+    duration_seconds: null,
+    weight_kg: 0,
+    assist_kg: 15,
+    band_id: 'red',
+    clean: true,
+    created_at: '',
+  };
+
+  it('copies the band with its assistance, and sets the load exactly', () => {
+    expect(copyPrevious(last, false)).toEqual({
+      weight: '',
+      assist: '15',
+      band_id: 'red',
+      loadTyped: true,
+      reps: '8',
+    });
+  });
+
+  it('copies a hold as seconds, and an unbanded set as no band', () => {
+    expect(
+      copyPrevious({ ...last, reps: null, duration_seconds: 30, band_id: undefined }, true),
+    ).toEqual({ weight: '', assist: '15', band_id: null, loadTyped: true, seconds: '30' });
   });
 });

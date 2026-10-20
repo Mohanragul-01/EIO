@@ -26,7 +26,7 @@ import { radius, spacing } from '../../../core/theme';
 import type { DraftRow } from '../blocks';
 import { formatHoldShort, formatLoadChip, formatSetShort, setLabels, type SetFact } from '../load';
 import { primaryRecord, type RecordHit } from '../records';
-import type { BlockState, Ghost, Row } from '../sessionState';
+import { copyPrevious, draftLoad, type BlockState, type Ghost, type Row } from '../sessionState';
 import { formatDuration, type Band, type Exercise, type SetType } from '../types';
 
 type Props = {
@@ -39,6 +39,12 @@ type Props = {
   supersetLabel?: string | null;
   /** Why today's ghost numbers differ from last time, e.g. "+2.5 kg · every set hit 12". */
   targetReason?: string | null;
+  /**
+   * For a rung of a ladder: where it stands ("Front lever · 2/4"), and the
+   * rungs either side it can step to today (null when it cannot).
+   */
+  level?: LevelChip | null;
+  onLevel?: (delta: -1 | 1) => void;
   previousFor: (index: number) => SetFact | null;
   ghostFor: (index: number) => Ghost;
   onOpenExercise: () => void;
@@ -54,6 +60,13 @@ type Props = {
   onHold: (key: string) => void;
   onAddSet: () => void;
   onNoteBlur: (note: string) => void;
+};
+
+export type LevelChip = {
+  label: string;
+  spoken: string;
+  easier: string | null;
+  harder: string | null;
 };
 
 const typeOf = (row: Row): SetType =>
@@ -134,6 +147,8 @@ export function ExerciseBlock(props: Props) {
         </Pressable>
       </View>
 
+      {props.level ? <LevelRow level={props.level} onLevel={props.onLevel} /> : null}
+
       {props.targetReason ? (
         <View
           style={styles.reason}
@@ -206,6 +221,47 @@ export function ExerciseBlock(props: Props) {
   );
 }
 
+/**
+ * The level chip for a ladder exercise: "Front lever · 2/4", with ‹ › to do
+ * the easier or harder rung today instead. The ladder itself does not move.
+ */
+function LevelRow({ level, onLevel }: { level: LevelChip; onLevel?: (delta: -1 | 1) => void }) {
+  const styles = useStyles();
+  const { colors } = useTheme();
+  const arrow = (delta: -1 | 1, to: string | null) => (
+    <Pressable
+      onPress={() => to && onLevel?.(delta)}
+      disabled={!to}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !to }}
+      accessibilityLabel={
+        to
+          ? `${delta < 0 ? 'Easier' : 'Harder'}: do ${to} today instead`
+          : `No ${delta < 0 ? 'easier' : 'harder'} rung to switch to`
+      }
+      style={({ pressed }) => [styles.levelStep, pressed && styles.pressed]}
+    >
+      <Ionicons
+        name={delta < 0 ? 'chevron-back' : 'chevron-forward'}
+        size={18}
+        color={to ? colors.textSecondary : colors.textFaint}
+      />
+    </Pressable>
+  );
+  return (
+    <View style={styles.levelRow}>
+      {arrow(-1, level.easier)}
+      <View style={styles.levelChip} accessible accessibilityLabel={level.spoken}>
+        <Ionicons name="git-commit-outline" size={14} color={colors.accentCyan} />
+        <Text style={styles.levelText} numberOfLines={1}>
+          {level.label}
+        </Text>
+      </View>
+      {arrow(1, level.harder)}
+    </View>
+  );
+}
+
 function SetRow({
   row,
   index,
@@ -249,40 +305,65 @@ function SetRow({
   const record = primaryRecord(hits);
   const side = row.kind === 'saved' ? row.set.side : row.draft.side;
 
-  const letterColor: Record<SetType, string> = {
-    warmup: colors.warning,
-    normal: saved ? colors.text : colors.textSecondary,
-    failure: colors.danger,
-    drop: colors.info,
-  };
+  // On a ticked row's `completed` tint only text and textSecondary keep their
+  // contrast, so there the letter alone says W, F or D (and the trophy's shape
+  // says record); the type colours are for rows not yet ticked.
+  const letterColor: Record<SetType, string> = saved
+    ? { warmup: colors.text, normal: colors.text, failure: colors.text, drop: colors.text }
+    : {
+        warmup: colors.warning,
+        normal: colors.textSecondary,
+        failure: colors.danger,
+        drop: colors.info,
+      };
 
+  // Last time's band is named ("22s · Red band"), and copied with the set.
+  const previousBand = previous?.band_id ? bandsById[previous.band_id] : undefined;
   const previousText = previous
-    ? formatSetShort({ ...previous, band_id: null, side: null }, shape)
+    ? formatSetShort(
+        { ...previous, band_id: previous.band_id ?? null, side: null },
+        shape,
+        previousBand?.label,
+      )
     : '—';
 
   // LOAD: a kg field for an external lift; a chip for bodyweight.
   let loadCell: React.ReactNode;
   if (bodyweight) {
-    const source =
+    // A draft shows exactly the load ticking will save (draftLoad): last
+    // time's, drawn faint like any ghost, until the load is set by hand.
+    const load =
       row.kind === 'saved'
-        ? row.set
-        : {
-            weight_kg: Number(row.draft.weight.replace(',', '.')) || 0,
-            assist_kg: Number(row.draft.assist.replace(',', '.')) || null,
-            band_id: row.draft.band_id,
-          };
-    const band = source.band_id ? bandsById[source.band_id] : undefined;
-    const chip = formatLoadChip(source, shape, band?.label) ?? 'BW';
+        ? {
+            weight: row.set.weight_kg,
+            assist: row.set.assist_kg,
+            band_id: row.set.band_id,
+            ghosted: false,
+          }
+        : draftLoad(row.draft, ghost);
+    const band = load.band_id ? bandsById[load.band_id] : undefined;
+    const chip =
+      formatLoadChip(
+        { weight_kg: load.weight, assist_kg: load.assist, band_id: load.band_id },
+        shape,
+        band?.label,
+      ) ?? 'BW';
+    const ghosted = load.ghosted;
     loadCell = (
       <Pressable
         onPress={() => !saved && onLoad(row.key)}
         disabled={saved}
         accessibilityRole="button"
-        accessibilityLabel={`Load ${chip === 'BW' ? 'bodyweight' : chip}${saved ? '' : '. Change'}`}
+        accessibilityLabel={`Load ${chip === 'BW' ? 'bodyweight' : chip}${
+          ghosted ? ', same as last time' : ''
+        }${saved ? '' : '. Change'}`}
         style={[styles.colLoad, styles.loadChip]}
       >
         {band ? <View style={[styles.bandDot, { backgroundColor: band.color }]} /> : null}
-        <Text style={[styles.cellText, saved && styles.savedText]} numberOfLines={1}>
+        <Text
+          style={[styles.cellText, saved && styles.savedText, ghosted && styles.ghostText]}
+          numberOfLines={1}
+        >
           {chip}
         </Text>
       </Pressable>
@@ -298,7 +379,8 @@ function SetRow({
       <TextInput
         value={row.draft.weight}
         onChangeText={(weight) => onChangeDraft(row.key, { weight })}
-        placeholder={fmt(ghost.weight)}
+        // Once the load is set by hand, an empty field saves 0, so it says so.
+        placeholder={row.draft.loadTyped ? '0' : fmt(ghost.weight)}
         placeholderTextColor={colors.textFaint}
         keyboardType="decimal-pad"
         selectTextOnFocus
@@ -371,7 +453,7 @@ function SetRow({
         >
           {record ? (
             <View style={styles.medal}>
-              <Ionicons name="trophy" size={13} color={colors.warning} />
+              <Ionicons name="trophy" size={13} color={saved ? colors.text : colors.warning} />
               <Text style={[styles.setLabel, { color: letterColor[type] }]}>{label}</Text>
             </View>
           ) : (
@@ -383,13 +465,7 @@ function SetRow({
         <Pressable
           onPress={() => {
             if (!previous || row.kind !== 'draft') return;
-            onChangeDraft(row.key, {
-              weight: fmt(previous.weight_kg),
-              assist: fmt(previous.assist_kg),
-              ...(timed
-                ? { seconds: previous.duration_seconds ? String(previous.duration_seconds) : '' }
-                : { reps: previous.reps !== null ? String(previous.reps) : '' }),
-            });
+            onChangeDraft(row.key, copyPrevious(previous, timed));
           }}
           disabled={!previous || row.kind !== 'draft'}
           accessibilityRole="button"
@@ -479,11 +555,35 @@ const useStyles = makeStyles(({ colors, typography }) => ({
     backgroundColor: colors.glass,
   },
   reasonText: { ...typography.caption, color: colors.info },
+  levelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginHorizontal: spacing.sm,
+  },
+  levelStep: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+  },
+  levelChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.glass,
+    flexShrink: 1,
+  },
+  levelText: { ...typography.caption, ...typography.numeric, color: colors.textSecondary },
   pinnedText: { ...typography.caption, color: colors.textSecondary, flex: 1 },
   note: {
     ...typography.caption,
     color: colors.text,
-    minHeight: 40,
+    minHeight: 48,
     marginHorizontal: spacing.lg,
     paddingVertical: spacing.xs,
   },

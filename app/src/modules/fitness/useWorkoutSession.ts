@@ -21,24 +21,26 @@ import { todayISO } from '../../core/date';
 import { useLatestRun } from '../../core/useLatestRun';
 
 import * as api from './api';
-import { initialDrafts, newDraft, type DraftRow } from './blocks';
+import { buildBlock, newDrafts, type DraftRow } from './blocks';
 import { toSetFact, workingVolume, type SetFact } from './load';
 import { matchPrevious } from './previous';
-import { ladderSlotTarget } from './progression';
+import { ladderLevel, ladderSlotTarget, type LadderLevel } from './progression';
 import { nextTarget, type Target } from './targets';
 import { sessionRecords, type RecordHit } from './records';
+import { sessionClockEnd } from './summary';
 import {
+  applyTarget,
   commitDraft,
   ghostValues,
   sessionReducer,
   type BlockState,
   type Ghost,
-  type Row,
 } from './sessionState';
 import {
   nextSetNumber,
   type Band,
   type Exercise,
+  type ProgressionStep,
   type RoutineExercise,
   type SessionExercise,
   type SessionSet,
@@ -62,27 +64,26 @@ function blockFor(
   previous: Previous,
   unilateral = false,
 ): BlockState {
-  const saved = sets
-    .filter((s) => s.exercise_id === row.exercise_id)
-    .sort((a, b) => a.set_number - b.set_number);
-  const drafts = initialDrafts({
-    blockKey: row.id,
-    savedSets: saved,
+  // Shared with the other client (blocks.ts): one-sided exercises count in
+  // pairs, and saved warm-ups do not use up the routine's sets.
+  return buildBlock({
+    row,
+    sets,
     routineTargetSets: slot?.target_sets ?? null,
     previousSets: previous[row.exercise_id]?.sets ?? [],
+    unilateral,
   });
-  // A one-sided exercise logs each set as a left and a right.
-  const sided = unilateral
-    ? drafts.flatMap((d) => [
-        { ...d, side: 'left' as const },
-        { ...newDraft(row.id, d.set_type), side: 'right' as const },
-      ])
-    : drafts;
-  const rows: Row[] = [
-    ...saved.map((set): Row => ({ kind: 'saved', key: set.id, set })),
-    ...sided.map((draft): Row => ({ kind: 'draft', key: draft.key, draft })),
-  ];
-  return { id: row.id, exerciseId: row.exercise_id, sessionExercise: row, rows };
+}
+
+/** A routine's ladder slot aimed at one rung: its restart point up to its goal. */
+function ladderSlot(slot: RoutineExercise, rung: ProgressionStep): RoutineExercise {
+  const target = ladderSlotTarget(rung);
+  return {
+    ...slot,
+    exercise_id: rung.exercise_id,
+    ...target,
+    target_sets: slot.target_sets ?? target.target_sets,
+  };
 }
 
 export function useWorkoutSession(sessionId: string) {
@@ -96,6 +97,7 @@ export function useWorkoutSession(sessionId: string) {
    * keyed by its current rung's exercise, with the rung's range as target.
    */
   const [slotsByExercise, setSlotsByExercise] = useState<Record<string, RoutineExercise>>({});
+  const [ladders, setLadders] = useState<api.Ladder[]>([]);
   const [state, dispatch] = useReducer(sessionReducer, { blocks: [] });
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState(false);
@@ -161,12 +163,15 @@ export function useWorkoutSession(sessionId: string) {
       const allBlocks = [...blockRows, ...adopted].sort((a, b) => a.position - b.position);
       const ids = allBlocks.map((b) => b.exercise_id);
 
-      const [baselineRows, previousRows, slotRows] = await Promise.all([
+      // The ladders too: for the level chip on a rung's block, and for the
+      // routine's ladder slots. Without them a block simply has no chip.
+      const [baselineRows, previousRows, slotRows, ladderRows] = await Promise.all([
         api.listBaseline(ids, sessionId),
         api.listPreviousSets(ids, sessionId, found.date),
         found.routine_id
           ? api.listRoutineExercises(found.routine_id).catch(() => [])
           : Promise.resolve([]),
+        api.listLadders().catch(() => [] as api.Ladder[]),
       ]);
       if (!isCurrent()) return;
 
@@ -174,21 +179,12 @@ export function useWorkoutSession(sessionId: string) {
         slotRows.flatMap((slot) => (slot.exercise_id ? [[slot.exercise_id, slot]] : [])),
       ) as Record<string, RoutineExercise>;
       // Ladder slots aim at their current rung: its restart point up to its goal.
-      if (slotRows.some((slot) => slot.progression_id)) {
-        const ladders = await api.listLadders().catch(() => []);
-        for (const slot of slotRows) {
-          const ladder = ladders.find((l) => l.progression.id === slot.progression_id);
-          const rung = ladder?.steps.find((st) => st.id === ladder.progression.current_step_id);
-          if (!rung || slotMap[rung.exercise_id]) continue;
-          const target = ladderSlotTarget(rung);
-          slotMap[rung.exercise_id] = {
-            ...slot,
-            exercise_id: rung.exercise_id,
-            ...target,
-            target_sets: slot.target_sets ?? target.target_sets,
-          };
-        }
-        if (!isCurrent()) return;
+      for (const slot of slotRows) {
+        if (!slot.progression_id) continue;
+        const ladder = ladderRows.find((l) => l.progression.id === slot.progression_id);
+        const rung = ladder?.steps.find((st) => st.id === ladder.progression.current_step_id);
+        if (!rung || slotMap[rung.exercise_id]) continue;
+        slotMap[rung.exercise_id] = ladderSlot(slot, rung);
       }
 
       setSession(found);
@@ -197,6 +193,7 @@ export function useWorkoutSession(sessionId: string) {
       setBaseline(baselineRows);
       setPrevious(previousRows);
       setSlotsByExercise(slotMap);
+      setLadders(ladderRows);
       dispatch({
         type: 'load',
         blocks: allBlocks.map((row) =>
@@ -239,12 +236,15 @@ export function useWorkoutSession(sessionId: string) {
 
   const stats = useMemo(() => {
     const firstSet = savedFacts[0]?.created_at ?? null;
+    const lastSet = savedFacts[savedFacts.length - 1]?.created_at ?? null;
     const startedAt = session?.started_at ?? firstSet;
     return {
       volume: workingVolume(savedFacts, exercisesById, session?.bodyweight_kg ?? null),
       workingSets: savedFacts.filter((s) => s.set_type !== 'warmup').length,
       startedAt: startedAt ? Date.parse(startedAt) : null,
       endedAt: session?.ended_at ? Date.parse(session.ended_at) : null,
+      /** When the last set was saved: where an unfinished session's clock stops. */
+      lastSetAt: lastSet ? Date.parse(lastSet) : null,
     };
   }, [savedFacts, exercisesById, session]);
 
@@ -268,7 +268,9 @@ export function useWorkoutSession(sessionId: string) {
       const exercise = exercisesById[block.exerciseId];
       const last = previous[block.exerciseId];
       const slot = slotsByExercise[block.exerciseId];
-      if (!exercise || !last) return { weight: null, reps: null, seconds: null, reason: null };
+      if (!exercise || !last) {
+        return { weight: null, assist: null, reps: null, seconds: null, reason: null };
+      }
       return nextTarget({
         exercise,
         slot: slot
@@ -301,17 +303,7 @@ export function useWorkoutSession(sessionId: string) {
         slot: slotsByExercise[block.exerciseId] ?? null,
         rowType,
       });
-      // A progression target applies to working sets, never warm-ups or drops.
-      const target = targetFor(block);
-      if (target.reason && (rowType === 'normal' || rowType === 'failure')) {
-        return {
-          reps: target.reps ?? ghost.reps,
-          seconds: target.seconds ?? ghost.seconds,
-          weight: target.weight ?? ghost.weight,
-          assist: ghost.assist,
-        };
-      }
-      return ghost;
+      return applyTarget(ghost, targetFor(block), rowType);
     },
     [exercisesById, previousFor, slotsByExercise, targetFor],
   );
@@ -434,13 +426,19 @@ export function useWorkoutSession(sessionId: string) {
       }
 
       const removed = row.set;
-      const deleting = api.deleteSet(removed.id).catch((e) => {
-        fail(e, 'Could not delete that set');
-        void load();
-      });
+      // Whether the delete went through. If it failed, the reload has put the
+      // set back already, and an Undo writing it again would make two.
+      const deleted = api.deleteSet(removed.id).then(
+        () => true,
+        (e) => {
+          fail(e, 'Could not delete that set');
+          void load();
+          return false;
+        },
+      );
       return () => {
         void (async () => {
-          await deleting;
+          if (!(await deleted)) return;
           try {
             const restored = await api.addSet(sessionId, {
               exercise_id: removed.exercise_id,
@@ -472,32 +470,39 @@ export function useWorkoutSession(sessionId: string) {
   );
 
   /**
-   * Add a row (with starting values, if given); a one-sided exercise gets a
-   * left and a right.
+   * Add rows at `index` (the end if not given), one per set of starting
+   * values, in order; a one-sided exercise gets a left and a right for each.
    */
+  const addRows = useCallback(
+    (
+      blockId: string,
+      setType: SetType = 'normal',
+      index: number | undefined = undefined,
+      values: Partial<Omit<DraftRow, 'key' | 'set_type' | 'side'>>[] = [{}],
+    ) => {
+      const block = stateRef.current.blocks.find((b) => b.id === blockId);
+      const unilateral = !!(block && exercisesById[block.exerciseId]?.is_unilateral);
+      newDrafts(blockId, setType, unilateral, values).forEach((draft, k) => {
+        dispatch({
+          type: 'addRow',
+          blockId,
+          row: { kind: 'draft', key: draft.key, draft },
+          index: index === undefined ? undefined : index + k,
+        });
+      });
+    },
+    [exercisesById],
+  );
+
+  /** Add one row (a left and a right on a one-sided exercise). */
   const addRow = useCallback(
     (
       blockId: string,
       setType: SetType = 'normal',
       index?: number,
       values: Partial<Omit<DraftRow, 'key' | 'set_type' | 'side'>> = {},
-    ) => {
-      const block = stateRef.current.blocks.find((b) => b.id === blockId);
-      const sides =
-        block && exercisesById[block.exerciseId]?.is_unilateral
-          ? (['left', 'right'] as const)
-          : [null];
-      sides.forEach((side, i) => {
-        const draft = { ...newDraft(blockId, setType), ...values, side };
-        dispatch({
-          type: 'addRow',
-          blockId,
-          row: { kind: 'draft', key: draft.key, draft },
-          index: index === undefined ? undefined : index + i,
-        });
-      });
-    },
-    [exercisesById],
+    ) => addRows(blockId, setType, index, [values]),
+    [addRows],
   );
 
   const updateDraft = useCallback(
@@ -678,8 +683,13 @@ export function useWorkoutSession(sessionId: string) {
   );
 
   /** Swap a block's exercise for another. Only before anything is logged in it. */
+  /**
+   * Swap a block's exercise for another. Only before anything is logged in
+   * it. `slot` is the routine target to aim at instead (a ladder slot moving
+   * with its rung).
+   */
   const replaceExercise = useCallback(
-    async (blockId: string, exerciseId: string) => {
+    async (blockId: string, exerciseId: string, slot?: RoutineExercise) => {
       const block = stateRef.current.blocks.find((b) => b.id === blockId);
       if (!block?.sessionExercise || !session) return;
       if (block.rows.some((r) => r.kind === 'saved')) return;
@@ -692,13 +702,14 @@ export function useWorkoutSession(sessionId: string) {
         if (!isMounted()) return;
         setBaseline((b) => ({ ...b, ...base }));
         setPrevious((p) => ({ ...p, ...prev }));
+        if (slot) setSlotsByExercise((current) => ({ ...current, [exerciseId]: slot }));
         dispatch({
           type: 'replaceBlock',
           blockId,
           block: blockFor(
             { ...block.sessionExercise, exercise_id: exerciseId },
             [],
-            slotsByExercise[exerciseId],
+            slot ?? slotsByExercise[exerciseId],
             prev,
             exercisesById[exerciseId]?.is_unilateral,
           ),
@@ -708,6 +719,35 @@ export function useWorkoutSession(sessionId: string) {
       }
     },
     [session, sessionId, slotsByExercise, exercisesById, isMounted, fail],
+  );
+
+  /** Where a block's exercise stands on its ladder, or null when it is on none. */
+  const levelFor = useCallback(
+    (block: BlockState): LadderLevel | null => ladderLevel(ladders, block.exerciseId),
+    [ladders],
+  );
+
+  /**
+   * Step a ladder block to the easier (-1) or harder (+1) rung for this
+   * session: the block's exercise is replaced, and a routine's ladder slot
+   * aims at the new rung's range. The ladder itself does not move: moving up
+   * is still your call, on the summary or the ladder's page.
+   */
+  const stepLevel = useCallback(
+    async (blockId: string, delta: -1 | 1) => {
+      const block = stateRef.current.blocks.find((b) => b.id === blockId);
+      const level = block ? ladderLevel(ladders, block.exerciseId) : null;
+      const to = delta < 0 ? level?.previous : level?.next;
+      if (!block || !level || !to) return;
+      if (stateRef.current.blocks.some((b) => b.exerciseId === to.exercise_id)) return;
+      const slot = slotsByExercise[block.exerciseId];
+      await replaceExercise(
+        blockId,
+        to.exercise_id,
+        slot?.progression_id === level.progressionId ? ladderSlot(slot, to) : undefined,
+      );
+    },
+    [ladders, slotsByExercise, replaceExercise],
   );
 
   /**
@@ -764,15 +804,42 @@ export function useWorkoutSession(sessionId: string) {
   // SESSION -----------------------------------------------------------------------
 
   const finish = useCallback(async (): Promise<boolean> => {
+    // A session that is already over (another day's, or idle for hours) ends
+    // at its last set; stamping now would make its duration days long.
+    const over = sessionClockEnd({
+      endedAt: null,
+      startedAt: stats.startedAt,
+      lastSetAt: stats.lastSetAt,
+      date: session?.date ?? todayISO(),
+      now: Date.now(),
+    });
     try {
-      const updated = await api.finishSession(sessionId);
+      const updated = await api.finishSession(
+        sessionId,
+        over === null ? undefined : new Date(over).toISOString(),
+      );
       if (isMounted()) setSession(updated);
       return true;
     } catch (e) {
       fail(e, 'Could not finish the workout');
       return false;
     }
-  }, [sessionId, isMounted, fail]);
+  }, [sessionId, session, stats, isMounted, fail]);
+
+  /**
+   * Re-read the session row alone - its end time, date and notes - leaving the
+   * blocks and anything typed in them as they are. For coming back to the
+   * screen: the summary on top of it can reopen the session, and a full
+   * reload would throw away rows typed but not yet ticked.
+   */
+  const refreshSession = useCallback(async () => {
+    try {
+      const found = await api.getSession(sessionId);
+      if (isMounted() && found) setSession(found);
+    } catch {
+      // The screen still shows what it had; the next action reports any error.
+    }
+  }, [sessionId, isMounted]);
 
   const reopen = useCallback(async () => {
     setSession((s) => (s ? { ...s, ended_at: null } : s));
@@ -783,17 +850,45 @@ export function useWorkoutSession(sessionId: string) {
     }
   }, [sessionId, fail]);
 
-  /** Change the day a session belongs to - for logging a workout you forgot. */
+  /** The latest date change, so an older one landing late cannot win. */
+  const dateRun = useRef(0);
+
+  /**
+   * Change the day a session belongs to - for logging a workout you forgot.
+   * What the session is compared with moves with it: PREVIOUS and the ghosts
+   * come from the last session before the new day (not the one after it),
+   * and the bodyweight is that day's weigh-in. Never a day still to come.
+   */
   const setDate = useCallback(
     async (date: string) => {
+      const before = session?.date;
+      if (!before || date === before) return;
+      if (date > todayISO()) {
+        setError('A workout cannot be dated in the future');
+        return;
+      }
+      const run = ++dateRun.current;
       setSession((current) => (current ? { ...current, date } : current));
       try {
-        await api.updateSession(sessionId, { date });
+        const ids = stateRef.current.blocks.map((b) => b.exerciseId);
+        const [previousRows, bodyweight] = await Promise.all([
+          api.listPreviousSets(ids, sessionId, date),
+          api.bodyweightOn(date),
+        ]);
+        await api.updateSession(sessionId, { date, bodyweight_kg: bodyweight });
+        if (!isMounted() || run !== dateRun.current) return;
+        setPrevious(previousRows);
+        setSession((current) => (current ? { ...current, bodyweight_kg: bodyweight } : current));
       } catch (e) {
+        if (!isMounted() || run !== dateRun.current) return;
+        // Only the date this change wrote goes back.
+        setSession((current) =>
+          current && current.date === date ? { ...current, date: before } : current,
+        );
         fail(e, 'Could not change the date');
       }
     },
-    [sessionId, fail],
+    [session, sessionId, isMounted, fail],
   );
 
   const saveNotes = useCallback(
@@ -828,10 +923,12 @@ export function useWorkoutSession(sessionId: string) {
     error,
     clearError: () => setError(null),
     reload: load,
+    refreshSession,
     tick,
     untick,
     removeRow,
     addRow,
+    addRows,
     updateDraft,
     updateRow,
     addExercise,
@@ -839,6 +936,8 @@ export function useWorkoutSession(sessionId: string) {
     moveExercise,
     setSuperset,
     replaceExercise,
+    levelFor,
+    stepLevel,
     setRest,
     setBlockNote,
     setPinnedNote,

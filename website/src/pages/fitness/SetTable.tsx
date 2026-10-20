@@ -27,7 +27,13 @@ import {
   type SetFact,
 } from '@app/modules/fitness/load';
 import { primaryRecord, type RecordHit } from '@app/modules/fitness/records';
-import type { BlockState, Ghost, Row } from '@app/modules/fitness/sessionState';
+import {
+  copyPrevious,
+  draftLoad,
+  type BlockState,
+  type Ghost,
+  type Row,
+} from '@app/modules/fitness/sessionState';
 import type { Band, Exercise } from '@app/modules/fitness/types';
 import { formatEventDate } from '@app/core/date';
 
@@ -277,8 +283,14 @@ function SetRow({
   const clean = values.clean;
   const setName = `Set ${label}${side ? (side === 'left' ? ' left' : ' right') : ''}`;
 
+  // Last time's band is named ("22s · Red band"), and copied with the set.
+  const previousBand = previous?.band_id ? bandsById[previous.band_id] : undefined;
   const previousText = previous
-    ? formatSetShort({ ...previous, band_id: null, side: null }, shape)
+    ? formatSetShort(
+        { ...previous, band_id: previous.band_id ?? null, side: null },
+        shape,
+        previousBand?.label,
+      )
     : '—';
 
   const tickFromKeyboard = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -291,24 +303,36 @@ function SetRow({
   };
 
   // LOAD: a kg field for a lift; for bodyweight, a chip that opens the load
-  // dialog (+kg, assistance or a band) and reads "BW" when unloaded.
+  // dialog (+kg, assistance or a band) and reads "BW" when unloaded. A draft's
+  // chip shows exactly the load a tick will save (draftLoad): last time's,
+  // faint like any ghost, until the load is set by hand.
   let loadCell: ReactNode;
   if (bodyweight) {
-    const source =
+    const load =
       row.kind === 'saved'
-        ? row.set
-        : {
-            weight_kg: Number(row.draft.weight.replace(',', '.')) || 0,
-            assist_kg: Number(row.draft.assist.replace(',', '.')) || null,
-            band_id: row.draft.band_id,
-          };
-    const band = source.band_id ? bandsById[source.band_id] : undefined;
-    const chip = formatLoadChip(source, shape, band?.label) ?? 'BW';
-    const spoken = chip === 'BW' ? 'bodyweight' : chip.replace('−', 'minus ');
+        ? {
+            weight: row.set.weight_kg,
+            assist: row.set.assist_kg,
+            band_id: row.set.band_id,
+            ghosted: false,
+          }
+        : draftLoad(row.draft, ghost);
+    const band = load.band_id ? bandsById[load.band_id] : undefined;
+    const chip =
+      formatLoadChip(
+        { weight_kg: load.weight, assist_kg: load.assist, band_id: load.band_id },
+        shape,
+        band?.label,
+      ) ?? 'BW';
+    const spoken = `${chip === 'BW' ? 'bodyweight' : chip.replace('−', 'minus ')}${
+      load.ghosted ? ', same as last time' : ''
+    }`;
     const content = (
       <>
         {band ? <span className="fx-band-dot" style={{ background: band.color }} /> : null}
-        <span aria-hidden={chip === 'BW'}>{chip}</span>
+        <span aria-hidden={chip === 'BW'} className={load.ghosted ? 'faint' : undefined}>
+          {chip}
+        </span>
         {chip === 'BW' ? <span className="sr-only">bodyweight</span> : null}
       </>
     );
@@ -342,7 +366,8 @@ function SetRow({
             ?.querySelector<HTMLElement>('[data-field="value"]')
             ?.focus();
         }}
-        placeholder={fieldText(ghost.weight)}
+        // Once the load is set by hand, an empty field saves 0, so it says so.
+        placeholder={row.draft.loadTyped ? '0' : fieldText(ghost.weight)}
         inputMode="decimal"
         disabled={row.kind !== 'draft'}
         aria-label={`${setName} weight in kilograms`}
@@ -394,7 +419,12 @@ function SetRow({
           }${clean ? '' : ', not clean'}. Change type, effort or remove`}
         >
           {record ? <Icon name="trophy" size={13} className="fx-medal" /> : null}
-          <span className="fx-set-label" style={{ color: SET_TYPE_COLOR[type] }}>
+          {/* On a ticked row's tint the letter alone carries the type (the
+              colours lose their contrast there); see .fx-set-row.done. */}
+          <span
+            className="fx-set-label"
+            style={saved ? undefined : { color: SET_TYPE_COLOR[type] }}
+          >
             {label}
           </span>
           {side ? <span className="fx-side">{side === 'left' ? 'L' : 'R'}</span> : null}
@@ -409,13 +439,7 @@ function SetRow({
           disabled={!previous || !draft}
           onClick={() => {
             if (!previous || !draft) return;
-            onChangeDraft(row.key, {
-              weight: fieldText(previous.weight_kg),
-              assist: fieldText(previous.assist_kg),
-              ...(timed
-                ? { seconds: previous.duration_seconds ? String(previous.duration_seconds) : '' }
-                : { reps: previous.reps !== null ? String(previous.reps) : '' }),
-            });
+            onChangeDraft(row.key, copyPrevious(previous, timed));
           }}
           aria-label={
             previous

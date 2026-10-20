@@ -9,7 +9,9 @@
  */
 import {
   assembleBlocks,
+  buildBlock,
   initialDrafts,
+  newDrafts,
   supersetLabels,
   supersetNext,
   type DraftRow,
@@ -148,6 +150,57 @@ describe('initialDrafts', () => {
     ).toEqual([]);
   });
 
+  // I8: warm-ups are not the routine's sets. Ticking three warm-ups and one
+  // working set, leaving and coming back, must still leave two to do.
+  it('saved warm-ups do not use up the routine target', () => {
+    const drafts = initialDrafts({
+      blockKey: 'squat',
+      savedSets: [
+        saved('squat', 1, { set_type: 'warmup' }),
+        saved('squat', 2, { set_type: 'warmup' }),
+        saved('squat', 3, { set_type: 'warmup' }),
+        saved('squat', 4),
+      ],
+      routineTargetSets: 3,
+      previousSets: [],
+    });
+    expect(ids(drafts)).toEqual(['normal', 'normal']);
+  });
+
+  it('warm-ups alone leave every working set of a new exercise to do', () => {
+    const drafts = initialDrafts({
+      blockKey: 'x',
+      savedSets: [saved('x', 1, { set_type: 'warmup' })],
+      routineTargetSets: null,
+      previousSets: [],
+    });
+    expect(ids(drafts)).toEqual(['normal']);
+  });
+
+  it("matches last time's structure kind by kind, and drops warm-ups once work has begun", () => {
+    const last = [prev('warmup', 10, 40), prev('normal', 8), prev('normal', 8)];
+    expect(
+      ids(
+        initialDrafts({
+          blockKey: 'bench',
+          savedSets: [saved('bench', 1, { set_type: 'warmup' })],
+          routineTargetSets: null,
+          previousSets: last,
+        }),
+      ),
+    ).toEqual(['normal', 'normal']);
+    expect(
+      ids(
+        initialDrafts({
+          blockKey: 'bench',
+          savedSets: [saved('bench', 1)],
+          routineTargetSets: null,
+          previousSets: last,
+        }),
+      ),
+    ).toEqual(['normal']);
+  });
+
   it('gives every draft a unique key', () => {
     const drafts = initialDrafts({
       blockKey: 'b',
@@ -181,6 +234,36 @@ describe('matchPrevious', () => {
 
   it('counts drop and failure sets as working sets', () => {
     expect(matchPrevious(last, ['normal', 'normal', 'drop'], 2)?.reps).toBe(12);
+  });
+});
+
+describe('newDrafts', () => {
+  const warmups = [
+    { weight: '40', reps: '8' },
+    { weight: '60', reps: '5' },
+    { weight: '80', reps: '3' },
+  ];
+
+  it('one row per set on a two-sided exercise', () => {
+    const rows = newDrafts('b', 'warmup', false, warmups);
+    expect(rows.map((r) => [r.weight, r.side, r.set_type])).toEqual([
+      ['40', null, 'warmup'],
+      ['60', null, 'warmup'],
+      ['80', null, 'warmup'],
+    ]);
+  });
+
+  it('a one-sided exercise gets each set as a left and a right, kept together', () => {
+    const rows = newDrafts('b', 'warmup', true, warmups);
+    expect(rows.map((r) => `${r.weight}${r.side === 'left' ? 'L' : 'R'}`)).toEqual([
+      '40L',
+      '40R',
+      '60L',
+      '60R',
+      '80L',
+      '80R',
+    ]);
+    expect(new Set(rows.map((r) => r.key)).size).toBe(6);
   });
 });
 
@@ -257,5 +340,70 @@ describe('supersetLabels', () => {
       x: 'A1',
       z: 'A2',
     });
+  });
+});
+
+// One-sided exercises: a set is a PAIR, a left and a right. A routine's
+// target_sets counts pairs, last time's structure is counted in pairs, and
+// saved sets are matched side by side, so three pairs stay three pairs.
+describe('one-sided blocks', () => {
+  const sides = (drafts: DraftRow[]) =>
+    drafts.map((d) => `${d.set_type === 'warmup' ? 'W' : 'N'}${d.side === 'left' ? 'L' : 'R'}`);
+  const pair = (type: SetType): SetFact[] => [
+    { ...prev(type, 8), side: 'left' },
+    { ...prev(type, 8), side: 'right' },
+  ];
+
+  it("last time's three pairs open as three pairs, not six", () => {
+    const drafts = initialDrafts({
+      blockKey: 'bss',
+      savedSets: [],
+      routineTargetSets: null,
+      previousSets: [...pair('normal'), ...pair('normal'), ...pair('normal')],
+      unilateral: true,
+    });
+    expect(sides(drafts)).toEqual(['NL', 'NR', 'NL', 'NR', 'NL', 'NR']);
+  });
+
+  it('a routine target of 3 with one pair saved leaves two pairs', () => {
+    const drafts = initialDrafts({
+      blockKey: 'bss',
+      savedSets: [saved('bss', 1, { side: 'left' }), saved('bss', 2, { side: 'right' })],
+      routineTargetSets: 3,
+      previousSets: [],
+      unilateral: true,
+    });
+    expect(sides(drafts)).toEqual(['NL', 'NR', 'NL', 'NR']);
+  });
+
+  it('a pair half done leaves its other side first', () => {
+    const drafts = initialDrafts({
+      blockKey: 'bss',
+      savedSets: [
+        saved('bss', 1, { side: 'left' }),
+        saved('bss', 2, { side: 'right' }),
+        saved('bss', 3, { side: 'left' }),
+      ],
+      routineTargetSets: 3,
+      previousSets: [],
+      unilateral: true,
+    });
+    expect(sides(drafts)).toEqual(['NR', 'NL', 'NR']);
+  });
+
+  it('buildBlock lays out saved sets in order, then the drafts', () => {
+    const block = buildBlock({
+      row: { ...se('bss', 0), id: 'b1' },
+      sets: [saved('bss', 2, { side: 'right' }), saved('bss', 1, { side: 'left' }), saved('x', 1)],
+      routineTargetSets: 2,
+      previousSets: [],
+      unilateral: true,
+    });
+    expect(block.id).toBe('b1');
+    expect(
+      block.rows.map((r) =>
+        r.kind === 'saved' ? `saved ${r.set.side}` : `draft ${r.kind === 'draft' && r.draft.side}`,
+      ),
+    ).toEqual(['saved left', 'saved right', 'draft left', 'draft right']);
   });
 });

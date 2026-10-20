@@ -5,10 +5,12 @@
  * conventions throughout: check `error`, throw on failure, stamp the owner id
  * here so no screen ever deals with identity.
  */
+import { todayISO } from '../../core/date';
 import { collectPages } from '../../core/paging';
 import { getOwnerId } from '../../core/session';
 import { supabase } from '../../core/supabase';
 import { toSetFact, type SetFact } from './load';
+import { routineSlotsFromSession } from './summary';
 import {
   DEFAULT_EXERCISES,
   type Band,
@@ -341,6 +343,27 @@ export async function listSessions(limit = 60): Promise<WorkoutSession[]> {
   return data ?? [];
 }
 
+/**
+ * The day and mode of EVERY session, page by page, for what counts them all:
+ * the weekly streak, rest days and "N sessions". listSessions above is the
+ * recent page the history shows, and a streak counted from it could never
+ * pass the weeks those 60 sessions cover.
+ */
+export async function listSessionDays(): Promise<Pick<WorkoutSession, 'id' | 'date' | 'mode'>[]> {
+  const ownerId = await getOwnerId();
+  return collectPages(async (from, to) => {
+    const page = await supabase
+      .from('workout_sessions')
+      .select('id, date, mode', { count: 'exact' })
+      .eq('user_id', ownerId)
+      .order('date', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (page.error) throw new Error(page.error.message);
+    return { rows: page.data ?? [], total: page.count };
+  });
+}
+
 export async function createSession(input: {
   date: string;
   routine_id: string | null;
@@ -359,7 +382,7 @@ export async function createSession(input: {
 
 export async function updateSession(
   id: string,
-  input: Partial<{ date: string; notes: string }>,
+  input: Partial<{ date: string; notes: string; bodyweight_kg: number | null }>,
 ): Promise<void> {
   const { error } = await supabase.from('workout_sessions').update(input).eq('id', id);
   if (error) throw new Error(error.message);
@@ -621,11 +644,14 @@ export async function startSession(input: {
   return session;
 }
 
-/** Finish is optional and never gates saving: it only stamps the end. */
-export async function finishSession(id: string): Promise<WorkoutSession> {
+/**
+ * Finish is optional and never gates saving: it only stamps the end - now,
+ * or `at` for a session that was over before Finish was pressed.
+ */
+export async function finishSession(id: string, at?: string): Promise<WorkoutSession> {
   const { data, error } = await supabase
     .from('workout_sessions')
-    .update({ ended_at: new Date().toISOString() })
+    .update({ ended_at: at ?? new Date().toISOString() })
     .eq('id', id)
     .select()
     .single();
@@ -739,9 +765,13 @@ export async function updateSet(
   return data;
 }
 
-/** The columns the training maths reads, and nothing else. */
+/**
+ * The columns the training maths reads, and nothing else. The band names the
+ * assistance in PREVIOUS ("22s · red band"), and the side lets a one-sided
+ * exercise be counted in pairs.
+ */
 const FACT_COLUMNS =
-  'id, exercise_id, session_id, set_type, reps, duration_seconds, weight_kg, assist_kg, clean, created_at';
+  'id, exercise_id, session_id, set_type, reps, duration_seconds, weight_kg, assist_kg, band_id, side, clean, created_at';
 
 /**
  * Each exercise's sets from OTHER sessions, for record checks. Fetched once
@@ -941,22 +971,28 @@ export async function lastRoutineSessionSets(input: {
  * Done slot by slot rather than by rewriting the routine, so slots this
  * screen knows nothing about (ladders, ranges, rest) are left exactly as
  * they were. Skipped exercises stay in the routine: skipping one today is
- * not deciding to drop it.
+ * not deciding to drop it. A slot that follows a ladder is found by its
+ * ladder (progression_id), since it names no exercise.
  */
 export async function updateRoutineFromSession(
   routineId: string,
   changes: {
-    setCounts: { exercise_id: string; target_sets: number }[];
+    setCounts: (
+      | { exercise_id: string; progression_id?: undefined; target_sets: number }
+      | { exercise_id?: undefined; progression_id: string; target_sets: number }
+    )[];
     added: { exercise_id: string; target_sets: number }[];
   },
 ): Promise<void> {
   const ownerId = await getOwnerId();
   for (const change of changes.setCounts) {
-    const { error } = await supabase
+    const query = supabase
       .from('routine_exercises')
       .update({ target_sets: change.target_sets })
-      .eq('routine_id', routineId)
-      .eq('exercise_id', change.exercise_id);
+      .eq('routine_id', routineId);
+    const { error } = await (change.progression_id
+      ? query.eq('progression_id', change.progression_id)
+      : query.eq('exercise_id', change.exercise_id));
     if (error) throw new Error(error.message);
   }
   if (changes.added.length > 0) {
@@ -1132,7 +1168,11 @@ export async function saveLadder(
   return progressionId;
 }
 
-/** Record a move on a ladder and make its target the current rung. */
+/**
+ * Record a move on a ladder and make its target the current rung. Dated
+ * today on the phone unless given a day: the column's default is the
+ * database's current_date, which is the UTC day, not yours.
+ */
 export async function moveLadder(input: {
   progressionId: string;
   fromStepId: string | null;
@@ -1149,7 +1189,7 @@ export async function moveLadder(input: {
     to_step_id: input.toStepId,
     kind: input.kind,
     session_id: input.sessionId ?? null,
-    ...(input.date ? { date: input.date } : {}),
+    date: input.date ?? todayISO(),
   });
   if (error) throw new Error(error.message);
   const { error: updateError } = await supabase
@@ -1247,6 +1287,36 @@ export async function recentSessionSets(
   return out;
 }
 
+/**
+ * Every set of the given exercises (a ladder's rungs) with its session's day,
+ * page by page: each rung's best ever is read from all of them, and a ladder
+ * trained for a year passes the server's row cap.
+ */
+export async function listRungSets(exerciseIds: string[]): Promise<(SetFact & { date: string })[]> {
+  if (exerciseIds.length === 0) return [];
+  const ownerId = await getOwnerId();
+  const data = await collectPages(async (from, to) => {
+    const page = await supabase
+      .from('session_sets')
+      .select(FACT_COLUMNS + ', workout_sessions!inner(date)', { count: 'exact' })
+      .eq('user_id', ownerId)
+      .in('exercise_id', exerciseIds)
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (page.error) throw new Error(page.error.message);
+    return { rows: page.data ?? [], total: page.count };
+  });
+
+  type SessionRef = { date: string };
+  type Row = Parameters<typeof toSetFact>[0] & { workout_sessions: SessionRef | SessionRef[] };
+  return ((data ?? []) as unknown as Row[]).flatMap((row) => {
+    const session = Array.isArray(row.workout_sessions)
+      ? row.workout_sessions[0]
+      : row.workout_sessions;
+    return session?.date ? [{ ...toSetFact(row), date: session.date }] : [];
+  });
+}
+
 /** Sessions with a date in [start, end], for the month calendar. */
 export async function listSessionsBetween(start: string, end: string): Promise<WorkoutSession[]> {
   const ownerId = await getOwnerId();
@@ -1278,7 +1348,7 @@ export async function listExerciseSets(exerciseId: string): Promise<
   const data = await collectPages(async (from, to) => {
     const page = await supabase
       .from('session_sets')
-      .select(FACT_COLUMNS + ', band_id, side, rpe, workout_sessions!inner(date, bodyweight_kg)', {
+      .select(FACT_COLUMNS + ', rpe, workout_sessions!inner(date, bodyweight_kg)', {
         count: 'exact',
       })
       .eq('user_id', ownerId)
@@ -1398,30 +1468,8 @@ export async function saveSessionAsRoutine(sessionId: string, name: string): Pro
     listSessionExercises(sessionId),
     listSessionSets(sessionId),
   ]);
-  const order = [...blocks].sort((a, b) => a.position - b.position);
-  const ids = order.map((b) => b.exercise_id);
-  for (const s of [...sets].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
-    if (!ids.includes(s.exercise_id)) ids.push(s.exercise_id);
-  }
-
-  const slots: RoutineSlotInput[] = ids.map((exerciseId) => {
-    const block = order.find((b) => b.exercise_id === exerciseId);
-    const work = sets.filter(
-      (s) => s.exercise_id === exerciseId && (s.set_type ?? 'normal') !== 'warmup',
-    );
-    const reps = work.flatMap((s) => (s.reps && s.reps > 0 ? [s.reps] : []));
-    const seconds = work.flatMap((s) => (s.duration_seconds ? [s.duration_seconds] : []));
-    return {
-      exercise_id: exerciseId,
-      target_sets: work.length > 0 ? work.length : null,
-      target_reps_min: reps.length ? Math.min(...reps) : null,
-      target_reps: reps.length ? Math.max(...reps) : null,
-      target_seconds_min: seconds.length ? Math.min(...seconds) : null,
-      target_seconds_max: seconds.length ? Math.max(...seconds) : null,
-      rest_seconds: block?.rest_seconds ?? null,
-      pair_group: block?.superset_group ?? null,
-    };
-  });
+  // One-sided sets count in pairs, as the routine's target_sets means.
+  const slots: RoutineSlotInput[] = routineSlotsFromSession(blocks, sets);
   return saveRoutine({ name, mode: source.mode }, slots);
 }
 
@@ -1488,7 +1536,7 @@ export async function listSetDaysBetween(
   };
 
   const out: { session_id: string; date: string; set_type: SetType | null }[] = [];
-  for (let from = 0; ; ) {
+  for (let from = 0; ;) {
     const { data, error } = await supabase
       .from('session_sets')
       .select('id, session_id, set_type, workout_sessions!inner(date)')

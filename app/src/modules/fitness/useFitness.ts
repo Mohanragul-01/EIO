@@ -43,6 +43,8 @@ export type DayCell = {
 
 export function useFitnessHome() {
   const [sessions, setSessions] = useState<WorkoutSession[]>([]);
+  /** Every session's day, for the streak and the count; `sessions` is the recent page. */
+  const [days, setDays] = useState<string[]>([]);
   const [sets, setSets] = useState<SessionSet[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [metrics, setMetrics] = useState<BodyMetric[]>([]);
@@ -62,8 +64,9 @@ export function useFitnessHome() {
       try {
         // Sessions first, because the sets query needs their ids. Everything that
         // does not depend on that runs alongside it.
-        const [sessionRows, profileRow, metricRows] = await Promise.all([
+        const [sessionRows, dayRows, profileRow, metricRows] = await Promise.all([
           api.listSessions(),
+          api.listSessionDays(),
           api.getProfile(),
           api.listBodyMetrics(30),
         ]);
@@ -78,6 +81,7 @@ export function useFitnessHome() {
 
         if (isCurrent()) {
           setSessions(sessionRows);
+          setDays(dayRows.map((row) => row.date));
           setSets(setRows);
           setProfile(profileRow);
           setMetrics(metricRows);
@@ -129,9 +133,9 @@ export function useFitnessHome() {
     const weekSets = sets.filter((set) => weekSessionIds.has(set.session_id));
 
     // Weeks, not days: a daily streak breaks on every planned rest day,
-    // which punishes you for following your plan. See streak.ts.
-    const dates = sessions.map((s) => s.date);
-    const streak = weeklyStreak(dates, today);
+    // which punishes you for following your plan. See streak.ts. Counted over
+    // every session, not the recent page the list shows.
+    const streak = weeklyStreak(days, today);
 
     const latestWeight = metrics[0]?.weight_kg ?? null;
 
@@ -141,19 +145,36 @@ export function useFitnessHome() {
       // Working sets only: warm-ups are preparation, not the week's work.
       weekVolume: workingVolume(weekSets.map(toSetFact), {}, null),
       streak,
-      restDays: restDays(dates, today),
+      restDays: restDays(days, today),
       weekMax: Math.max(1, ...week.map((day) => day.count)),
-      totalSessions: sessions.length,
+      totalSessions: days.length,
       latestWeight,
       heightCm: profile?.height_cm ?? null,
       currentBmi: latestWeight ? bmi(latestWeight, profile?.height_cm ?? null) : null,
     };
-  }, [sessions, sets, metrics, profile]);
+  }, [sessions, days, sets, metrics, profile]);
 
   const refresh = useStableCallback(() => load(true));
   const reload = useStableCallback(() => load(false));
 
-  return { sessions, summary, loading, refreshing, error, refresh, reload };
+  /**
+   * The session logged on a day, or null when that day has none: what tapping
+   * a day opens. The calendar reaches back past the recent page this hook
+   * holds, so a day not in it is asked for before it is called empty -
+   * otherwise tapping an old trained day started a second session on it.
+   */
+  const sessionOn = useCallback(
+    async (date: string): Promise<WorkoutSession | null> => {
+      const loaded = sessions.find((s) => s.date === date);
+      if (loaded) return loaded;
+      const found = await api.listSessionsBetween(date, date);
+      // The latest one, as the list would have it.
+      return [...found].sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null;
+    },
+    [sessions],
+  );
+
+  return { sessions, summary, loading, refreshing, error, refresh, reload, sessionOn };
 }
 
 // PLAN: exercises and routines ---------------------------------------------------

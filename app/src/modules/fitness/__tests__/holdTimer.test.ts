@@ -4,7 +4,7 @@
  * rest timer, so a dropped frame or a locked screen cannot lose time, and a
  * cue is fired once for every boundary crossed - never twice, never skipped.
  */
-import { holdCues, holdPhase } from '../holdTimer';
+import { CUE_PULSES, holdCues, holdPhase } from '../holdTimer';
 
 const T0 = 1_000_000;
 
@@ -71,5 +71,21 @@ describe('holdCues', () => {
 
   it('ticks can be turned off, leaving only the target', () => {
     expect(holdCues(0, 31_000, 30, null)).toEqual([{ atSeconds: 30, kind: 'target' }]);
+  });
+});
+
+describe('how each cue feels', () => {
+  // Spec §4.5: a DISTINCT cue at the target. It used to be the same single
+  // pulse as the lead-in's "Go", so with voice off the two could not be told
+  // apart.
+  it('the target feels different from "Go" and from a tick', () => {
+    expect(CUE_PULSES.target).not.toEqual(CUE_PULSES.go);
+    expect(CUE_PULSES.target).not.toEqual(CUE_PULSES.tick);
+    expect(CUE_PULSES.target.length).toBeGreaterThan(1);
+  });
+
+  it('the lead-in counts and the ticks are light taps', () => {
+    expect(CUE_PULSES.count).toEqual(['tap']);
+    expect(CUE_PULSES.tick).toEqual(['tap']);
   });
 });

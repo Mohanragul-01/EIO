@@ -16,7 +16,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useKeepAwake } from 'expo-keep-awake';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -41,7 +41,7 @@ import * as api from '../api';
 import type { KeyboardAwareScrollViewRef } from 'react-native-keyboard-controller';
 
 import { supersetLabels, supersetNext } from '../blocks';
-import { ExerciseBlock } from '../components/ExerciseBlock';
+import { ExerciseBlock, type LevelChip } from '../components/ExerciseBlock';
 import { HoldDial } from '../components/HoldDial';
 import { PickerSheet } from '../components/PickerSheet';
 import { REST_BAR_HEIGHT, RestBar } from '../components/RestBar';
@@ -50,7 +50,9 @@ import { visibleInMode } from '../mode';
 import { warmupSets } from '../plates';
 import { primaryRecord } from '../records';
 import { adjustRest, startRest, type RestState } from '../restTimer';
-import { formatDuration, normaliseMuscle, type SetType } from '../types';
+import { settleLoad } from '../sessionState';
+import { sessionClockEnd } from '../summary';
+import { formatDuration, normaliseMuscle, type ProgressionStep, type SetType } from '../types';
 import { usePlateInventory } from '../usePlateInventory';
 import { useWorkoutSession } from '../useWorkoutSession';
 
@@ -121,15 +123,24 @@ export function WorkoutSessionScreen() {
       headerRight: () => (
         <Pressable
           onPress={confirmDelete}
-          hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel="Delete this workout"
+          style={styles.headerButton}
         >
           <Ionicons name="trash-outline" size={19} color={colors.textMuted} />
         </Pressable>
       ),
     });
-  }, [navigation, w.session, confirmDelete, colors.textMuted]);
+  }, [navigation, w.session, confirmDelete, colors.textMuted, styles.headerButton]);
+
+  // Back from the summary, which can reopen the session: take its end time
+  // again, so the strip counts on and Finish works without leaving the screen.
+  const { refreshSession } = w;
+  useFocusEffect(
+    useCallback(() => {
+      void refreshSession();
+    }, [refreshSession]),
+  );
 
   // A session deleted elsewhere (the website) has nothing to show.
   useEffect(() => {
@@ -246,6 +257,23 @@ export function WorkoutSessionScreen() {
     return value && value > 0 ? value : null;
   };
 
+  /** A ladder block's level chip, and the rungs it may switch to before anything is logged. */
+  const levelChip = (block: (typeof w.blocks)[number]): LevelChip | null => {
+    const level = w.levelFor(block);
+    if (!level) return null;
+    const logged = block.rows.some((r) => r.kind === 'saved');
+    const open = (step: ProgressionStep | null) =>
+      step && !logged && !w.blocks.some((b) => b.exerciseId === step.exercise_id)
+        ? (w.exercisesById[step.exercise_id]?.name ?? 'the next rung')
+        : null;
+    return {
+      label: `${level.name} · ${level.number}/${level.total}`,
+      spoken: `Step ${level.number} of ${level.total} on the ${level.name} ladder`,
+      easier: open(level.previous),
+      harder: open(level.next),
+    };
+  };
+
   const supersetTags = supersetLabels(
     w.blocks.map((b) => ({ id: b.id, supersetGroup: b.sessionExercise?.superset_group ?? null })),
   );
@@ -267,6 +295,8 @@ export function WorkoutSessionScreen() {
       <LiveStrip
         startedAt={w.stats.startedAt}
         endedAt={w.stats.endedAt}
+        lastSetAt={w.stats.lastSetAt}
+        date={w.session?.date ?? null}
         volume={w.stats.volume}
         sets={w.stats.workingSets}
         finished={!!w.session?.ended_at}
@@ -325,6 +355,8 @@ export function WorkoutSessionScreen() {
                 restSeconds={w.restFor(block)}
                 supersetLabel={supersetTags[block.id] ?? null}
                 targetReason={w.targetFor(block).reason}
+                level={levelChip(block)}
+                onLevel={(delta) => void w.stepLevel(block.id, delta)}
                 previousFor={(i) => w.previousFor(block, i)}
                 ghostFor={(i) => w.ghostFor(block, i)}
                 onOpenExercise={() =>
@@ -338,7 +370,16 @@ export function WorkoutSessionScreen() {
                 onTick={(key) => void onTick(block.id, key)}
                 onUntick={(key) => void w.untick(block.id, key)}
                 onSetMenu={(key) => setSetMenu({ blockId: block.id, key })}
-                onLoad={(key) => setLoadFor({ blockId: block.id, key })}
+                onLoad={(key) => {
+                  // The sheet edits the load the row shows: write last time's
+                  // into the cells first, so clearing one there means none.
+                  const index = block.rows.findIndex((r) => r.key === key);
+                  const row = block.rows[index];
+                  if (row?.kind === 'draft' && !row.draft.loadTyped) {
+                    w.updateDraft(block.id, key, settleLoad(row.draft, w.ghostFor(block, index)));
+                  }
+                  setLoadFor({ blockId: block.id, key });
+                }}
                 onChangeDraft={(key, patch) => w.updateDraft(block.id, key, patch)}
                 onDelete={(key) => onDelete(block.id, key)}
                 onHold={(key) => setHoldFor({ blockId: block.id, key })}
@@ -584,12 +625,13 @@ export function WorkoutSessionScreen() {
                   w.addRow(menuForBlock.id, 'warmup', 0);
                   return;
                 }
-                // 40, 60 and 80 percent of the working weight, on plates you own.
-                sets.forEach((set, i) =>
-                  w.addRow(menuForBlock.id, 'warmup', i, {
-                    weight: String(set.kg),
-                    reps: String(set.reps),
-                  }),
+                // 40, 60 and 80 percent of the working weight, on plates you own,
+                // as one run at the top (on one side at a time: L1 R1 L2 R2).
+                w.addRows(
+                  menuForBlock.id,
+                  'warmup',
+                  0,
+                  sets.map((set) => ({ weight: String(set.kg), reps: String(set.reps) })),
                 );
               },
             },
@@ -658,6 +700,8 @@ export function WorkoutSessionScreen() {
 function LiveStrip({
   startedAt,
   endedAt,
+  lastSetAt,
+  date,
   volume,
   sets,
   finished,
@@ -665,6 +709,8 @@ function LiveStrip({
 }: {
   startedAt: number | null;
   endedAt: number | null;
+  lastSetAt: number | null;
+  date: string | null;
   volume: number;
   sets: number;
   finished: boolean;
@@ -672,13 +718,18 @@ function LiveStrip({
 }) {
   const styles = useStyles();
   const [now, setNow] = useState(() => Date.now());
+  // Finished, or an unfinished session that is clearly over (another day's,
+  // or idle for hours): the clock stops at its end, not at now.
+  const end =
+    date === null ? endedAt : sessionClockEnd({ endedAt, startedAt, lastSetAt, date, now });
+  const running = end === null;
   useEffect(() => {
-    if (endedAt !== null) return;
+    if (!running) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [endedAt]);
+  }, [running]);
 
-  const elapsed = startedAt === null ? 0 : Math.max(0, ((endedAt ?? now) - startedAt) / 1000);
+  const elapsed = startedAt === null ? 0 : Math.max(0, ((end ?? now) - startedAt) / 1000);
   const hours = Math.floor(elapsed / 3600);
   const duration =
     hours > 0
@@ -716,6 +767,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 const useStyles = makeStyles(({ colors, typography }) => ({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  // A 48dp box round the 19px icon: hitSlop alone left it short of 48.
+  headerButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   strip: {
     flexDirection: 'row',

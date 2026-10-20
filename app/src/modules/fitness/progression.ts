@@ -173,6 +173,42 @@ export function levelUpCandidates(
   });
 }
 
+export type LadderLevel = {
+  progressionId: string;
+  /** The ladder's name, e.g. "Front lever". */
+  name: string;
+  /** This rung's place, 1-based, of `total`. */
+  number: number;
+  total: number;
+  /** The rungs either side: easier and harder. */
+  previous: ProgressionStep | null;
+  next: ProgressionStep | null;
+};
+
+/**
+ * Where an exercise stands on its ladder, for the level chip on a session
+ * block ("Front lever · 2/4 ‹ ›"). An exercise can be a rung of more than one
+ * ladder; the one it is the current rung of comes first, else the first that
+ * has it. Null when it is on none.
+ */
+export function ladderLevel(ladders: LadderShape[], exerciseId: string): LadderLevel | null {
+  const has = (l: LadderShape) => l.steps.some((s) => s.exercise_id === exerciseId);
+  const isCurrent = (l: LadderShape) =>
+    l.steps.some((s) => s.id === l.progression.current_step_id && s.exercise_id === exerciseId);
+  const ladder = ladders.find(isCurrent) ?? ladders.find(has);
+  if (!ladder) return null;
+  const ordered = [...ladder.steps].sort(byPosition);
+  const index = ordered.findIndex((s) => s.exercise_id === exerciseId);
+  return {
+    progressionId: ladder.progression.id,
+    name: ladder.progression.name,
+    number: index + 1,
+    total: ordered.length,
+    previous: ordered[index - 1] ?? null,
+    next: ordered[index + 1] ?? null,
+  };
+}
+
 /**
  * What a routine slot that follows a ladder aims for on its current rung: the
  * rung's goal as the top of the range and its restart point as the bottom.
