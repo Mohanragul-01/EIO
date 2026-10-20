@@ -44,6 +44,7 @@ import {
 import type {
   Account,
   Budget,
+  FinanceSettings,
   LedgerPoint,
   QuickAdd,
   QuickAddInput,
@@ -77,8 +78,17 @@ function rangeAt(today: string, startDay: number, offset: number): DateRange {
   return periodBounds(shiftPeriod(periodOf(today, startDay), offset), startDay);
 }
 
+/** The selected period's rows, and the days they were fetched for. */
+type PeriodRows = { range: DateRange; rows: Transaction[] };
+
+/** One empty list for every render with no rows to show, so memos hold. */
+const NO_ROWS: Transaction[] = [];
+
 export function useFinance() {
   const [offset, setOffset] = useState(0);
+  // What loads read: a step starts its load in the same handler that sets the
+  // offset, before React has rendered the new state.
+  const offsetRef = useRef(0);
   // State rather than read during render, so the date every figure hangs off
   // is a value React knows about; each load moves it on, so a screen left open
   // past midnight catches up the next time it loads.
@@ -88,7 +98,7 @@ export function useFinance() {
   const startDayRef = useRef<number | null>(null);
   const [startDay, setStartDay] = useState(1);
 
-  const [rows, setRows] = useState<Transaction[]>([]);
+  const [periodRows, setPeriodRows] = useState<PeriodRows | null>(null);
   const [points, setPoints] = useState<LedgerPoint[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
@@ -99,60 +109,86 @@ export function useFinance() {
   const [error, setError] = useState<string | null>(null);
 
   const { begin, isMounted } = useLatestRun();
+  const { begin: beginRows } = useLatestRun();
 
+  /**
+   * Everything, or ('period') only the selected period's rows.
+   *
+   * A step changes nothing but the period's rows: the balances, the trend and
+   * last month's figures come from every row, which are the same in any
+   * month. So a step fetches one month, not the whole ledger again.
+   */
   const load = useCallback(
-    async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
-      // Stepping months twice quickly leaves two loads in flight; the ticket
-      // makes the newest the only one allowed to write.
-      const isCurrent = begin();
+    async (mode: 'initial' | 'refresh' | 'silent' | 'period' = 'initial') => {
+      const periodOnly = mode === 'period';
+      // Stepping months twice quickly leaves two loads in flight; a ticket
+      // makes the newest the only one allowed to write. The rows have their
+      // own, since a step reloads only them: a focus load still in flight
+      // must not then write the month you stepped away from.
+      const isCurrentRows = beginRows();
+      const isCurrent = periodOnly ? isCurrentRows : begin();
       if (mode === 'refresh') setRefreshing(true);
       if (mode === 'initial') setLoading(true);
       setError(null);
 
       try {
+        const now = todayISO();
+        const at = offsetRef.current;
         // The first load has to know the month start before it can ask for a
         // month. Every later one reuses the last answer and checks it in
         // parallel with everything else.
         let day = startDayRef.current;
-        if (day === null) day = normalizeStartDay((await api.getSettings()).month_start_day);
+        let check: Promise<FinanceSettings>;
+        if (day === null) {
+          const settings = await api.getSettings();
+          day = normalizeStartDay(settings.month_start_day);
+          check = Promise.resolve(settings);
+        } else {
+          check = api.getSettings();
+        }
 
-        const rangeFor = (d: number) => periodBounds(shiftPeriod(periodOf(todayISO(), d), offset), d);
-
-        const [periodRows, allPoints, accountRows, budgetRows, quickAddRows, settings] =
-          await Promise.all([
-            api.listTransactionsBetween(rangeFor(day)),
-            api.listLedgerPoints(),
-            api.listAccounts(),
-            api.listBudgets(),
-            api.listQuickAdds(),
-            api.getSettings(),
-          ]);
+        const [fetchedRows, settings, rest] = await Promise.all([
+          api.listTransactionsBetween(rangeAt(now, day, at)),
+          check,
+          periodOnly
+            ? null
+            : Promise.all([
+                api.listLedgerPoints(),
+                api.listAccounts(),
+                api.listBudgets(),
+                api.listQuickAdds(),
+              ]),
+        ]);
 
         // Changed on the website since the last load: the month just fetched
         // covers the wrong days, so fetch the right ones before showing any.
         const fresh = normalizeStartDay(settings.month_start_day);
-        const finalRows = fresh === day ? periodRows : await api.listTransactionsBetween(rangeFor(fresh));
+        const range = rangeAt(now, fresh, at);
+        const rows = fresh === day ? fetchedRows : await api.listTransactionsBetween(range);
 
         if (!isCurrent()) return;
-        setToday(todayISO());
+        setToday(now);
         startDayRef.current = fresh;
         setStartDay(fresh);
-        setRows(finalRows);
-        setPoints(allPoints);
-        setAccounts(accountRows);
-        setBudgets(budgetRows);
-        setQuickAdds(quickAddRows);
+        if (isCurrentRows()) setPeriodRows({ range, rows });
+        if (rest) {
+          const [allPoints, accountRows, budgetRows, quickAddRows] = rest;
+          setPoints(allPoints);
+          setAccounts(accountRows);
+          setBudgets(budgetRows);
+          setQuickAdds(quickAddRows);
+        }
       } catch (e) {
         if (isCurrent()) setError(e instanceof Error ? e.message : 'Something went wrong');
       } finally {
-        if (isCurrent()) {
+        // A step has no spinner of its own: the period not being ready is it.
+        if (isCurrent() && !periodOnly) {
           setLoading(false);
           setRefreshing(false);
         }
       }
     },
-    // A new offset is a new loader, so the focus effect below refetches.
-    [offset, begin],
+    [begin, beginRows],
   );
 
   useFocusEffect(
@@ -173,6 +209,16 @@ export function useFinance() {
   const period = shiftPeriod(periodOf(today, startDay), offset);
   const range = rangeAt(today, startDay, offset);
   const previousPeriod = shiftPeriod(period, -1);
+
+  // The rows on hand belong to the period on screen only once its load has
+  // landed. Until then they are the month you stepped away from (or the old
+  // month start's), and every figure drawn from them - Spent, the bars, the
+  // entries, the budgets - would sit under the wrong title.
+  const periodReady =
+    periodRows !== null &&
+    periodRows.range.start === range.start &&
+    periodRows.range.end === range.end;
+  const rows = periodReady ? periodRows.rows : NO_ROWS;
 
   const summary = useMemo(() => summarize(rows), [rows]);
 
@@ -250,27 +296,45 @@ export function useFinance() {
 
   // ACTIONS -------------------------------------------------------------------
 
-  const stepPeriod = useCallback((delta: number) => {
-    // Never into the future: there is nothing there to look at.
-    setOffset((current) => Math.min(0, current + delta));
-  }, []);
-  const goToCurrent = useCallback(() => setOffset(0), []);
+  /** Show the period `next` months from this one, and fetch only its rows. */
+  const showOffset = useCallback(
+    (next: number) => {
+      if (next === offsetRef.current) return;
+      offsetRef.current = next;
+      setOffset(next);
+      void load('period');
+    },
+    [load],
+  );
+  // Never into the future: there is nothing there to look at.
+  const stepPeriod = useCallback(
+    (delta: number) => showOffset(Math.min(0, offsetRef.current + delta)),
+    [showOffset],
+  );
+  const goToCurrent = useCallback(() => showOffset(0), [showOffset]);
 
   /** Optimistically take rows off the list; only these rows come back on failure. */
   const removeRowsLocally = useCallback((gone: Transaction[]) => {
     const ids = new Set(gone.map((r) => r.id));
-    setRows((list) => list.filter((r) => !ids.has(r.id)));
+    setPeriodRows((held) => held && { ...held, rows: held.rows.filter((r) => !ids.has(r.id)) });
   }, []);
 
+  /**
+   * Rows into the list, if they are dated inside the days it holds: a
+   * transfer's other half, or today's entry while another month is on
+   * screen (or on its way), belongs to another list.
+   */
   const putRowsBack = useCallback((back: Transaction[]) => {
-    setRows((list) => {
-      const present = new Set(list.map((r) => r.id));
-      const missing = back.filter((r) => !present.has(r.id));
-      if (missing.length === 0) return list;
+    setPeriodRows((held) => {
+      if (!held) return held;
+      const present = new Set(held.rows.map((r) => r.id));
+      const missing = back.filter((r) => !present.has(r.id) && rangeContains(held.range, r.date));
+      if (missing.length === 0) return held;
       // Newest date first, newest entered first, as the query orders them.
-      return [...list, ...missing].sort(
+      const rows = [...held.rows, ...missing].sort(
         (a, b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at),
       );
+      return { ...held, rows };
     });
   }, []);
 
@@ -295,7 +359,7 @@ export function useFinance() {
           account_id: accountId,
         });
         if (!isMounted()) return created;
-        if (rangeContains(rangeAt(today, startDay, offset), created.date)) putRowsBack([created]);
+        putRowsBack([created]);
         setPoints((list) => [...list, toPoint(created)]);
         ledgerChanged();
         return created;
@@ -304,7 +368,7 @@ export function useFinance() {
         return null;
       }
     },
-    [rows, accounts, today, startDay, offset, isMounted, putRowsBack],
+    [rows, accounts, isMounted, putRowsBack],
   );
 
   /** Copy an entry to today ("Log again today"). */
@@ -321,7 +385,7 @@ export function useFinance() {
           account_id: tx.account_id,
         });
         if (!isMounted()) return created;
-        if (rangeContains(rangeAt(today, startDay, offset), created.date)) putRowsBack([created]);
+        putRowsBack([created]);
         ledgerChanged();
         return created;
       } catch (e) {
@@ -329,7 +393,7 @@ export function useFinance() {
         return null;
       }
     },
-    [today, startDay, offset, isMounted, putRowsBack],
+    [isMounted, putRowsBack],
   );
 
   /**
@@ -362,13 +426,13 @@ export function useFinance() {
       try {
         await api.restoreTransactions(back);
         if (!isMounted()) return;
-        putRowsBack(back.filter((r) => rangeContains(rangeAt(today, startDay, offset), r.date)));
+        putRowsBack(back);
         ledgerChanged();
       } catch (e) {
         if (isMounted()) setError(e instanceof Error ? e.message : 'Could not undo that');
       }
     },
-    [isMounted, putRowsBack, today, startDay, offset],
+    [isMounted, putRowsBack],
   );
 
   // Budgets.
@@ -470,11 +534,13 @@ export function useFinance() {
     async (day: number) => {
       await api.saveMonthStartDay(day);
       startDayRef.current = day;
+      offsetRef.current = 0;
       setStartDay(day);
       setOffset(0);
-      void reloadSilently();
+      // New days for the period, nothing else: every other figure is all-time.
+      void load('period');
     },
-    [reloadSilently],
+    [load],
   );
 
   return {
@@ -504,6 +570,8 @@ export function useFinance() {
     budgetTotals,
     budgetSuggestions,
     // status
+    /** False while the period on screen is still loading: draw no figures from it. */
+    periodReady,
     loading,
     refreshing,
     error,

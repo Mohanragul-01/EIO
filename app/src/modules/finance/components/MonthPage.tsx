@@ -20,6 +20,7 @@ import { BalanceCard } from './BalanceCard';
 import { DayHeader } from './DayHeader';
 import { MonthSummary } from './MonthSummary';
 import { PeriodHeader } from './PeriodHeader';
+import { PeriodLoading } from './PeriodLoading';
 import { QuickAddRow } from './QuickAddRow';
 import { TransactionRow } from './TransactionRow';
 import { TrendChart } from './TrendChart';
@@ -99,21 +100,26 @@ export function MonthPage({
             onLog={onLogQuickAdd}
             onEdit={onEditQuickAdd}
           />
-          <MonthSummary
-            summary={data.summary}
-            deltas={data.deltas}
-            versus={versus}
-            versusLong={versusLong}
-            onOpenCategory={onOpenCategory}
-          />
+          {data.periodReady ? (
+            <MonthSummary
+              summary={data.summary}
+              deltas={data.deltas}
+              versus={versus}
+              versusLong={versusLong}
+              onOpenCategory={onOpenCategory}
+            />
+          ) : (
+            <PeriodLoading period={data.period} failed={!!data.error} />
+          )}
           <TrendChart months={data.trend} />
           {rows.length > 0 ? <Text style={styles.sectionLabel}>Entries</Text> : null}
         </FadeInView>
       }
       ListEmptyComponent={
         // The month switcher stays usable while a month is empty, so this is a
-        // compact inline message rather than a full-screen empty state.
-        data.loading ? (
+        // compact inline message rather than a full-screen empty state. While
+        // the month itself is on its way, PeriodLoading above says so.
+        !data.periodReady ? null : data.loading ? (
           <View style={styles.loadingBlock}>
             <ActivityIndicator color={colors.primary} />
           </View>
