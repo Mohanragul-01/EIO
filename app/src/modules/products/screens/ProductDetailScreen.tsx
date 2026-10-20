@@ -449,7 +449,7 @@ export function ProductDetailScreen() {
                 {projection.dailyRate !== null
                   ? `${formatQuantity(Math.round(projection.dailyRate * 10) / 10, product.unit)} a day` +
                     (projection.costPerDay !== null ? ` · ${formatMoney(projection.costPerDay)} a day` : '')
-                  : 'Log a couple of days of use to measure the rate'}
+                  : 'Log uses on a few days to measure the rate'}
               </Text>
             ) : null}
 

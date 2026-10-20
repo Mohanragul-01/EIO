@@ -38,17 +38,16 @@ const product: Product = {
   updated_at: '2026-10-10T00:00:00Z',
 };
 
-const uses = [
-  {
-    id: 'u',
-    product_id: 'a',
-    user_id: 'u1',
-    used_on: '2026-10-10',
-    quantity: 100,
-    note: '',
-    created_at: '2026-10-10T08:00:00Z',
-  },
-];
+// Three days of use, the least a pace is measured from.
+const uses = ['2026-10-10', '2026-10-11', '2026-10-12'].map((used_on, i) => ({
+  id: `u${i}`,
+  product_id: 'a',
+  user_id: 'u1',
+  used_on,
+  quantity: i === 0 ? 34 : 33,
+  note: '',
+  created_at: `${used_on}T08:00:00Z`,
+}));
 
 beforeEach(() => {
   mockCancelPrefix.mockClear();

@@ -55,17 +55,27 @@ const entry = (product_id: string, used_on: string, quantity: number): ProductUs
   created_at: `${used_on}T08:00:00Z`,
 });
 
+/** `total` logged on 10, 11 and 12 Oct: enough evidence for a pace. */
+const threeDays = (id: string, total: number): ProductUse[] => {
+  const each = Math.floor(total / 3);
+  return [
+    entry(id, '2026-10-10', total - 2 * each),
+    entry(id, '2026-10-11', each),
+    entry(id, '2026-10-12', each),
+  ];
+};
+
 // Opened 10 Oct; 900 g used over the 10 days to the 19th = 90 g/day, 100 g
 // left: 1 day. Reorder now.
 const nearlyEmpty = (id: string, over: Partial<Product> = {}) => ({
   product: product({ id, ...over }),
-  uses: [entry(id, '2026-10-10', 900)],
+  uses: threeDays(id, 900),
 });
 
 // 100 g used over 10 days = 10 g/day, 900 g left: 90 days. Plenty.
 const plenty = (id: string, over: Partial<Product> = {}) => ({
   product: product({ id, ...over }),
-  uses: [entry(id, '2026-10-10', 100)],
+  uses: threeDays(id, 100),
 });
 
 describe('buildOutlooks', () => {
@@ -112,10 +122,22 @@ describe('buildOutlooks', () => {
     expect(outlook.urgency).toBe('unknown');
   });
 
+  it("keeps the last container's estimate after the first scoop", () => {
+    // The last tub lasted 33 days. One 30 g scoop the morning after opening
+    // the new one used to replace "~32 days" with "about 2 months", and plan
+    // the reorder reminder from that.
+    const old = product({ id: 'old', opened_on: '2026-09-15', finished_on: '2026-10-17' }); // 33 days
+    const fresh = product({ id: 'new', opened_on: '2026-10-18', previous_id: 'old' });
+    const [, outlook] = buildOutlooks([old, fresh], [entry('new', '2026-10-18', 30)], TODAY);
+    expect(outlook.projection.daysLeft).toBeNull();
+    expect(outlook.estimate?.daysLeft).toBe(32);
+    expect(outlook.reorderOn).toBeNull();
+  });
+
   it('drops the estimate once the rate is measured', () => {
     const old = product({ id: 'old', opened_on: '2026-08-29', finished_on: '2026-10-09' });
     const current = product({ id: 'new', opened_on: '2026-10-10', previous_id: 'old' });
-    const [, outlook] = buildOutlooks([old, current], [entry('new', '2026-10-10', 100)], TODAY);
+    const [, outlook] = buildOutlooks([old, current], threeDays('new', 100), TODAY);
     expect(outlook.projection.daysLeft).toBe(90);
     expect(outlook.estimate).toBeNull();
   });
@@ -185,7 +207,7 @@ describe('reorderSummary', () => {
     // Reorder now; with a lead of 2 it is Running low.
     const low = {
       product: product({ id: 'l', name: 'Zinc', reorder_lead_days: 2 }),
-      uses: [entry('l', '2026-10-10', 600)],
+      uses: threeDays('l', 600),
     };
     const done = product({ id: 'f', name: 'Old', finished_on: '2026-10-01', opened_on: '2026-09-01' });
 
