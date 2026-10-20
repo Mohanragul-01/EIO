@@ -56,22 +56,22 @@ import {
 } from '../components/MarkdownEditor';
 import { MarkdownView } from '../components/MarkdownView';
 import { TRASH_DAYS } from '../library';
-import { toggleTask } from '../markdown';
+import { taskChange } from '../markdown';
 import { readNoteColor, type NoteColorKey } from '../noteColors';
 import { notesChanged } from '../notesEvents';
 import {
   NOTE_TYPE_LABEL,
   belongsInInbox,
-  deleteTicked,
+  deleteTickedChange,
   formatTags,
   parseTags,
   readChecklistItems,
-  toggleItem,
-  uncheckAll,
+  tickChange,
+  uncheckAllChange,
   withDraftItem,
-  type ChecklistItem,
   type NoteType,
 } from '../types';
+import { useNoteContent, writesSettled } from '../useNoteContent';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'NoteEdit'>;
 type Route = RouteProp<RootStackParamList, 'NoteEdit'>;
@@ -103,9 +103,7 @@ export function NoteEditScreen() {
 
   const [noteType, setNoteType] = useState<NoteType>(route.params?.type ?? 'note');
   const [title, setTitle] = useState('');
-  const [body, setBody] = useState(prefill);
   const [tagsText, setTagsText] = useState('');
-  const [items, setItems] = useState<ChecklistItem[]>([]);
   /** "Add an item" as typed: Save keeps it, and leaving asks about it. */
   const [itemDraft, setItemDraft] = useState('');
   // Journals default to today and can be backdated: writing up last night this
@@ -133,6 +131,12 @@ export function NoteEditScreen() {
   const [tickError, setTickError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // The body and the checklist, and the ticks that save them at once. Read
+  // and edit mode share them, which is why a tick's write and its failure
+  // live there: see useNoteContent.
+  const content = useNoteContent(editingId, { body: prefill, items: [] }, setTickError);
+  const { body, items, setBody, setItems, loaded, isEdited } = content;
+
   const [contentError, setContentError] = useState<string | null>(null);
   const [loading, setLoading] = useState(isEditing);
   const [saving, setSaving] = useState(false);
@@ -145,13 +149,13 @@ export function NoteEditScreen() {
 
   /**
    * Snapshot of what was loaded, for the unsaved-changes guard. A ref, because
-   * comparing against it must never itself cause a render.
+   * comparing against it must never itself cause a render. The body and the
+   * checklist are not in it: ticks save them as you go, so useNoteContent
+   * knows what of them is unsaved.
    */
   const original = useRef({
     title: '',
-    body: prefill,
     tagsText: '',
-    items: '[]',
     // Type and entry date are part of the note too. Leaving them out of the
     // snapshot meant changing only a journal's date, or switching a note to a
     // checklist, and pressing back discarded it with no prompt at all.
@@ -166,6 +170,9 @@ export function NoteEditScreen() {
     let active = true;
     (async () => {
       try {
+        // After any tick still on its way from a visit just left, or this
+        // would read the note from before it - but not for ever.
+        await writesSettled(editingId, 5000);
         const note = await api.getNote(editingId);
         if (!active) return;
         const tags = formatTags(note.tags);
@@ -173,9 +180,8 @@ export function NoteEditScreen() {
 
         setNoteType(note.note_type);
         setTitle(note.title);
-        setBody(note.body);
+        loaded({ body: note.body, items: loadedItems });
         setTagsText(tags);
-        setItems(loadedItems);
         setEntryDate(note.entry_date ?? todayISO());
         setPinnedAt(note.pinned_at);
         setColor(readNoteColor(note.color)?.key ?? null);
@@ -183,9 +189,7 @@ export function NoteEditScreen() {
         setDeletedAt(note.deleted_at);
         original.current = {
           title: note.title,
-          body: note.body,
           tagsText: tags,
-          items: JSON.stringify(loadedItems),
           noteType: note.note_type,
           entryDate: note.entry_date ?? todayISO(),
         };
@@ -199,93 +203,48 @@ export function NoteEditScreen() {
     return () => {
       active = false;
     };
-  }, [editingId]);
+  }, [editingId, loaded]);
 
   /* READ-MODE WRITES ------------------------------------------------------- */
 
-  /**
-   * Write a checklist straight away, optimistically.
-   *
-   * The box fills the instant you press it, because a checklist is used
-   * standing in a shop and a round trip per tick would feel broken. A failure
-   * puts the list back and says so, rather than leaving the screen claiming
-   * something the database does not agree with.
-   *
-   * `original` is updated too, or the dirty check would think the note had
-   * unsaved changes and offer to discard work that is already saved.
+  /*
+   * A tick saves at once, because a checklist is used standing in a shop and a
+   * round trip per tick would feel broken. Mass changes offer Undo, which is
+   * itself a change: in edit mode it is merged into what you are editing,
+   * and after you have left it builds on what was saved.
    */
-  const writeItems = useCallback(
-    async (next: ChecklistItem[], previous: ChecklistItem[], failure: string) => {
-      if (!editingId) return false;
-      setItems(next);
-      setTickError(null);
-      try {
-        await api.setChecklistItems(editingId, next);
-        original.current = { ...original.current, items: JSON.stringify(next) };
-        return true;
-      } catch (e) {
-        setItems(previous);
-        setTickError(message(e, failure));
-        return false;
-      }
-    },
-    [editingId],
-  );
 
-  /** An Undo of a mass checklist change, which may run after this screen has gone. */
-  const restoreItems = useCallback(
-    (previous: ChecklistItem[]) => {
-      if (!editingId) return;
-      setItems(previous);
-      original.current = { ...original.current, items: JSON.stringify(previous) };
-      afterUndo(api.setChecklistItems(editingId, previous));
-    },
-    [editingId],
-  );
+  const tickItem = (index: number) =>
+    void content.changeItems((list) => tickChange(list, index), 'Could not save that tick');
 
-  const onUncheckAll = useCallback(async () => {
-    const previous = items;
-    const count = previous.filter((i) => i.done).length;
-    if (await writeItems(uncheckAll(previous), previous, 'Could not uncheck the list')) {
+  const tickTask = (line: number) =>
+    void content.changeBody((text) => taskChange(text, line), 'Could not save that tick');
+
+  const massChange = async (
+    build: typeof uncheckAllChange,
+    done: (count: number) => string,
+    failure: string,
+  ) => {
+    const count = items.filter((i) => i.done).length;
+    const change = await content.changeItems(build, failure);
+    if (change) {
       toast.show({
-        message: `Unchecked ${countItems(count)}`,
+        message: done(count),
         actionLabel: 'Undo',
-        onAction: () => restoreItems(previous),
+        onAction: () => content.undoItems(change),
       });
     }
-  }, [items, writeItems, restoreItems, toast]);
+  };
 
-  const onDeleteTicked = useCallback(async () => {
-    const previous = items;
-    const count = previous.filter((i) => i.done).length;
-    if (await writeItems(deleteTicked(previous), previous, 'Could not delete the ticked items')) {
-      toast.show({
-        message: `Deleted ${countItems(count)}`,
-        actionLabel: 'Undo',
-        onAction: () => restoreItems(previous),
-      });
-    }
-  }, [items, writeItems, restoreItems, toast]);
+  const onUncheckAll = () =>
+    massChange(uncheckAllChange, (n) => `Unchecked ${countItems(n)}`, 'Could not uncheck the list');
 
-  /** Tick a `- [ ]` box in a note's body: the same rule as a checklist tick. */
-  const toggleBodyTask = useCallback(
-    async (line: number) => {
-      if (!editingId) return;
-      const previous = body;
-      const next = toggleTask(previous, line);
-      if (next === previous) return;
-      setBody(next);
-      setTickError(null);
-      try {
-        await api.setBody(editingId, next);
-        original.current = { ...original.current, body: next };
-      } catch (e) {
-        setBody(previous);
-        setTickError(message(e, 'Could not save that tick'));
-      }
-    },
-    [editingId, body],
-  );
+  const onDeleteTicked = () =>
+    massChange(
+      deleteTickedChange,
+      (n) => `Deleted ${countItems(n)}`,
+      'Could not delete the ticked items',
+    );
 
   const togglePin = useCallback(async () => {
     if (!editingId) return;
@@ -452,9 +411,8 @@ export function NoteEditScreen() {
     const unsubscribe = navigation.addListener('beforeRemove', (event) => {
       const dirty =
         title !== original.current.title ||
-        body !== original.current.body ||
+        isEdited() ||
         tagsText !== original.current.tagsText ||
-        JSON.stringify(items) !== original.current.items ||
         (noteType === 'checklist' && itemDraft.trim() !== '') ||
         noteType !== original.current.noteType ||
         entryDate !== original.current.entryDate;
@@ -475,7 +433,7 @@ export function NoteEditScreen() {
     return unsubscribe;
     // `mode` belongs here: without it the effect kept a stale copy and the
     // guard's registration lagged a render behind the switch into edit mode.
-  }, [navigation, title, body, tagsText, items, itemDraft, noteType, entryDate, mode]);
+  }, [navigation, title, isEdited, tagsText, itemDraft, noteType, entryDate, mode]);
 
   /**
    * There is no required field, so "is this worth saving" replaces "is the
@@ -486,7 +444,9 @@ export function NoteEditScreen() {
   const hasContent = useMemo(() => {
     if (title.trim()) return true;
     if (body.trim() && body !== prefill) return true;
-    return noteType === 'checklist' && withDraftItem(items, itemDraft).some((item) => item.text.trim());
+    return (
+      noteType === 'checklist' && withDraftItem(items, itemDraft).some((item) => item.text.trim())
+    );
   }, [title, body, prefill, items, itemDraft, noteType]);
 
   const handleSave = async () => {
@@ -520,11 +480,10 @@ export function NoteEditScreen() {
             : null,
       };
 
-      if (isEditing) {
-        await api.updateNote(editingId, input);
-      } else {
-        await api.createNote(input);
-      }
+      // After any tick still being written, so none can land on top of it.
+      await content.commit({ body: input.body, items: input.checklist_items ?? [] }, () =>
+        isEditing ? api.updateNote(editingId, input) : api.createNote(input),
+      );
       justSaved.current = true; // let the guard through
       navigation.goBack();
     } catch (e) {
@@ -615,11 +574,7 @@ export function NoteEditScreen() {
                       <>
                         <ChecklistRead
                           items={items}
-                          onToggle={
-                            inTrash
-                              ? undefined
-                              : (index) => void writeItems(toggleItem(items, index), items, 'Could not save that tick')
-                          }
+                          onToggle={inTrash ? undefined : tickItem}
                           onUncheckAll={inTrash ? undefined : () => void onUncheckAll()}
                           onDeleteTicked={inTrash ? undefined : () => void onDeleteTicked()}
                         />
@@ -632,10 +587,7 @@ export function NoteEditScreen() {
                   </View>
                 ) : body ? (
                   <View style={title ? styles.gap : undefined}>
-                    <MarkdownView
-                      body={body}
-                      onToggleTask={inTrash ? undefined : (line) => void toggleBodyTask(line)}
-                    />
+                    <MarkdownView body={body} onToggleTask={inTrash ? undefined : tickTask} />
                   </View>
                 ) : (
                   <Text style={styles.readEmpty}>This note is empty. Tap Edit to write something.</Text>
@@ -779,6 +731,7 @@ export function NoteEditScreen() {
             </Text>
 
             {contentError ? <Text style={styles.error}>{contentError}</Text> : null}
+            {tickError ? <Text style={styles.error}>{tickError}</Text> : null}
           </GlassCard>
         </FadeInView>
 

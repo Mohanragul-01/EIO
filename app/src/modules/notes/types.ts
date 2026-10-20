@@ -183,6 +183,84 @@ export function deleteTicked(items: ChecklistItem[]): ChecklistItem[] {
 }
 
 /**
+ * A change that can be taken back after others have landed on top of it.
+ *
+ * A read-mode tick saves at once, and on a weak signal its write can fail
+ * seconds later - after more ticks, after Undo, after you have started editing
+ * the note. Putting back the list as it was before the tick would throw all of
+ * that away. So each change knows how to take back only itself: `revert`
+ * touches only what `apply` wrote, and only where it still reads as `apply`
+ * left it. Anywhere it does not, something later has changed it again, and
+ * that later thing wins.
+ */
+export type Change<T> = {
+  apply: (value: T) => T;
+  revert: (value: T) => T;
+};
+
+/** The same change the other way round: what an Undo of it does. */
+export function inverse<T>(change: Change<T>): Change<T> {
+  return { apply: change.revert, revert: change.apply };
+}
+
+/** One item's tick to set, where that item still has this text and reads `from`. */
+type Mark = { index: number; text: string; from: boolean; to: boolean };
+
+function setMarks(items: ChecklistItem[], marks: Mark[]): ChecklistItem[] {
+  const byIndex = new Map(marks.map((mark) => [mark.index, mark]));
+  let changed = false;
+  const next = items.map((item, index) => {
+    const mark = byIndex.get(index);
+    if (!mark || item.text !== mark.text || item.done !== mark.from) return item;
+    changed = true;
+    return { ...item, done: mark.to };
+  });
+  return changed ? next : items;
+}
+
+function markChange(marks: Mark[]): Change<ChecklistItem[]> {
+  const back = marks.map((mark) => ({ ...mark, from: mark.to, to: mark.from }));
+  return { apply: (items) => setMarks(items, marks), revert: (items) => setMarks(items, back) };
+}
+
+/** Tick or untick one item, by its stored index. Null when there is no such item. */
+export function tickChange(items: ChecklistItem[], index: number): Change<ChecklistItem[]> | null {
+  const item = items[index];
+  if (!item) return null;
+  return markChange([{ index, text: item.text, from: item.done, to: !item.done }]);
+}
+
+/** Uncheck all: its revert re-ticks exactly the items it unticked. */
+export function uncheckAllChange(items: ChecklistItem[]): Change<ChecklistItem[]> {
+  return markChange(
+    items.flatMap((item, index) =>
+      item.done ? [{ index, text: item.text, from: true, to: false }] : [],
+    ),
+  );
+}
+
+/** Delete ticked: its revert puts each deleted item back at its place. */
+export function deleteTickedChange(items: ChecklistItem[]): Change<ChecklistItem[]> {
+  const removed = items.flatMap((item, index) => (item.done ? [{ index, item }] : []));
+  return {
+    apply: (list) => {
+      const next = [...list];
+      // Last first, so each index still points where it did.
+      [...removed].reverse().forEach(({ index, item }) => {
+        const there = next[index];
+        if (there && there.text === item.text && there.done === item.done) next.splice(index, 1);
+      });
+      return next;
+    },
+    revert: (list) => {
+      const next = [...list];
+      removed.forEach(({ index, item }) => next.splice(Math.min(index, next.length), 0, item));
+      return next;
+    },
+  };
+}
+
+/**
  * The list with what is typed in "Add an item" added to the end, if anything.
  *
  * Add and the keyboard's done both do this; so does Save, because a line typed

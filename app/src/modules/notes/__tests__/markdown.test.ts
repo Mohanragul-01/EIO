@@ -14,6 +14,7 @@ import {
   parseMarkdown,
   safeHref,
   stripMarkdown,
+  taskChange,
   taskProgress,
   toggleTask,
   type Block,
@@ -252,5 +253,25 @@ describe('taskProgress', () => {
   it('counts boxes in a note', () => {
     expect(taskProgress('- [x] a\n- [ ] b\n[x] c\nplain')).toEqual({ done: 2, total: 3 });
     expect(taskProgress('no boxes')).toEqual({ done: 0, total: 0 });
+  });
+});
+
+describe('taskChange', () => {
+  it('reverts its own tick and keeps what was typed on other lines since', () => {
+    const tick = taskChange('- [ ] passport', 0)!;
+    expect(tick.apply('- [ ] passport')).toBe('- [x] passport');
+    expect(tick.revert('- [x] passport\n\nTwo paragraphs.')).toBe(
+      '- [ ] passport\n\nTwo paragraphs.',
+    );
+  });
+
+  it('leaves a line that has been edited since', () => {
+    const tick = taskChange('- [ ] passport', 0)!;
+    expect(tick.revert('- [x] passport and visa')).toBe('- [x] passport and visa');
+    expect(tick.revert('- [ ] passport')).toBe('- [ ] passport');
+  });
+
+  it('is null for a line that is not a box', () => {
+    expect(taskChange('plain', 0)).toBeNull();
   });
 });
