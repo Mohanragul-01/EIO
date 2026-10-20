@@ -1490,6 +1490,9 @@ function HistoryDialog({
   };
 
   const add = async () => {
+    // Enter in the note reaches here even while the button is disabled: a
+    // second one during a slow save would log the use twice.
+    if (saving) return;
     const quantity = Number(amount.trim());
     if (!Number.isFinite(quantity) || quantity <= 0) return setActionError('Enter how much you used.');
     // Before the opening date would inflate the measured rate, because the

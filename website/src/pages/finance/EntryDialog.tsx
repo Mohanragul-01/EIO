@@ -164,6 +164,9 @@ export function EntryDialog({
   };
 
   const save = async (stayOpen: boolean) => {
+    // Enter reaches here too, and the button being disabled does not stop it:
+    // a second Enter during a slow save would add the entry twice.
+    if (saving) return;
     const minor = parseAmountToMinor(amount);
     if (minor === null || minor <= 0) return setAmountError('Enter an amount like 250 or 249.50');
     if (kind === 'transfer' && (!fromId || !toId)) return setError('Pick the account it left and the one it reached.');

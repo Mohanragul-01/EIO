@@ -194,6 +194,9 @@ export function NotesPage() {
 
   const quickCapture = async (event: FormEvent) => {
     event.preventDefault();
+    // Ctrl+Enter reaches here even while the button is disabled: a second one
+    // during a slow save would capture the note twice.
+    if (capturing) return;
     const body = capture.trim();
     if (!body) return;
     setCapturing(true);

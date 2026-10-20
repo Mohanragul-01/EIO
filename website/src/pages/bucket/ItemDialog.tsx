@@ -117,6 +117,9 @@ export function ItemDialog({
   const askingToSwap = want === 'now' && item?.focus !== 'now' && !item?.is_done && shelfFull;
 
   const save = async () => {
+    // Enter reaches here too: a second one during a slow save would add the
+    // item twice.
+    if (saving) return;
     const cleanTitle = title.trim();
     const cleanCategory = category.trim();
     setTitleError(cleanTitle ? null : 'What is the thing?');
