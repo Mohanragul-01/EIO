@@ -338,12 +338,22 @@ export function useFinance() {
     });
   }, []);
 
+  /** Pills whose log is still on its way. */
+  const logging = useRef(new Set<string>());
+
   /**
    * One tap on a pinned quick-add: today's entry, straight into the list. The
-   * screen shows the Undo toast with the row this returns.
+   * screen shows the Undo toast with the row this returns; null when nothing
+   * was logged.
    */
   const logQuickAdd = useCallback(
     async (quickAdd: QuickAdd): Promise<Transaction | null> => {
+      // A second tap before the first has landed is a double tap, not a
+      // second chai: logging it would also replace the first toast, and its
+      // Undo with it.
+      if (logging.current.has(quickAdd.id)) return null;
+      logging.current.add(quickAdd.id);
+
       const accountId =
         quickAdd.account_id ??
         lastUsed(rows, quickAdd.kind).accountId ??
@@ -366,6 +376,8 @@ export function useFinance() {
       } catch (e) {
         if (isMounted()) setError(e instanceof Error ? e.message : 'Could not log that');
         return null;
+      } finally {
+        logging.current.delete(quickAdd.id);
       }
     },
     [rows, accounts, isMounted, putRowsBack],

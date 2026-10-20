@@ -10,7 +10,7 @@
 import { act, renderHook } from '@testing-library/react-native';
 
 import type { DateRange } from '../period';
-import type { Account, Budget, Transaction } from '../types';
+import type { Account, Budget, QuickAdd, Transaction } from '../types';
 import { useFinance } from '../useFinance';
 
 jest.mock('@react-navigation/native', () => {
@@ -72,6 +72,40 @@ function budget(category: string, amountMinor: number): Budget {
   };
 }
 
+function quickAdd(id: string, overrides: Partial<QuickAdd> = {}): QuickAdd {
+  return {
+    id,
+    user_id: 'u',
+    note: 'Chai',
+    amount_minor: 2000,
+    kind: 'expense',
+    category: 'food',
+    account_id: null,
+    position: 0,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+/** What the server sends back for an insert. */
+function inserted(
+  input: Omit<
+    Transaction,
+    'id' | 'user_id' | 'created_at' | 'transfer_group_id' | 'transfer_direction'
+  >,
+  id: string,
+): Transaction {
+  return {
+    ...input,
+    id,
+    user_id: 'u',
+    created_at: '2026-10-20T06:30:00.123456+00:00',
+    transfer_group_id: null,
+    transfer_direction: null,
+  };
+}
+
 const between = (range: DateRange) =>
   ledger
     .filter((r) => r.date >= range.start && r.date <= range.end)
@@ -129,6 +163,10 @@ beforeEach(() => {
   api.listQuickAdds.mockImplementation(() => Promise.resolve([]));
   api.listRecent.mockImplementation(() =>
     Promise.resolve([...ledger].sort((a, b) => b.created_at.localeCompare(a.created_at))),
+  );
+  let serial = 0;
+  api.createTransaction.mockImplementation((input) =>
+    Promise.resolve(inserted(input, `t-new-${(serial += 1)}`)),
   );
 });
 
@@ -255,5 +293,50 @@ describe('stepping to another month', () => {
     });
     expect(result.current.period).toEqual({ year: 2026, month: 10 });
     expect(entryIds(result.current.days)).toEqual(['oct']);
+  });
+});
+
+// QUICK ADDS -------------------------------------------------------------------
+
+describe('a quick-add pill', () => {
+  it('ignores a second tap while its first is still logging', async () => {
+    const chai = quickAdd('q-chai');
+    const { result } = await loaded();
+
+    const saving = deferred<Transaction>();
+    api.createTransaction.mockImplementationOnce(() => saving.promise);
+    let second: Promise<Transaction | null> | undefined;
+    await act(async () => {
+      void result.current.logQuickAdd(chai);
+      second = result.current.logQuickAdd(chai);
+    });
+    expect(api.createTransaction).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      saving.resolve(inserted({ ...api.createTransaction.mock.calls[0][0] }, 't-1'));
+    });
+    // Nothing logged, so no toast and no Undo for it.
+    await expect(second).resolves.toBeNull();
+
+    // Once the first has landed, the next tap is a real one.
+    api.createTransaction.mockImplementationOnce((input) =>
+      Promise.resolve(inserted(input, 't-2')),
+    );
+    await act(async () => {
+      await result.current.logQuickAdd(chai);
+    });
+    expect(api.createTransaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('logs two different pills tapped together', async () => {
+    const { result } = await loaded();
+
+    await act(async () => {
+      await Promise.all([
+        result.current.logQuickAdd(quickAdd('q-chai')),
+        result.current.logQuickAdd(quickAdd('q-metro', { note: 'Metro', category: 'transport' })),
+      ]);
+    });
+    expect(api.createTransaction).toHaveBeenCalledTimes(2);
   });
 });
