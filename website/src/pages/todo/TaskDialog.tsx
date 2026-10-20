@@ -102,7 +102,9 @@ export function TaskDialog({
     };
 
     try {
-      if (todo) await api.updateTodo(todo.id, input);
+      // The row as loaded, so a save that leaves the date and the rule as
+      // they were keeps a rescheduled occurrence on its schedule.
+      if (todo) await api.updateTodo(todo.id, input, todo);
       else await api.createTodo(input);
       onSaved();
     } catch (e) {
@@ -110,6 +112,12 @@ export function TaskDialog({
       setSaving(false);
     }
   };
+
+  // A yearly rule has no day control: when the date is changed here, its day
+  // follows the date on save (input.ts), so the rule shown - and its next
+  // three dates - follow it too. The loaded day is kept underneath, for a
+  // date changed back.
+  const dayFollowsDate = freq === 'yearly' && todo !== null && (dueDate || null) !== todo.due_date;
 
   const addStep = () => {
     const text = step.trim();
@@ -250,7 +258,9 @@ export function TaskDialog({
         <span>
           <div style={{ fontWeight: 500 }}>Repeat</div>
           <div className="faint" style={{ fontSize: 12 }}>
-            {isRepeat ? 'Completing it brings the next one round' : 'Completing it just marks it done'}
+            {isRepeat
+              ? 'Completing it brings the next one round'
+              : 'Completing it just marks it done'}
           </div>
         </span>
       </label>
@@ -258,10 +268,12 @@ export function TaskDialog({
       {isRepeat ? (
         <RepeatFields
           frequency={freq}
-          draft={rule}
+          draft={dayFollowsDate ? { ...rule, anchorDay: null } : rule}
           dueDate={dueDate || null}
           today={today}
-          onChange={setRule}
+          onChange={(next) =>
+            setRule(dayFollowsDate ? { ...next, anchorDay: rule.anchorDay } : next)
+          }
         />
       ) : null}
 

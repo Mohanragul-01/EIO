@@ -345,6 +345,37 @@ describe('found in review', () => {
     expect(next.due_date).toBe('2026-12-01');
   });
 
+  it('an editor save that only adds a note keeps a pulled-back occurrence from coming straight back', async () => {
+    // Rent on the 1st; 1 November pulled back to 28 October, then opened in
+    // the editor to add "paid by UPI" and saved.
+    const task = await repeatingTask({ frequency: 'monthly', due_date: '2026-11-01' });
+    await api.rescheduleTasks([task.id], '2026-10-28');
+    const loaded = row(task.id);
+
+    await api.updateTodo(
+      task.id,
+      {
+        title: loaded.title,
+        notes: 'paid by UPI',
+        due_date: loaded.due_date,
+        priority: loaded.priority,
+        frequency: loaded.frequency,
+        is_repeat: loaded.is_repeat,
+        repeat_every: loaded.repeat_every,
+        repeat_weekdays: loaded.repeat_weekdays,
+        repeat_anchor_day: loaded.repeat_anchor_day,
+        repeat_nth: loaded.repeat_nth,
+        repeat_from: loaded.repeat_from,
+      },
+      loaded,
+    );
+    const next = (await api.completeTask(row(task.id))) as Todo;
+
+    expect(row(task.id).notes).toBe('paid by UPI');
+    expect(row(task.id).scheduled_for).toBe('2026-11-01');
+    expect(next.due_date).toBe('2026-12-01');
+  });
+
   it('a yearly occurrence moved into the next month stays a December routine', async () => {
     const task = await repeatingTask({ frequency: 'yearly', due_date: '2026-12-31' });
     await api.rescheduleTasks([task.id], '2027-01-02');

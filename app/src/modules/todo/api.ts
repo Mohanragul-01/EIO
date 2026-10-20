@@ -27,7 +27,7 @@ import { supabase } from '../../core/supabase';
 import { getOwnerId } from '../../core/session';
 import { todayISO } from '../../core/date';
 import { registerResync } from '../../core/notifications';
-import { normalizeInput, resetChecklist, ruleColumnsFor } from './input';
+import { normalizeInput, resetChecklist, ruleColumnsFor, type Saved } from './input';
 import {
   cancelDigests,
   cancelReminders,
@@ -340,11 +340,19 @@ export async function createTodo(input: TodoInput): Promise<Todo> {
  * frequency and repeat switch) has its rule settled like a new task's; a
  * partial one - a reschedule, a ticked check item, new notes - is written as
  * given.
+ *
+ * An editor passes the row as it loaded it (`saved`), so a save that changed
+ * neither the date nor the rule leaves the schedule where it was: see
+ * normalizeInput. Without it a full save puts the schedule at the due date.
  */
-export async function updateTodo(id: string, input: Partial<TodoInput>): Promise<Todo> {
+export async function updateTodo(
+  id: string,
+  input: Partial<TodoInput>,
+  saved: Saved | null = null,
+): Promise<Todo> {
   const isFull =
     input.title !== undefined && input.frequency !== undefined && input.is_repeat !== undefined;
-  const values = isFull ? normalizeInput(input as TodoInput, todayISO()) : input;
+  const values = isFull ? normalizeInput(input as TodoInput, todayISO(), saved) : input;
 
   const { data, error } = await supabase.from(TABLE).update(values).eq('id', id).select().single();
 
