@@ -291,3 +291,40 @@ describe('reopening a routine session', () => {
     ]);
   });
 });
+
+describe('removing a saved set', () => {
+  it('Undo after a delete that failed does not write the set a second time', async () => {
+    api.listSessionSets.mockResolvedValue([set('s1')]);
+    api.deleteSet.mockRejectedValueOnce(new Error('offline'));
+    const { result } = await opened();
+
+    let undo: (() => void) | null = null;
+    await act(async () => {
+      undo = result.current.removeRow('b1', 's1');
+    });
+    await act(async () => {
+      undo?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(api.addSet).not.toHaveBeenCalled();
+  });
+
+  it('Undo after a delete that worked writes the set back', async () => {
+    api.listSessionSets.mockResolvedValue([set('s1')]);
+    api.addSet.mockResolvedValue(set('s1-again'));
+    const { result } = await opened();
+
+    let undo: (() => void) | null = null;
+    await act(async () => {
+      undo = result.current.removeRow('b1', 's1');
+    });
+    await act(async () => {
+      undo?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(api.addSet).toHaveBeenCalledTimes(1);
+    expect(result.current.blocks[0].rows[0]).toMatchObject({ kind: 'saved', key: 's1-again' });
+  });
+});

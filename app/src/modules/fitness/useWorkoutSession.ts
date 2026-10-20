@@ -418,13 +418,19 @@ export function useWorkoutSession(sessionId: string) {
       }
 
       const removed = row.set;
-      const deleting = api.deleteSet(removed.id).catch((e) => {
-        fail(e, 'Could not delete that set');
-        void load();
-      });
+      // Whether the delete went through. If it failed, the reload has put the
+      // set back already, and an Undo writing it again would make two.
+      const deleted = api.deleteSet(removed.id).then(
+        () => true,
+        (e) => {
+          fail(e, 'Could not delete that set');
+          void load();
+          return false;
+        },
+      );
       return () => {
         void (async () => {
-          await deleting;
+          if (!(await deleted)) return;
           try {
             const restored = await api.addSet(sessionId, {
               exercise_id: removed.exercise_id,
