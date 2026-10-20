@@ -159,7 +159,7 @@ describe('digestPlan', () => {
     { due_date: null },
   ];
 
-  it('plans one per day with that day\'s projected counts, skipping past times', () => {
+  it("plans one per day with that day's projected counts, skipping past times", () => {
     // At noon today's 8 am digest has passed, so the plan starts tomorrow.
     const plan = digestPlan(open, on, '2026-10-19', NOON, 3);
     expect(plan.map((e) => [e.day, e.body])).toEqual([
@@ -176,9 +176,9 @@ describe('digestPlan', () => {
   });
 
   it('skips days with nothing to say, and plans nothing when off', () => {
-    expect(digestPlan([{ due_date: '2026-10-25' }], on, '2026-10-19', NOON, 7).map((e) => e.day)).toEqual([
-      '2026-10-25',
-    ]);
+    expect(
+      digestPlan([{ due_date: '2026-10-25' }], on, '2026-10-19', NOON, 7).map((e) => e.day),
+    ).toEqual(['2026-10-25']);
     expect(digestPlan(open, DEFAULT_DIGEST, '2026-10-19', NOON)).toEqual([]);
   });
 });
@@ -203,10 +203,17 @@ describe('scheduling through core', () => {
     await syncReminders([task({})], NOON);
 
     expect(core.cancel).toHaveBeenCalledWith(reminderId('abc'));
-    expect(core.registerCategory).toHaveBeenCalledWith('task_reminder', [
-      { id: 'done', title: 'Done' },
-      { id: 'snooze', title: 'Snooze 30 min' },
-    ]);
+    expect(core.registerCategory).toHaveBeenCalledWith(
+      'task_reminder',
+      [
+        { id: 'done', title: 'Done' },
+        { id: 'snooze', title: 'Snooze 30 min' },
+      ],
+      // Found in review: a button that acts without opening the app is lost
+      // when Android has already killed the process (no JavaScript runs to
+      // handle it), so both open the app, where the press is handled.
+      { opensApp: true },
+    );
     expect(core.schedule).toHaveBeenCalledWith({
       id: 'task-abc',
       date: new Date(2026, 9, 19, 19, 0),
@@ -226,7 +233,11 @@ describe('scheduling through core', () => {
 
   it('rebuilds everything from scratch, digests included', async () => {
     await saveDigestSettings({ enabled: true, hour: 8, minute: 0 });
-    await rebuildAll([task({}), task({ id: 'def', due_date: '2026-10-21', due_time: null })], '2026-10-19', NOON);
+    await rebuildAll(
+      [task({}), task({ id: 'def', due_date: '2026-10-21', due_time: null })],
+      '2026-10-19',
+      NOON,
+    );
 
     expect(core.cancelPrefix).toHaveBeenCalledWith('task-');
     const ids = core.schedule.mock.calls.map((call) => (call[0] as { id: string }).id);
@@ -244,7 +255,11 @@ describe('scheduling through core', () => {
   });
 
   it('snoozes under the same id, 30 minutes on', async () => {
-    await snooze('task-abc', { title: 'Call the bank', body: 'Due 7 pm', data: { taskId: 'abc' } }, NOON);
+    await snooze(
+      'task-abc',
+      { title: 'Call the bank', body: 'Due 7 pm', data: { taskId: 'abc' } },
+      NOON,
+    );
     expect(core.schedule).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'task-abc',
@@ -262,7 +277,11 @@ describe('a snooze survives the launch resync (found in review)', () => {
   it('rebuildAll puts a pending snooze back after clearing every task- reminder', async () => {
     // Snoozed at 7:00 for 7:30; the app opens at 7:10 and resyncs.
     const at7 = new Date(2026, 9, 19, 7, 0);
-    await snooze('task-abc', { title: 'Call the bank', body: 'Due 7 am', data: { taskId: 'abc' } }, at7);
+    await snooze(
+      'task-abc',
+      { title: 'Call the bank', body: 'Due 7 am', data: { taskId: 'abc' } },
+      at7,
+    );
     core.schedule.mockClear();
 
     await rebuildAll([snoozedTask], '2026-10-19', new Date(2026, 9, 19, 7, 10));

@@ -1,9 +1,12 @@
 /**
  * notificationRoutes - what pressing or tapping a task notification does.
  *
- *   Done        completes the task, in the background, as a tick would
+ *   Done        completes the task, as a tick would
  *   Snooze      shows the same reminder again in 30 minutes
  *   tap         opens the task (a reminder) or Today (the digest)
+ *
+ * Done and Snooze open the app where it was (see ensureCategory in
+ * notifications.ts for why), and the press is handled here.
  *
  * Kept apart from notifications.ts because it navigates, and navigation is
  * the app's alone: the website imports notifications.ts through api.ts and
