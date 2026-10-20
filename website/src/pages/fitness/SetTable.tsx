@@ -28,6 +28,7 @@ import {
 } from '@app/modules/fitness/load';
 import { primaryRecord, type RecordHit } from '@app/modules/fitness/records';
 import {
+  copyPrevious,
   draftLoad,
   type BlockState,
   type Ghost,
@@ -282,8 +283,14 @@ function SetRow({
   const clean = values.clean;
   const setName = `Set ${label}${side ? (side === 'left' ? ' left' : ' right') : ''}`;
 
+  // Last time's band is named ("22s · Red band"), and copied with the set.
+  const previousBand = previous?.band_id ? bandsById[previous.band_id] : undefined;
   const previousText = previous
-    ? formatSetShort({ ...previous, band_id: null, side: null }, shape)
+    ? formatSetShort(
+        { ...previous, band_id: previous.band_id ?? null, side: null },
+        shape,
+        previousBand?.label,
+      )
     : '—';
 
   const tickFromKeyboard = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -432,14 +439,7 @@ function SetRow({
           disabled={!previous || !draft}
           onClick={() => {
             if (!previous || !draft) return;
-            onChangeDraft(row.key, {
-              weight: fieldText(previous.weight_kg),
-              assist: fieldText(previous.assist_kg),
-              loadTyped: true,
-              ...(timed
-                ? { seconds: previous.duration_seconds ? String(previous.duration_seconds) : '' }
-                : { reps: previous.reps !== null ? String(previous.reps) : '' }),
-            });
+            onChangeDraft(row.key, copyPrevious(previous, timed));
           }}
           aria-label={
             previous

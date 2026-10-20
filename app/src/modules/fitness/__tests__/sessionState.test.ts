@@ -11,6 +11,7 @@ import { newDraft, type DraftRow } from '../blocks';
 import {
   applyTarget,
   commitDraft,
+  copyPrevious,
   draftLoad,
   ghostValues,
   sessionReducer,
@@ -454,5 +455,37 @@ describe('block order and replacement', () => {
       block: { id: 'a', exerciseId: 'z', sessionExercise: null, rows: [] },
     });
     expect(s.blocks.map((b) => b.exerciseId)).toEqual(['z', 'b']);
+  });
+});
+
+describe('copyPrevious: tapping PREVIOUS copies the whole set', () => {
+  const last = {
+    id: 'p',
+    exercise_id: 'x',
+    session_id: 'last',
+    set_type: 'normal' as const,
+    reps: 8,
+    duration_seconds: null,
+    weight_kg: 0,
+    assist_kg: 15,
+    band_id: 'red',
+    clean: true,
+    created_at: '',
+  };
+
+  it('copies the band with its assistance, and sets the load exactly', () => {
+    expect(copyPrevious(last, false)).toEqual({
+      weight: '',
+      assist: '15',
+      band_id: 'red',
+      loadTyped: true,
+      reps: '8',
+    });
+  });
+
+  it('copies a hold as seconds, and an unbanded set as no band', () => {
+    expect(
+      copyPrevious({ ...last, reps: null, duration_seconds: 30, band_id: undefined }, true),
+    ).toEqual({ weight: '', assist: '15', band_id: null, loadTyped: true, seconds: '30' });
   });
 });

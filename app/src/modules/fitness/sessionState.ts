@@ -324,6 +324,26 @@ const loadText = (n: number | null) =>
   n === null || n === 0 ? '' : String(Math.round(n * 100) / 100);
 
 /**
+ * The patch that copies last time's set into a row (tapping PREVIOUS): its
+ * reps or seconds, and its whole load - weight, assistance and the band that
+ * gave it - set exactly, so an empty cell then means none.
+ */
+export function copyPrevious(
+  previous: Pick<SetFact, 'reps' | 'duration_seconds' | 'weight_kg' | 'assist_kg' | 'band_id'>,
+  timed: boolean,
+): Partial<Omit<DraftRow, 'key'>> {
+  return {
+    weight: loadText(previous.weight_kg),
+    assist: loadText(previous.assist_kg),
+    band_id: previous.band_id ?? null,
+    loadTyped: true,
+    ...(timed
+      ? { seconds: previous.duration_seconds ? String(previous.duration_seconds) : '' }
+      : { reps: previous.reps !== null ? String(previous.reps) : '' }),
+  };
+}
+
+/**
  * The patch that writes a row's shown load into its cells, for opening the
  * load sheet: the sheet then holds real values, and clearing one means none.
  * What was already typed is kept as typed.

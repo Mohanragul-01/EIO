@@ -26,7 +26,7 @@ import { radius, spacing } from '../../../core/theme';
 import type { DraftRow } from '../blocks';
 import { formatHoldShort, formatLoadChip, formatSetShort, setLabels, type SetFact } from '../load';
 import { primaryRecord, type RecordHit } from '../records';
-import { draftLoad, type BlockState, type Ghost, type Row } from '../sessionState';
+import { copyPrevious, draftLoad, type BlockState, type Ghost, type Row } from '../sessionState';
 import { formatDuration, type Band, type Exercise, type SetType } from '../types';
 
 type Props = {
@@ -261,8 +261,14 @@ function SetRow({
         drop: colors.info,
       };
 
+  // Last time's band is named ("22s · Red band"), and copied with the set.
+  const previousBand = previous?.band_id ? bandsById[previous.band_id] : undefined;
   const previousText = previous
-    ? formatSetShort({ ...previous, band_id: null, side: null }, shape)
+    ? formatSetShort(
+        { ...previous, band_id: previous.band_id ?? null, side: null },
+        shape,
+        previousBand?.label,
+      )
     : '—';
 
   // LOAD: a kg field for an external lift; a chip for bodyweight.
@@ -403,14 +409,7 @@ function SetRow({
         <Pressable
           onPress={() => {
             if (!previous || row.kind !== 'draft') return;
-            onChangeDraft(row.key, {
-              weight: fmt(previous.weight_kg),
-              assist: fmt(previous.assist_kg),
-              loadTyped: true,
-              ...(timed
-                ? { seconds: previous.duration_seconds ? String(previous.duration_seconds) : '' }
-                : { reps: previous.reps !== null ? String(previous.reps) : '' }),
-            });
+            onChangeDraft(row.key, copyPrevious(previous, timed));
           }}
           disabled={!previous || row.kind !== 'draft'}
           accessibilityRole="button"
