@@ -346,13 +346,15 @@ export function TransactionEditScreen() {
   /** Delete, go back, and offer Undo: deleting is reversible, so it is not confirmed. */
   const remove = async () => {
     if (!editing) return;
-    const rows: Transaction[] = editing;
+    let rows: Transaction[] = editing;
     setDeleting(true);
     try {
-      if (editingGroup) await api.deleteTransfer(editingGroup);
+      // For Undo, a transfer's halves as the server deleted them: the form
+      // read them a while ago, and they may have changed since.
+      if (editingGroup) rows = await api.deleteTransfer(editingGroup);
       else if (editingId) await api.deleteTransaction(editingId);
       navigation.goBack();
-      const first = rows[0];
+      const first = rows[0] ?? editing[0];
       const label = first.kind === 'transfer' ? 'transfer' : first.note || categoryDef(first.category).label;
       toast.show({
         message: `Deleted ${formatMoney(first.amount_minor, { compact: true })} · ${label}`,

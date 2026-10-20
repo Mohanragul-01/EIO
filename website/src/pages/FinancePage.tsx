@@ -266,9 +266,10 @@ export function FinancePage() {
 
   const remove = (item: ListItem) =>
     attempt(async () => {
-      const gone = item.type === 'entry' ? [item.tx] : item.rows;
+      let gone = item.type === 'entry' ? [item.tx] : item.rows;
       if (item.type === 'entry') await api.deleteTransaction(item.tx.id);
-      else await api.deleteTransfer(item.groupId);
+      // Every half the server deleted, even one outside the month listed.
+      else gone = await api.deleteTransfer(item.groupId);
       refresh();
       toast.show({
         message: `Deleted ${describe(item)}`,

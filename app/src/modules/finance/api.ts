@@ -269,10 +269,19 @@ export async function updateTransfer(
   fail(error);
 }
 
-/** Both halves in one statement. */
-export async function deleteTransfer(groupId: string): Promise<void> {
-  const { error } = await supabase.from(TABLE).delete().eq('transfer_group_id', groupId);
+/**
+ * Both halves in one statement, whatever their dates. Returns the rows it
+ * deleted, so Undo puts back exactly those - not only the halves a list had
+ * fetched, which miss one the v2 app moved into another month.
+ */
+export async function deleteTransfer(groupId: string): Promise<Transaction[]> {
+  const { data, error } = await supabase
+    .from(TABLE)
+    .delete()
+    .eq('transfer_group_id', groupId)
+    .select();
   fail(error);
+  return data ?? [];
 }
 
 // ACCOUNTS --------------------------------------------------------------------

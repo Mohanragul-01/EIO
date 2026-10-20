@@ -27,9 +27,9 @@ jest.mock('../api', () => ({
   listQuickAdds: jest.fn(),
   listRecent: jest.fn(),
   createTransaction: jest.fn(),
-  deleteTransaction: jest.fn(() => Promise.resolve()),
+  deleteTransaction: jest.fn(),
   deleteTransfer: jest.fn(),
-  restoreTransactions: jest.fn(() => Promise.resolve()),
+  restoreTransactions: jest.fn(),
   saveMonthStartDay: jest.fn(() => Promise.resolve()),
 }));
 
@@ -181,6 +181,20 @@ beforeEach(() => {
   api.listRecent.mockImplementation(() =>
     Promise.resolve([...ledger].sort((a, b) => b.created_at.localeCompare(a.created_at))),
   );
+  // Writes change the server, so the reload every write triggers sees them.
+  api.deleteTransaction.mockImplementation((id: string) => {
+    ledger = ledger.filter((r) => r.id !== id);
+    return Promise.resolve();
+  });
+  api.deleteTransfer.mockImplementation((groupId: string) => {
+    const gone = ledger.filter((r) => r.transfer_group_id === groupId);
+    ledger = ledger.filter((r) => r.transfer_group_id !== groupId);
+    return Promise.resolve(gone);
+  });
+  api.restoreTransactions.mockImplementation((rows: Transaction[]) => {
+    ledger = [...ledger, ...rows];
+    return Promise.resolve();
+  });
   let serial = 0;
   api.createTransaction.mockImplementation((input) =>
     Promise.resolve(inserted(input, `t-new-${(serial += 1)}`)),
@@ -400,5 +414,46 @@ describe('a quick-add pill', () => {
       ]);
     });
     expect(api.createTransaction).toHaveBeenCalledTimes(2);
+  });
+});
+
+// DELETE AND UNDO --------------------------------------------------------------
+
+describe('deleting a transfer', () => {
+  it('Undo puts back both halves, even one dated outside the month on screen', async () => {
+    const out = tx('out', '2026-10-03', 200000, {
+      kind: 'transfer',
+      category: 'transfer',
+      account_id: 'hdfc',
+      transfer_group_id: 'g',
+      transfer_direction: 'out',
+    });
+    // Moved into September by the v2 app: not in October's rows.
+    const back = {
+      ...out,
+      id: 'in',
+      date: '2026-09-30',
+      account_id: 'cash',
+      transfer_direction: 'in' as const,
+    };
+    ledger = [out, back];
+    const { result } = await loaded();
+
+    const item = result.current.days[0].items[0];
+    expect(item.type === 'transfer' && item.rows.map((r) => r.id)).toEqual(['out']);
+
+    let gone: Transaction[] | null = null;
+    await act(async () => {
+      gone = await result.current.deleteItem(item);
+    });
+    expect(api.deleteTransfer).toHaveBeenCalledWith('g');
+    expect(entryIds(result.current.days)).toEqual([]);
+
+    await act(async () => {
+      await result.current.restoreRows(gone!);
+    });
+    expect(api.restoreTransactions).toHaveBeenCalledWith([out, back]);
+    // Only October's half goes back into October's list.
+    expect(result.current.rows.map((r) => r.id)).toEqual(['out']);
   });
 });

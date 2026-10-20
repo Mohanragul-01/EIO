@@ -417,16 +417,19 @@ export function useFinance() {
    */
   const deleteItem = useCallback(
     async (item: ListItem): Promise<Transaction[] | null> => {
-      const gone = item.type === 'entry' ? [item.tx] : item.rows;
-      removeRowsLocally(gone);
+      const shown = item.type === 'entry' ? [item.tx] : item.rows;
+      removeRowsLocally(shown);
       try {
+        let gone = shown;
         if (item.type === 'entry') await api.deleteTransaction(item.tx.id);
-        else await api.deleteTransfer(item.groupId);
+        // A transfer's halves as the server deleted them: both, even one
+        // dated in a month this list never fetched.
+        else gone = await api.deleteTransfer(item.groupId);
         ledgerChanged();
         return gone;
       } catch (e) {
         if (isMounted()) {
-          putRowsBack(gone);
+          putRowsBack(shown);
           setError(e instanceof Error ? e.message : 'Could not delete that');
         }
         return null;
