@@ -23,6 +23,7 @@
  * twice writes first and deletes last: an interruption leaves a stale row you
  * can see, never a missing one you cannot get back.
  */
+import { collectPages } from '../../core/paging';
 import { supabase } from '../../core/supabase';
 import { getOwnerId } from '../../core/session';
 import { todayISO } from '../../core/date';
@@ -82,9 +83,6 @@ registerResync('tasks', async () => {
 /** The columns a series history needs - small, since a daily routine has hundreds. */
 const HISTORY_COLUMNS =
   'id, series_id, due_date, scheduled_for, completed_at, updated_at, outcome, is_done, frequency, repeat_every, repeat_weekdays, repeat_anchor_day, repeat_nth, repeat_from';
-
-/** Supabase returns at most this many rows per request (its default max_rows). */
-const PAGE = 1000;
 
 /**
  * Open tasks in one frequency tab.
@@ -235,28 +233,30 @@ export async function listClosedBetween(start: string, end: string): Promise<Tod
  * The first occurrence of a series has no series_id - its key IS its id - so
  * the match is on either column.
  *
- * NEWEST FIRST, THEN REVERSED. Supabase caps a response at 1000 rows whatever
- * limit is asked for, and a list screen asks for every routine's history at
- * once - five daily routines pass 1000 in about 200 days. Asked oldest-first,
- * the cap dropped the most recent rows, which are exactly the ones a current
- * streak is made of.
+ * EVERY ROW, PAGE BY PAGE. Supabase caps a response at 1000 rows and does not
+ * say so, and a list screen asks for every routine's history at once: five
+ * daily routines pass 1000 in about 200 days. One capped request counted a
+ * 300-day streak from 200 of its days and gave the editor's History wrong
+ * totals, so this reads through core/paging, in a stable order (the id last).
  */
 export async function listSeriesHistory(keys: string[]): Promise<Todo[]> {
   if (keys.length === 0) return [];
   const ownerId = await getOwnerId();
   const list = [...new Set(keys)].join(',');
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select(HISTORY_COLUMNS)
-    .eq('user_id', ownerId)
-    .eq('is_done', true)
-    .or(`series_id.in.(${list}),id.in.(${list})`)
-    .order('due_date', { ascending: false })
-    .limit(PAGE);
-
-  if (error) throw new Error(error.message);
-  return ((data ?? []) as unknown as Todo[]).reverse();
+  return collectPages<Todo>(async (from, to) => {
+    const { data, error, count } = await supabase
+      .from(TABLE)
+      .select(HISTORY_COLUMNS, { count: 'exact' })
+      .eq('user_id', ownerId)
+      .eq('is_done', true)
+      .or(`series_id.in.(${list}),id.in.(${list})`)
+      .order('due_date', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (error) throw new Error(error.message);
+    return { rows: (data ?? []) as unknown as Todo[], total: count };
+  });
 }
 
 /**

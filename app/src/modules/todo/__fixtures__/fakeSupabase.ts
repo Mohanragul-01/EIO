@@ -88,12 +88,18 @@ export function createFakeSupabase() {
     const filters: Filter[] = [];
     const orders: { column: string; ascending: boolean }[] = [];
     let limit: number | null = null;
+    let window: [number, number] | null = null;
+    let counted = false;
     let single: 'single' | 'maybe' | null = null;
     let failWith: string | null = null;
 
     const rows = () => (tables[table] ??= []);
 
-    const run = (): { data: unknown; error: { message: string } | null } => {
+    const run = (): {
+      data: unknown;
+      error: { message: string } | null;
+      count?: number | null;
+    } => {
       if (failWith) return { data: null, error: { message: failWith } };
       calls.push({ table, op });
       const matching = () => rows().filter((row) => filters.every((f) => f(row)));
@@ -129,22 +135,28 @@ export function createFakeSupabase() {
           (a, b) => compare(a[order.column], b[order.column]) * (order.ascending ? 1 : -1),
         );
       }
+      const total = result.length;
       if (limit !== null) result = result.slice(0, limit);
+      if (window) result = result.slice(window[0], window[1] + 1);
 
       const data = clone(result);
       if (single) {
         if (data.length === 0) {
           return single === 'maybe'
             ? { data: null, error: null }
-            : { data: null, error: { message: 'JSON object requested, multiple (or no) rows returned' } };
+            : {
+                data: null,
+                error: { message: 'JSON object requested, multiple (or no) rows returned' },
+              };
         }
         return { data: data[0], error: null };
       }
-      return { data, error: null };
+      return { data, error: null, count: counted ? total : null };
     };
 
     const builder = {
-      select(_columns?: string) {
+      select(_columns?: string, options?: { count?: string }) {
+        counted = options?.count === 'exact';
         return builder;
       },
       insert(values: Row | Row[]) {
@@ -210,6 +222,10 @@ export function createFakeSupabase() {
       },
       limit(n: number) {
         limit = n;
+        return builder;
+      },
+      range(from: number, to: number) {
+        window = [from, to];
         return builder;
       },
       single() {

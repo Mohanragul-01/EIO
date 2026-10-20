@@ -447,10 +447,12 @@ describe('found in review', () => {
     });
   });
 
-  it('returns the newest history, oldest first, when there is more than a page of it', async () => {
-    // Supabase caps a response at 1000 rows; asking oldest-first dropped the
-    // newest, which are the ones a streak is made of.
+  it("returns all of a series' closed occurrences, oldest first, and no one else's", async () => {
+    // More than a page of it: the read used to stop at 1000 rows. The cap
+    // itself is tested in history.test.ts; this checks the filter and order.
     const root = await repeatingTask();
+    const other = await repeatingTask({ title: 'Something else' });
+    await api.completeTask(other);
     let last = '';
     for (let i = 0; i < 1003; i++) {
       const day = new Date(2023, 0, 1 + i);
@@ -467,7 +469,8 @@ describe('found in review', () => {
 
     const history = await api.listSeriesHistory([root.id]);
 
-    expect(history).toHaveLength(1000);
+    expect(history).toHaveLength(1003);
+    expect(history.every((row) => row.series_id === root.id)).toBe(true);
     expect(history[history.length - 1].due_date).toBe(last);
     expect((history[0].due_date ?? '') < (history[1].due_date ?? '')).toBe(true);
   });
