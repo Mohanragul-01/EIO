@@ -255,22 +255,6 @@ export function Modal({
     };
   }, [open]);
 
-  // And when the dialog is unmounted while still open - how a conditionally
-  // rendered dialog closes - since `open` never turns false inside it. After a
-  // close through `open` the ref is already empty, so focus moves only once.
-  // A dialog still in the page is not gone: that is StrictMode rehearsing an
-  // unmount in development, and the dialog stays open.
-  useEffect(() => {
-    const restore = restoreTo;
-    const dialog = ref.current;
-    return () => {
-      if (dialog?.isConnected) return;
-      const previous = restore.current;
-      restore.current = null;
-      previous?.focus?.();
-    };
-  }, []);
-
   if (!open) return null;
 
   return (
