@@ -123,10 +123,7 @@ export async function listTodosByFrequency(frequency: Frequency): Promise<Todo[]
  * typo fixed on an old task used to float it to the top of "recently done".
  * v2 rows closed before migration 0020 have completed_at backfilled.
  */
-export async function listCompletedByFrequency(
-  frequency: Frequency,
-  limit = 100,
-): Promise<Todo[]> {
+export async function listCompletedByFrequency(frequency: Frequency, limit = 100): Promise<Todo[]> {
   const ownerId = await getOwnerId();
 
   const { data, error } = await supabase
@@ -349,12 +346,7 @@ export async function updateTodo(id: string, input: Partial<TodoInput>): Promise
     input.title !== undefined && input.frequency !== undefined && input.is_repeat !== undefined;
   const values = isFull ? normalizeInput(input as TodoInput, todayISO()) : input;
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .update(values)
-    .eq('id', id)
-    .select()
-    .single();
+  const { data, error } = await supabase.from(TABLE).update(values).eq('id', id).select().single();
 
   if (error) throw new Error(error.message);
   remind([data]);
@@ -382,6 +374,12 @@ export async function updateTodo(id: string, input: Partial<TodoInput>): Promise
  * second write fails the task is reopened and the error rethrown: leaving it
  * closed would end the recurrence SILENTLY, and the occurrence that never
  * arrives is not something you notice until you have missed it.
+ *
+ * FROM THE ROW AS CLOSED. `todo` is only which task: the copy a list was
+ * holding can be hours old, and an edit made since on the website (a new
+ * time, a checklist, repeat turned on) would otherwise be dropped from every
+ * occurrence after this one. The close returns the row it closed, in the
+ * same statement, so the successor is built from that at no extra cost.
  */
 export async function completeTask(
   todo: Todo,
@@ -395,12 +393,13 @@ export async function completeTask(
     .update({ is_done: true, outcome, completed_at: new Date().toISOString() })
     .eq('id', todo.id)
     .eq('is_done', false)
-    .select('id');
+    .select();
   if (error) throw new Error(error.message);
   if (!closed || closed.length === 0) return null;
+  const row = closed[0] as Todo;
 
-  if (!todo.is_repeat) {
-    remind([], [todo.id]);
+  if (!row.is_repeat) {
+    remind([], [row.id]);
     return null;
   }
 
@@ -408,31 +407,31 @@ export async function completeTask(
   const today = todayISO();
   // Stepped from where the schedule put this occurrence, not from where it
   // was moved to (scheduleBase).
-  const next = nextDueDate(scheduleBase(todo), ruleOf(todo), { today, completedOn: today });
+  const next = nextDueDate(scheduleBase(row), ruleOf(row), { today, completedOn: today });
 
   const { data, error: insertError } = await supabase
     .from(TABLE)
     .insert({
       user_id: ownerId,
-      title: todo.title,
-      frequency: todo.frequency,
+      title: row.title,
+      frequency: row.frequency,
       is_repeat: true,
       due_date: next,
       scheduled_for: next,
-      due_time: todo.due_time,
-      reminder_offset_min: todo.reminder_offset_min,
-      repeat_every: todo.repeat_every,
-      repeat_weekdays: todo.repeat_weekdays,
-      repeat_anchor_day: todo.repeat_anchor_day,
-      repeat_nth: todo.repeat_nth,
-      repeat_from: todo.repeat_from,
-      series_id: seriesKey(todo),
-      notes: todo.notes,
-      checklist: resetChecklist(todo.checklist ?? []),
+      due_time: row.due_time,
+      reminder_offset_min: row.reminder_offset_min,
+      repeat_every: row.repeat_every,
+      repeat_weekdays: row.repeat_weekdays,
+      repeat_anchor_day: row.repeat_anchor_day,
+      repeat_nth: row.repeat_nth,
+      repeat_from: row.repeat_from,
+      series_id: seriesKey(row),
+      notes: row.notes,
+      checklist: resetChecklist(row.checklist ?? []),
       priority: 'normal',
       // Keeps the routine where you put it on the board, rather than jumping
       // to the top of its column every time it comes round.
-      position: todo.position,
+      position: row.position,
     })
     .select()
     .single();
