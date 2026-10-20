@@ -28,6 +28,7 @@ import { ladderSlotTarget } from './progression';
 import { nextTarget, type Target } from './targets';
 import { sessionRecords, type RecordHit } from './records';
 import {
+  applyTarget,
   commitDraft,
   ghostValues,
   sessionReducer,
@@ -268,7 +269,9 @@ export function useWorkoutSession(sessionId: string) {
       const exercise = exercisesById[block.exerciseId];
       const last = previous[block.exerciseId];
       const slot = slotsByExercise[block.exerciseId];
-      if (!exercise || !last) return { weight: null, reps: null, seconds: null, reason: null };
+      if (!exercise || !last) {
+        return { weight: null, assist: null, reps: null, seconds: null, reason: null };
+      }
       return nextTarget({
         exercise,
         slot: slot
@@ -301,17 +304,7 @@ export function useWorkoutSession(sessionId: string) {
         slot: slotsByExercise[block.exerciseId] ?? null,
         rowType,
       });
-      // A progression target applies to working sets, never warm-ups or drops.
-      const target = targetFor(block);
-      if (target.reason && (rowType === 'normal' || rowType === 'failure')) {
-        return {
-          reps: target.reps ?? ghost.reps,
-          seconds: target.seconds ?? ghost.seconds,
-          weight: target.weight ?? ghost.weight,
-          assist: ghost.assist,
-        };
-      }
-      return ghost;
+      return applyTarget(ghost, targetFor(block), rowType);
     },
     [exercisesById, previousFor, slotsByExercise, targetFor],
   );

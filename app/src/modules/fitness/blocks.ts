@@ -37,6 +37,12 @@ export type DraftRow = {
   side: Side | null;
   rpe: number | null;
   clean: boolean;
+  /**
+   * The load has been set by hand (the load sheet, a copy from PREVIOUS, or
+   * an untick), so an empty weight or assistance means none. Until then an
+   * empty cell means last time's load, shown faint.
+   */
+  loadTyped?: boolean;
 };
 
 export function assembleBlocks(sessionExercises: SessionExercise[], sets: SessionSet[]): Block[] {

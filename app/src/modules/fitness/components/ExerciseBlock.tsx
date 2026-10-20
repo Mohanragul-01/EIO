@@ -26,7 +26,7 @@ import { radius, spacing } from '../../../core/theme';
 import type { DraftRow } from '../blocks';
 import { formatHoldShort, formatLoadChip, formatSetShort, setLabels, type SetFact } from '../load';
 import { primaryRecord, type RecordHit } from '../records';
-import type { BlockState, Ghost, Row } from '../sessionState';
+import { draftLoad, type BlockState, type Ghost, type Row } from '../sessionState';
 import { formatDuration, type Band, type Exercise, type SetType } from '../types';
 
 type Props = {
@@ -263,26 +263,40 @@ function SetRow({
   // LOAD: a kg field for an external lift; a chip for bodyweight.
   let loadCell: React.ReactNode;
   if (bodyweight) {
-    const source =
+    // A draft shows exactly the load ticking will save (draftLoad): last
+    // time's, drawn faint like any ghost, until the load is set by hand.
+    const load =
       row.kind === 'saved'
-        ? row.set
-        : {
-            weight_kg: Number(row.draft.weight.replace(',', '.')) || 0,
-            assist_kg: Number(row.draft.assist.replace(',', '.')) || null,
-            band_id: row.draft.band_id,
-          };
-    const band = source.band_id ? bandsById[source.band_id] : undefined;
-    const chip = formatLoadChip(source, shape, band?.label) ?? 'BW';
+        ? {
+            weight: row.set.weight_kg,
+            assist: row.set.assist_kg,
+            band_id: row.set.band_id,
+            ghosted: false,
+          }
+        : draftLoad(row.draft, ghost);
+    const band = load.band_id ? bandsById[load.band_id] : undefined;
+    const chip =
+      formatLoadChip(
+        { weight_kg: load.weight, assist_kg: load.assist, band_id: load.band_id },
+        shape,
+        band?.label,
+      ) ?? 'BW';
+    const ghosted = load.ghosted;
     loadCell = (
       <Pressable
         onPress={() => !saved && onLoad(row.key)}
         disabled={saved}
         accessibilityRole="button"
-        accessibilityLabel={`Load ${chip === 'BW' ? 'bodyweight' : chip}${saved ? '' : '. Change'}`}
+        accessibilityLabel={`Load ${chip === 'BW' ? 'bodyweight' : chip}${
+          ghosted ? ', same as last time' : ''
+        }${saved ? '' : '. Change'}`}
         style={[styles.colLoad, styles.loadChip]}
       >
         {band ? <View style={[styles.bandDot, { backgroundColor: band.color }]} /> : null}
-        <Text style={[styles.cellText, saved && styles.savedText]} numberOfLines={1}>
+        <Text
+          style={[styles.cellText, saved && styles.savedText, ghosted && styles.ghostText]}
+          numberOfLines={1}
+        >
           {chip}
         </Text>
       </Pressable>
@@ -298,7 +312,8 @@ function SetRow({
       <TextInput
         value={row.draft.weight}
         onChangeText={(weight) => onChangeDraft(row.key, { weight })}
-        placeholder={fmt(ghost.weight)}
+        // Once the load is set by hand, an empty field saves 0, so it says so.
+        placeholder={row.draft.loadTyped ? '0' : fmt(ghost.weight)}
         placeholderTextColor={colors.textFaint}
         keyboardType="decimal-pad"
         selectTextOnFocus
@@ -386,6 +401,7 @@ function SetRow({
             onChangeDraft(row.key, {
               weight: fmt(previous.weight_kg),
               assist: fmt(previous.assist_kg),
+              loadTyped: true,
               ...(timed
                 ? { seconds: previous.duration_seconds ? String(previous.duration_seconds) : '' }
                 : { reps: previous.reps !== null ? String(previous.reps) : '' }),

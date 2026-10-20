@@ -17,6 +17,11 @@ import type { Exercise } from './types';
 
 export type Target = {
   weight: number | null;
+  /**
+   * The assistance that goes with `weight`: a bodyweight target is set at one
+   * of last time's loads, and its help comes with it.
+   */
+  assist: number | null;
   reps: number | null;
   seconds: number | null;
   reason: string | null;
@@ -33,7 +38,7 @@ export type SlotRange = {
 const DEFAULT_INCREMENT = 2.5;
 const BREAK_DAYS = 14;
 
-const NONE: Target = { weight: null, reps: null, seconds: null, reason: null };
+const NONE: Target = { weight: null, assist: null, reps: null, seconds: null, reason: null };
 
 function daysBetween(from: string, to: string): number {
   return Math.round((fromISODate(to).getTime() - fromISODate(from).getTime()) / 86_400_000);
@@ -61,14 +66,10 @@ export function nextTarget(input: {
     const top = work.reduce((a, s) =>
       (s.duration_seconds ?? 0) >= (a.duration_seconds ?? 0) ? s : a,
     );
+    const load = { weight: top.weight_kg, assist: top.assist_kg };
     if (away)
-      return {
-        weight: top.weight_kg,
-        reps: null,
-        seconds: best,
-        reason: `Back after ${gap} days · same time`,
-      };
-    return { weight: top.weight_kg, reps: null, seconds: best + 5, reason: '+5 s' };
+      return { ...load, reps: null, seconds: best, reason: `Back after ${gap} days · same time` };
+    return { ...load, reps: null, seconds: best + 5, reason: '+5 s' };
   }
 
   const reps = work.filter((s) => (s.reps ?? 0) > 0);
@@ -80,10 +81,10 @@ export function nextTarget(input: {
     const hardest = Math.max(...reps.map(netLoad));
     const atHardest = reps.filter((s) => netLoad(s) === hardest);
     const best = Math.max(...atHardest.map((s) => s.reps ?? 0));
-    const weight = atHardest[0].weight_kg;
+    const load = { weight: atHardest[0].weight_kg, assist: atHardest[0].assist_kg };
     if (away)
-      return { weight, reps: best, seconds: null, reason: `Back after ${gap} days · same reps` };
-    return { weight, reps: best + 1, seconds: null, reason: '+1 rep' };
+      return { ...load, reps: best, seconds: null, reason: `Back after ${gap} days · same reps` };
+    return { ...load, reps: best + 1, seconds: null, reason: '+1 rep' };
   }
 
   // LIFTS -------------------------------------------------------------------
@@ -94,18 +95,22 @@ export function nextTarget(input: {
   if (away) {
     return {
       weight: topWeight,
+      assist: null,
       reps: bestReps,
       seconds: null,
       reason: `Back after ${gap} days · same weight`,
     };
   }
-  if (!slot?.repsMax) return { weight: topWeight, reps: bestReps, seconds: null, reason: null };
+  if (!slot?.repsMax) {
+    return { weight: topWeight, assist: null, reps: bestReps, seconds: null, reason: null };
+  }
 
   const allTop = reps.every((s) => (s.reps ?? 0) >= (slot.repsMax ?? Infinity));
   if (allTop) {
     const increment = slot.incrementKg ?? DEFAULT_INCREMENT;
     return {
       weight: Math.round((topWeight + increment) * 100) / 100,
+      assist: null,
       reps: slot.repsMin ?? slot.repsMax,
       seconds: null,
       reason: `+${kg(increment)} kg · every set hit ${slot.repsMax}`,
@@ -113,6 +118,7 @@ export function nextTarget(input: {
   }
   return {
     weight: topWeight,
+    assist: null,
     reps: Math.min(slot.repsMax, bestReps + 1),
     seconds: null,
     reason: null,

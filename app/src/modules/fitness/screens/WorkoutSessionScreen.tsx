@@ -50,6 +50,7 @@ import { visibleInMode } from '../mode';
 import { warmupSets } from '../plates';
 import { primaryRecord } from '../records';
 import { adjustRest, startRest, type RestState } from '../restTimer';
+import { settleLoad } from '../sessionState';
 import { formatDuration, normaliseMuscle, type SetType } from '../types';
 import { usePlateInventory } from '../usePlateInventory';
 import { useWorkoutSession } from '../useWorkoutSession';
@@ -338,7 +339,16 @@ export function WorkoutSessionScreen() {
                 onTick={(key) => void onTick(block.id, key)}
                 onUntick={(key) => void w.untick(block.id, key)}
                 onSetMenu={(key) => setSetMenu({ blockId: block.id, key })}
-                onLoad={(key) => setLoadFor({ blockId: block.id, key })}
+                onLoad={(key) => {
+                  // The sheet edits the load the row shows: write last time's
+                  // into the cells first, so clearing one there means none.
+                  const index = block.rows.findIndex((r) => r.key === key);
+                  const row = block.rows[index];
+                  if (row?.kind === 'draft' && !row.draft.loadTyped) {
+                    w.updateDraft(block.id, key, settleLoad(row.draft, w.ghostFor(block, index)));
+                  }
+                  setLoadFor({ blockId: block.id, key });
+                }}
                 onChangeDraft={(key, patch) => w.updateDraft(block.id, key, patch)}
                 onDelete={(key) => onDelete(block.id, key)}
                 onHold={(key) => setHoldFor({ blockId: block.id, key })}
