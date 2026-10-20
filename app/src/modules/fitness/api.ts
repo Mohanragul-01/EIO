@@ -641,11 +641,14 @@ export async function startSession(input: {
   return session;
 }
 
-/** Finish is optional and never gates saving: it only stamps the end. */
-export async function finishSession(id: string): Promise<WorkoutSession> {
+/**
+ * Finish is optional and never gates saving: it only stamps the end - now,
+ * or `at` for a session that was over before Finish was pressed.
+ */
+export async function finishSession(id: string, at?: string): Promise<WorkoutSession> {
   const { data, error } = await supabase
     .from('workout_sessions')
-    .update({ ended_at: new Date().toISOString() })
+    .update({ ended_at: at ?? new Date().toISOString() })
     .eq('id', id)
     .select()
     .single();

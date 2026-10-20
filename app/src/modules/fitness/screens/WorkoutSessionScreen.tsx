@@ -51,6 +51,7 @@ import { warmupSets } from '../plates';
 import { primaryRecord } from '../records';
 import { adjustRest, startRest, type RestState } from '../restTimer';
 import { settleLoad } from '../sessionState';
+import { sessionClockEnd } from '../summary';
 import { formatDuration, normaliseMuscle, type SetType } from '../types';
 import { usePlateInventory } from '../usePlateInventory';
 import { useWorkoutSession } from '../useWorkoutSession';
@@ -277,6 +278,8 @@ export function WorkoutSessionScreen() {
       <LiveStrip
         startedAt={w.stats.startedAt}
         endedAt={w.stats.endedAt}
+        lastSetAt={w.stats.lastSetAt}
+        date={w.session?.date ?? null}
         volume={w.stats.volume}
         sets={w.stats.workingSets}
         finished={!!w.session?.ended_at}
@@ -678,6 +681,8 @@ export function WorkoutSessionScreen() {
 function LiveStrip({
   startedAt,
   endedAt,
+  lastSetAt,
+  date,
   volume,
   sets,
   finished,
@@ -685,6 +690,8 @@ function LiveStrip({
 }: {
   startedAt: number | null;
   endedAt: number | null;
+  lastSetAt: number | null;
+  date: string | null;
   volume: number;
   sets: number;
   finished: boolean;
@@ -692,13 +699,18 @@ function LiveStrip({
 }) {
   const styles = useStyles();
   const [now, setNow] = useState(() => Date.now());
+  // Finished, or an unfinished session that is clearly over (another day's,
+  // or idle for hours): the clock stops at its end, not at now.
+  const end =
+    date === null ? endedAt : sessionClockEnd({ endedAt, startedAt, lastSetAt, date, now });
+  const running = end === null;
   useEffect(() => {
-    if (endedAt !== null) return;
+    if (!running) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [endedAt]);
+  }, [running]);
 
-  const elapsed = startedAt === null ? 0 : Math.max(0, ((endedAt ?? now) - startedAt) / 1000);
+  const elapsed = startedAt === null ? 0 : Math.max(0, ((end ?? now) - startedAt) / 1000);
   const hours = Math.floor(elapsed / 3600);
   const duration =
     hours > 0

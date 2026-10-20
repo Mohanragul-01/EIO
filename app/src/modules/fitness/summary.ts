@@ -5,6 +5,7 @@
  * was it better than last time, and did I stray from the plan (and should the
  * plan change to match)?
  */
+import { toISODate } from '../../core/date';
 import { formatSetShort, isWorking, workingVolume, type SetFact } from './load';
 import type { RecordHit } from './records';
 import { estimatedOneRepMax, type Exercise } from './types';
@@ -33,6 +34,31 @@ export function sessionSummary(input: {
       })),
     ),
   };
+}
+
+/** How long an unfinished session of today's may sit with nothing logged before it is over. */
+export const IDLE_END_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * When a session's clock stops (epoch ms), or null while it is still running.
+ * Finish stamps the end, but Finish is optional and an unfinished session
+ * simply ends at its last set - once it is clearly over: it belongs to another
+ * day, or nothing has been logged for three hours. Without this, opening last
+ * week's session (or any from v2) showed a duration still counting up to now.
+ */
+export function sessionClockEnd(input: {
+  endedAt: number | null;
+  startedAt: number | null;
+  lastSetAt: number | null;
+  /** The session's day, 'YYYY-MM-DD'. */
+  date: string;
+  now: number;
+}): number | null {
+  if (input.endedAt !== null) return input.endedAt;
+  const last = input.lastSetAt ?? input.startedAt;
+  if (last === null) return null;
+  const over = input.date !== toISODate(new Date(input.now)) || input.now - last > IDLE_END_MS;
+  return over ? last : null;
 }
 
 /** How good a set is, comparably within one exercise. */

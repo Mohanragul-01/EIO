@@ -27,6 +27,7 @@ import { matchPrevious } from './previous';
 import { ladderSlotTarget } from './progression';
 import { nextTarget, type Target } from './targets';
 import { sessionRecords, type RecordHit } from './records';
+import { sessionClockEnd } from './summary';
 import {
   applyTarget,
   commitDraft,
@@ -240,12 +241,15 @@ export function useWorkoutSession(sessionId: string) {
 
   const stats = useMemo(() => {
     const firstSet = savedFacts[0]?.created_at ?? null;
+    const lastSet = savedFacts[savedFacts.length - 1]?.created_at ?? null;
     const startedAt = session?.started_at ?? firstSet;
     return {
       volume: workingVolume(savedFacts, exercisesById, session?.bodyweight_kg ?? null),
       workingSets: savedFacts.filter((s) => s.set_type !== 'warmup').length,
       startedAt: startedAt ? Date.parse(startedAt) : null,
       endedAt: session?.ended_at ? Date.parse(session.ended_at) : null,
+      /** When the last set was saved: where an unfinished session's clock stops. */
+      lastSetAt: lastSet ? Date.parse(lastSet) : null,
     };
   }, [savedFacts, exercisesById, session]);
 
@@ -764,15 +768,27 @@ export function useWorkoutSession(sessionId: string) {
   // SESSION -----------------------------------------------------------------------
 
   const finish = useCallback(async (): Promise<boolean> => {
+    // A session that is already over (another day's, or idle for hours) ends
+    // at its last set; stamping now would make its duration days long.
+    const over = sessionClockEnd({
+      endedAt: null,
+      startedAt: stats.startedAt,
+      lastSetAt: stats.lastSetAt,
+      date: session?.date ?? todayISO(),
+      now: Date.now(),
+    });
     try {
-      const updated = await api.finishSession(sessionId);
+      const updated = await api.finishSession(
+        sessionId,
+        over === null ? undefined : new Date(over).toISOString(),
+      );
       if (isMounted()) setSession(updated);
       return true;
     } catch (e) {
       fail(e, 'Could not finish the workout');
       return false;
     }
-  }, [sessionId, isMounted, fail]);
+  }, [sessionId, session, stats, isMounted, fail]);
 
   /**
    * Re-read the session row alone - its end time, date and notes - leaving the

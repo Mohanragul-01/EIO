@@ -8,6 +8,7 @@ import {
   describeDeviation,
   resolveRoutineSlots,
   routineDeviation,
+  sessionClockEnd,
   sessionSummary,
 } from '../summary';
 
@@ -230,5 +231,42 @@ describe('routineDeviation', () => {
       const dev = routineDeviation(resolved, [{ exerciseId: 'squat', workingSets: 3 }]);
       expect(dev.skipped).toEqual(['negative']);
     });
+  });
+});
+
+// I5: Finish is optional, and an unfinished session simply ends at its last
+// set (spec §4.4) - its clock must not count up to now for ever.
+describe('sessionClockEnd', () => {
+  const at = (h: number, m = 0, day = 19) => new Date(2026, 9, day, h, m).getTime();
+  const base = { startedAt: at(9), lastSetAt: at(10), date: '2026-10-19' };
+
+  it('a finished session ends when it was finished', () => {
+    expect(sessionClockEnd({ ...base, endedAt: at(10, 30), now: at(12) })).toBe(at(10, 30));
+  });
+
+  it("today's session still going keeps counting", () => {
+    expect(sessionClockEnd({ ...base, endedAt: null, now: at(10, 20) })).toBeNull();
+  });
+
+  it("another day's unfinished session ends at its last set", () => {
+    expect(
+      sessionClockEnd({ ...base, date: '2026-10-13', endedAt: null, now: at(12, 0, 20) }),
+    ).toBe(at(10));
+  });
+
+  it("today's session left for three hours ends at its last set", () => {
+    expect(sessionClockEnd({ ...base, endedAt: null, now: at(13, 1) })).toBe(at(10));
+  });
+
+  it('a v2 session with no start or sets has no clock to run', () => {
+    expect(
+      sessionClockEnd({
+        startedAt: null,
+        lastSetAt: null,
+        date: '2026-10-13',
+        endedAt: null,
+        now: at(12),
+      }),
+    ).toBeNull();
   });
 });

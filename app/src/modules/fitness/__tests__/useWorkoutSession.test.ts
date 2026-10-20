@@ -172,3 +172,33 @@ describe('adding rows', () => {
     expect(rows).toEqual(['8L', '8R', '5L', '5R', '3L', '3R', 'workL', 'workR']);
   });
 });
+
+describe('finishing', () => {
+  it("an old session's Finish stamps its last set, not now", async () => {
+    api.getSession.mockResolvedValue({ ...session, date: '2026-10-13', started_at: null });
+    api.listSessionSets.mockResolvedValue([
+      set('s1', { created_at: '2026-10-13T10:05:00.000Z' }),
+      set('s2', { set_number: 2, created_at: '2026-10-13T10:09:00.000Z' }),
+    ]);
+    api.finishSession.mockImplementation((id: string, at: string) =>
+      Promise.resolve({ ...session, id, ended_at: at }),
+    );
+    const { result } = await opened();
+
+    await act(async () => {
+      await result.current.finish();
+    });
+    expect(api.finishSession).toHaveBeenCalledWith('w1', '2026-10-13T10:09:00.000Z');
+  });
+
+  it("today's session in progress finishes now", async () => {
+    // Started half an hour ago (noon in New York is 16:00 UTC).
+    api.getSession.mockResolvedValue({ ...session, started_at: '2026-10-19T15:30:00.000Z' });
+    api.finishSession.mockResolvedValue({ ...session, ended_at: '2026-10-19T12:00:00.000Z' });
+    const { result } = await opened();
+    await act(async () => {
+      await result.current.finish();
+    });
+    expect(api.finishSession).toHaveBeenCalledWith('w1', undefined);
+  });
+});
