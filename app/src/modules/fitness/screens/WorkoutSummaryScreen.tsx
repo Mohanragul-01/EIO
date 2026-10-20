@@ -288,6 +288,9 @@ export function WorkoutSummaryScreen() {
                         toStepId: candidate.to.id,
                         kind: 'up',
                         sessionId: session.id,
+                        // Mastered on the day it was shown, which for a
+                        // back-dated session is not today.
+                        date: session.date,
                       });
                       success();
                       setAnswered((a) => [...a, candidate.progressionId]);

@@ -5,6 +5,7 @@
  * conventions throughout: check `error`, throw on failure, stamp the owner id
  * here so no screen ever deals with identity.
  */
+import { todayISO } from '../../core/date';
 import { collectPages } from '../../core/paging';
 import { getOwnerId } from '../../core/session';
 import { supabase } from '../../core/supabase';
@@ -1161,7 +1162,11 @@ export async function saveLadder(
   return progressionId;
 }
 
-/** Record a move on a ladder and make its target the current rung. */
+/**
+ * Record a move on a ladder and make its target the current rung. Dated
+ * today on the phone unless given a day: the column's default is the
+ * database's current_date, which is the UTC day, not yours.
+ */
 export async function moveLadder(input: {
   progressionId: string;
   fromStepId: string | null;
@@ -1178,7 +1183,7 @@ export async function moveLadder(input: {
     to_step_id: input.toStepId,
     kind: input.kind,
     session_id: input.sessionId ?? null,
-    ...(input.date ? { date: input.date } : {}),
+    date: input.date ?? todayISO(),
   });
   if (error) throw new Error(error.message);
   const { error: updateError } = await supabase
