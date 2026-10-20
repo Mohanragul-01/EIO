@@ -126,19 +126,72 @@ export type Deviation = {
   added: string[];
   /** Routine exercises with no working sets today. */
   skipped: string[];
-  /** Exercises whose working-set count differs from the routine's target. */
-  setCounts: { exerciseId: string; from: number; to: number }[];
+  /**
+   * Exercises whose working-set count differs from the routine's target. A
+   * ladder slot's carries its ladder, since that is the slot to update.
+   */
+  setCounts: { exerciseId: string; from: number; to: number; progressionId: string | null }[];
 };
 
+type Slot = {
+  exercise_id: string | null;
+  progression_id?: string | null;
+  target_sets: number | null;
+};
+
+type LadderShape = {
+  progression: { id: string; current_step_id: string | null };
+  steps: { id: string; exercise_id: string }[];
+};
+
+/**
+ * A routine's slots as this session met them. A ladder slot names no
+ * exercise, so it becomes the rung it was trained on - any rung of that
+ * ladder logged in the session (the ladder may have moved on since), else its
+ * current rung - keeping its ladder. Without this, every summary called the
+ * rung an exercise "you added", and Update wrote it in as a fixed slot.
+ */
+export function resolveRoutineSlots(
+  slots: Slot[],
+  ladders: LadderShape[],
+  trainedExerciseIds: string[],
+): { exercise_id: string | null; progression_id: string | null; target_sets: number | null }[] {
+  return slots.map((slot) => {
+    const progressionId = slot.progression_id ?? null;
+    if (slot.exercise_id || !progressionId) {
+      return {
+        exercise_id: slot.exercise_id,
+        progression_id: progressionId,
+        target_sets: slot.target_sets,
+      };
+    }
+    const ladder = ladders.find((l) => l.progression.id === progressionId);
+    const rungs = ladder?.steps ?? [];
+    const trained = rungs.find((step) => trainedExerciseIds.includes(step.exercise_id));
+    const current = rungs.find((step) => step.id === ladder?.progression.current_step_id);
+    return {
+      exercise_id: (trained ?? current)?.exercise_id ?? null,
+      progression_id: progressionId,
+      target_sets: slot.target_sets,
+    };
+  });
+}
+
 export function routineDeviation(
-  slots: { exercise_id: string | null; target_sets: number | null }[],
+  slots: Slot[],
   blocks: { exerciseId: string; workingSets: number }[],
 ): Deviation {
-  const planned = new Map(
-    slots.flatMap((slot) =>
-      slot.exercise_id ? [[slot.exercise_id, slot.target_sets] as const] : [],
-    ),
-  );
+  // The first slot for an exercise is its plan (a ladder whose rung is also
+  // listed on its own shares that block when the session starts).
+  const planned = new Map<string, { target: number | null; progressionId: string | null }>();
+  for (const slot of slots) {
+    if (slot.exercise_id && !planned.has(slot.exercise_id)) {
+      planned.set(slot.exercise_id, {
+        target: slot.target_sets,
+        progressionId: slot.progression_id ?? null,
+      });
+    }
+  }
   const done = new Map(blocks.map((b) => [b.exerciseId, b.workingSets]));
 
   return {
@@ -147,9 +200,16 @@ export function routineDeviation(
       .map((b) => b.exerciseId),
     skipped: [...planned.keys()].filter((id) => (done.get(id) ?? 0) === 0),
     setCounts: blocks.flatMap((b) => {
-      const target = planned.get(b.exerciseId);
-      return target != null && b.workingSets > 0 && b.workingSets !== target
-        ? [{ exerciseId: b.exerciseId, from: target, to: b.workingSets }]
+      const plan = planned.get(b.exerciseId);
+      return plan && plan.target != null && b.workingSets > 0 && b.workingSets !== plan.target
+        ? [
+            {
+              exerciseId: b.exerciseId,
+              from: plan.target,
+              to: b.workingSets,
+              progressionId: plan.progressionId,
+            },
+          ]
         : [];
     }),
   };

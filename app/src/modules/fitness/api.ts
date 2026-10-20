@@ -961,22 +961,28 @@ export async function lastRoutineSessionSets(input: {
  * Done slot by slot rather than by rewriting the routine, so slots this
  * screen knows nothing about (ladders, ranges, rest) are left exactly as
  * they were. Skipped exercises stay in the routine: skipping one today is
- * not deciding to drop it.
+ * not deciding to drop it. A slot that follows a ladder is found by its
+ * ladder (progression_id), since it names no exercise.
  */
 export async function updateRoutineFromSession(
   routineId: string,
   changes: {
-    setCounts: { exercise_id: string; target_sets: number }[];
+    setCounts: (
+      | { exercise_id: string; progression_id?: undefined; target_sets: number }
+      | { exercise_id?: undefined; progression_id: string; target_sets: number }
+    )[];
     added: { exercise_id: string; target_sets: number }[];
   },
 ): Promise<void> {
   const ownerId = await getOwnerId();
   for (const change of changes.setCounts) {
-    const { error } = await supabase
+    const query = supabase
       .from('routine_exercises')
       .update({ target_sets: change.target_sets })
-      .eq('routine_id', routineId)
-      .eq('exercise_id', change.exercise_id);
+      .eq('routine_id', routineId);
+    const { error } = await (change.progression_id
+      ? query.eq('progression_id', change.progression_id)
+      : query.eq('exercise_id', change.exercise_id));
     if (error) throw new Error(error.message);
   }
   if (changes.added.length > 0) {

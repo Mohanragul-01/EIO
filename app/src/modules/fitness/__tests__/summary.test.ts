@@ -3,7 +3,13 @@
  * ran the same routine, and what changed from the routine itself.
  */
 import type { SetFact } from '../load';
-import { compareToLast, describeDeviation, routineDeviation, sessionSummary } from '../summary';
+import {
+  compareToLast,
+  describeDeviation,
+  resolveRoutineSlots,
+  routineDeviation,
+  sessionSummary,
+} from '../summary';
 
 const bench = {
   load_mode: 'external' as const,
@@ -152,7 +158,7 @@ describe('routineDeviation', () => {
     expect(dev).toEqual({
       added: ['dips'],
       skipped: ['rows'],
-      setCounts: [{ exerciseId: 'bench', from: 3, to: 5 }],
+      setCounts: [{ exerciseId: 'bench', from: 3, to: 5, progressionId: null }],
     });
     expect(describeDeviation(dev, names)).toEqual([
       'You added Dips',
@@ -175,5 +181,54 @@ describe('routineDeviation', () => {
       [{ exerciseId: 'bench', workingSets: 4 }],
     );
     expect(dev.setCounts).toEqual([]);
+  });
+
+  // I3: a slot that follows a ladder is the rung it resolved to, not an
+  // exercise "you added", and Update must change the ladder slot itself.
+  describe('with a ladder slot', () => {
+    const ladder = {
+      progression: { id: 'pull', current_step_id: 'r-neg' },
+      steps: [
+        { id: 'r-neg', exercise_id: 'negative' },
+        { id: 'r-pull', exercise_id: 'pullup' },
+      ],
+    };
+    const slots = [
+      { exercise_id: 'squat', progression_id: null, target_sets: 3 },
+      { exercise_id: null, progression_id: 'pull', target_sets: 3 },
+    ];
+
+    it('counts the rung trained as the planned slot, not an addition', () => {
+      const resolved = resolveRoutineSlots(slots, [ladder], ['squat', 'negative']);
+      const dev = routineDeviation(resolved, [
+        { exerciseId: 'squat', workingSets: 3 },
+        { exerciseId: 'negative', workingSets: 3 },
+      ]);
+      expect(dev).toEqual({ added: [], skipped: [], setCounts: [] });
+    });
+
+    it('a changed set count on the rung points at the ladder slot', () => {
+      const resolved = resolveRoutineSlots(slots, [ladder], ['squat', 'negative']);
+      const dev = routineDeviation(resolved, [
+        { exerciseId: 'squat', workingSets: 3 },
+        { exerciseId: 'negative', workingSets: 4 },
+      ]);
+      expect(dev.setCounts).toEqual([
+        { exerciseId: 'negative', from: 3, to: 4, progressionId: 'pull' },
+      ]);
+      expect(dev.added).toEqual([]);
+    });
+
+    it('finds the rung the session trained even after the ladder moved on', () => {
+      const movedUp = { ...ladder, progression: { id: 'pull', current_step_id: 'r-pull' } };
+      const resolved = resolveRoutineSlots(slots, [movedUp], ['squat', 'negative']);
+      expect(resolved[1]).toMatchObject({ exercise_id: 'negative', progression_id: 'pull' });
+    });
+
+    it('an untrained ladder slot is its current rung, and is skipped', () => {
+      const resolved = resolveRoutineSlots(slots, [ladder], ['squat']);
+      const dev = routineDeviation(resolved, [{ exerciseId: 'squat', workingSets: 3 }]);
+      expect(dev.skipped).toEqual(['negative']);
+    });
   });
 });

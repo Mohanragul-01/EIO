@@ -28,6 +28,7 @@ import type { RecordHit } from '../records';
 import {
   compareToLast,
   describeDeviation,
+  resolveRoutineSlots,
   routineDeviation,
   sessionSummary,
   type Comparison,
@@ -157,18 +158,16 @@ export function WorkoutSummaryScreen() {
     [sets, lastSets, w.exercisesById, session],
   );
 
-  const deviation = useMemo(
-    () =>
-      routineDeviation(
-        slots,
-        w.blocks.map((b) => ({
-          exerciseId: b.exerciseId,
-          workingSets: b.rows.filter((r) => r.kind === 'saved' && r.set.set_type !== 'warmup')
-            .length,
-        })),
-      ),
-    [slots, w.blocks],
-  );
+  const deviation = useMemo(() => {
+    const done = w.blocks.map((b) => ({
+      exerciseId: b.exerciseId,
+      workingSets: b.rows.filter((r) => r.kind === 'saved' && r.set.set_type !== 'warmup').length,
+    }));
+    // A ladder slot is the rung it was trained on, so it is neither "added"
+    // nor written back as a fixed exercise.
+    const trained = done.filter((b) => b.workingSets > 0).map((b) => b.exerciseId);
+    return routineDeviation(resolveRoutineSlots(slots, ladders, trained), done);
+  }, [slots, ladders, w.blocks]);
   const names = useMemo(
     () => Object.fromEntries(Object.values(w.exercisesById).map((e) => [e.id, e.name])),
     [w.exercisesById],
@@ -203,10 +202,11 @@ export function WorkoutSummaryScreen() {
           .find((b) => b.exerciseId === id)
           ?.rows.filter((r) => r.kind === 'saved' && r.set.set_type !== 'warmup').length ?? 1;
       await api.updateRoutineFromSession(session.routine_id, {
-        setCounts: deviation.setCounts.map((c) => ({
-          exercise_id: c.exerciseId,
-          target_sets: c.to,
-        })),
+        setCounts: deviation.setCounts.map((c) =>
+          c.progressionId
+            ? { progression_id: c.progressionId, target_sets: c.to }
+            : { exercise_id: c.exerciseId, target_sets: c.to },
+        ),
         added: deviation.added.map((id) => ({ exercise_id: id, target_sets: counts(id) })),
       });
       setRoutineDecided(true);
